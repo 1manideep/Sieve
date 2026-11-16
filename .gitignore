@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.firebase/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.venv/
+__pycache__/
+
+# Spike results can include captions of personal photos; they stay local.
+spikes/results/
+
+# Local model downloads used by the spikes
+.model-cache/
+
+# Internal review notes stay out of the public repo
+docs/review/

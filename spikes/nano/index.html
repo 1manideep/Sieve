@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sieve spike: Gemini Nano</title>
+<style>
+  :root { --ink:#0F172A; --muted:#64748B; --line:#E2E8F0; --teal:#0F766E; --amber:#92400E; --red:#991B1B; }
+  body { margin:0; background:#F6F7F9; color:var(--ink); font:16px/1.5 Inter, system-ui, sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  p { margin: 0 0 16px; color: #334155; }
+  .steps { display:flex; flex-wrap:wrap; gap:10px; margin: 18px 0; align-items:center; }
+  button, label.file { font: inherit; font-weight: 600; font-size: 15px; border-radius: 12px; padding: 10px 16px; min-height: 44px; cursor: pointer; border: 1px solid #CBD5E1; background: #fff; color: var(--ink); }
+  button.primary { background: var(--teal); color: #fff; border-color: var(--teal); }
+  button:disabled { opacity: .5; cursor: default; }
+  input[type=file] { display: none; }
+  #log { background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 16px; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; min-height: 240px; white-space: pre-wrap; }
+  .good { color: var(--teal); } .warn { color: var(--amber); } .bad { color: var(--red); } .muted { color: var(--muted); }
+  .note { font-size: 14px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sieve spike: Gemini Nano in this Chrome</h1>
+  <p>Runs the on-device model directly (Chrome's Prompt API, no Firebase) on made-up data and saves the numbers to <code>spikes/results/</code>. Run the steps in order.</p>
+  <div class="steps">
+    <button id="check" class="primary">1. Check this Chrome</button>
+    <button id="text" disabled>2. Run the text tests</button>
+    <label class="file" id="photosLabel" aria-disabled="true">3. Caption photos…<input id="photos" type="file" accept="image/jpeg,image/png" multiple disabled></label>
+  </div>
+  <p class="note">Step 2 takes a few minutes. For step 3, pick up to 5 photos with nothing private in them; captions stay on this Mac. Image input needs chrome://flags/#prompt-api-for-gemini-nano-multimodal-input turned on.</p>
+  <div id="log" role="log" aria-live="polite"></div>
+</main>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

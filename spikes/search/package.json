@@ -1,0 +1,14 @@
+{
+  "name": "sieve-spike-search",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node search_check.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "chrono-node": "^2.10.3",
+    "minisearch": "^7.1.0",
+    "unicode-emoji-json": "^0.8.0"
+  }
+}
