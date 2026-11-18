@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sieve spike: Nano through Firebase AI Logic</title>
+<style>
+  :root { --ink:#0F172A; --muted:#64748B; --line:#E2E8F0; --teal:#0F766E; --amber:#92400E; --red:#991B1B; }
+  body { margin:0; background:#F6F7F9; color:var(--ink); font:16px/1.5 Inter, system-ui, sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 32px 20px 64px; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  p { margin: 0 0 16px; color: #334155; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; margin: 18px 0; align-items:center; }
+  button, select { font: inherit; font-weight: 600; font-size: 15px; border-radius: 12px; padding: 10px 16px; min-height: 44px; cursor: pointer; border: 1px solid #CBD5E1; background: #fff; color: var(--ink); }
+  button.primary { background: var(--teal); color: #fff; border-color: var(--teal); }
+  button:disabled { opacity: .5; cursor: default; }
+  textarea { width: 100%; box-sizing: border-box; font: 13px/1.4 ui-monospace, Menlo, monospace; border: 1px solid var(--line); border-radius: 10px; padding: 10px; min-height: 70px; }
+  #log { background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px 16px; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; min-height: 240px; white-space: pre-wrap; }
+  .good { color: var(--teal); } .warn { color: var(--amber); } .bad { color: var(--red); } .muted { color: var(--muted); }
+  .note { font-size: 14px; color: var(--muted); }
+  details { margin: 12px 0; } summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sieve spike: Gemini Nano through Firebase AI Logic</h1>
+  <p>Same model as the Nano spike, but every call goes through <code>firebase/ai</code> 13.3.0 (<code>ONLY_ON_DEVICE</code>), once with the SDK's built-in Chrome adapter and once with Sieve's own adapter. Checks the reported <code>inferenceSource</code>, that a forced "unavailable" throws without any network request, streaming, and create vs clone. Run it once online, then turn Wi-Fi off and run it again.</p>
+  <div class="row">
+    <select id="label" aria-label="Run label">
+      <option value="online">online</option>
+      <option value="wifi-off">Wi-Fi off</option>
+    </select>
+    <button id="run" class="primary">Run the checks</button>
+  </div>
+  <p class="note">No Firebase project is needed for on-device calls; the page uses a placeholder config unless you paste a real one below. Results are saved to <code>spikes/results/</code> through the local spike server (start it with <code>python3 spikes/server.py</code>, then open <code>http://localhost:8787/firebase-ai/</code>).</p>
+  <details>
+    <summary>Optional: paste the real Firebase web config (JSON) to use it instead of the placeholder</summary>
+    <textarea id="config" placeholder='{"apiKey":"...","projectId":"...","appId":"..."}'></textarea>
+    <div class="row"><button id="saveConfig">Save config in this browser</button></div>
+  </details>
+  <div id="log" role="log" aria-live="polite"></div>
+</main>
+<script type="module" src="./dist/app.js"></script>
+</body>
+</html>

@@ -736,6 +736,63 @@ stateDiagram-v2
 - All dynamic strings are rendered as React text children. `dangerouslySetInnerHTML`, `innerHTML`, `insertAdjacentHTML` and `document.write` are banned in `extension/src` (ESLint rule plus the `lint-dist` check).
 - No `<a href>` built from message content. "Open Sieve" is a button that asks the worker; the worker only opens `APP_URL` or focuses the owner tab.
 
+### 8.9 Keyboard shortcut to open the side panel (added Nov 16, at Mani's request)
+
+Goal: one key combination opens Sieve's side panel next to whatever tab is open, so approving never needs the mouse.
+
+**Manifest** (add to section 4):
+
+```json
+"commands": {
+  "open-sieve": {
+    "suggested_key": { "default": "Alt+Shift+S", "mac": "MacCtrl+Shift+S" },
+    "description": "Open or close Sieve's side panel"
+  }
+}
+```
+
+`MacCtrl` is the Control key on a Mac (Control+Shift+S), chosen because Command+Shift combinations collide with app and system shortcuts. People can change it at `chrome://extensions/shortcuts`; Chrome silently drops a suggested key that clashes with another extension, so the app reads the real binding (below).
+
+**Service worker** (section 7): register the listener at top level, and open the panel **synchronously, as the first statement**, because Chrome only accepts `sidePanel.open()` inside the user gesture, and any `await` before it (even `chrome.windows.getCurrent()` or `chrome.tabs.query()`) loses the gesture and throws:
+
+The shortcut **toggles** the panel, like Claude in Chrome's own shortcut (Command+E): press once to open, again to close. Chrome has no `sidePanel.toggle()`, so the extension tracks open panels itself and decides synchronously:
+
+```ts
+// Service worker, top level. Each open side panel connects a port named 'sieve-panel' on load
+// (chrome.runtime.connect({ name: 'sieve-panel' }) then posts { type: 'panel/hello', windowId }).
+const openPanels = new Map<number, chrome.runtime.Port>();      // windowId -> the panel's port
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'sieve-panel' || port.sender?.id !== chrome.runtime.id) return;
+  port.onMessage.addListener((m) => {
+    if (m?.type === 'panel/hello' && Number.isInteger(m.windowId)) openPanels.set(m.windowId, port);
+  });
+  port.onDisconnect.addListener(() => {
+    for (const [w, p] of openPanels) if (p === port) openPanels.delete(w);
+  });
+});
+
+chrome.commands.onCommand.addListener((command, tab) => {
+  if (command !== 'open-sieve' || tab?.windowId === undefined) return;
+  const panel = openPanels.get(tab.windowId);                    // synchronous lookup: no await anywhere above
+  if (panel) {
+    panel.postMessage({ type: 'panel/close' });                  // the panel closes itself (below)
+  } else {
+    chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});   // must stay inside the gesture
+  }
+});
+```
+
+The side panel page, on `panel/close`, calls `window.close()`, which closes the side panel (the documented-by-community way; if `chrome.sidePanel.close()` exists in the target Chrome, prefer it from the service worker instead, see Verify item 4). The panel's port also gets `panel/hello` on reconnect, so the map is rebuilt if the service worker restarts. If the map was lost and not yet rebuilt, the first press calls `open()` on an already open panel (a harmless no-op) and the next press closes it.
+
+**Showing the shortcut**: on start the service worker reads the binding with `chrome.commands.getAll()` and includes it in `sieve/hello-ack` (`shortcut?: string`, empty when unset; contract change below). The app shows it where it helps: the Requests screen ("Tip: press {shortcut} to answer from the side panel"), the push or notification text ("A request is waiting. Press {shortcut} to open Sieve."), and Settings › Notifications and devices, with a link to `chrome://extensions/shortcuts` to change it. When the binding is empty: "Set a shortcut in chrome://extensions/shortcuts".
+
+**What the shortcut cannot do**: Chrome never lets an extension open its side panel by itself, so the panel cannot pop open when a request arrives. The badge and the notification say a request is waiting; the shortcut (or a click on the icon) opens it.
+
+**Acceptance tests** (Playwright with the unpacked extension, section 14): (a) the manifest declares `open-sieve` with both suggested keys; (b) dispatching the command opens the panel for the active window; (c) the handler calls `sidePanel.open` before any awaited call (unit test with the fake `chrome`, asserting call order); (e) toggle: with the panel open in the window, the command sends `panel/close` and the panel closes; a second press reopens it; with the panel open in another window only, the command opens one in this window; (d) `hello-ack` carries the binding from `commands.getAll()`, and an empty binding shows the "Set a shortcut" text in the app.
+
+**Verify at implementation**: (1) Control+Shift+S on macOS and Alt+Shift+S on Windows and Linux are free in current Chrome; pick another pair if not. (2) `sidePanel.open()` succeeds from `commands.onCommand` in the Chrome version on the demo Mac (docs list keyboard shortcuts among the allowed gestures). (3) Whether `_execute_action` plus `openPanelOnActionClick: true` would also work; the custom command above does not depend on it. (4) Whether the target Chrome has `chrome.sidePanel.close()`; if so, close from the service worker with it; otherwise keep the panel's `window.close()`, and check it closes the side panel rather than doing nothing.
+
 ## 9. The decision message
 
 Built only in `hub.decide`, after the checks in section 7.2, and posted by `register.ts` to the owner:

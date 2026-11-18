@@ -313,7 +313,7 @@ export type PageToExtension =
   | { type: 'sieve/resolved'; version: 1; requestId: string; outcome: 'approved' | 'declined' | 'expired' | 'error' };  // 'error' only when nothing was written, so nothing was shared
 
 export type ExtensionToPage =
-  | { type: 'sieve/hello-ack'; version: 1; extensionVersion: string }
+  | { type: 'sieve/hello-ack'; version: 1; extensionVersion: string; shortcut?: string }   // shortcut: the open-sieve key binding from chrome.commands.getAll(), '' when unset (50 section 8.9)
   | { type: 'sieve/decision'; version: 1; decision: Decision }            // decidedBy must be 'extension'
   | { type: 'sieve/open-app'; version: 1; requestId?: string };
 ```

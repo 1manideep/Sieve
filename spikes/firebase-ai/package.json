@@ -1,0 +1,12 @@
+{
+  "name": "sieve-spike-firebase-ai",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild app.js --bundle --format=esm --outfile=dist/app.js --log-level=warning"
+  },
+  "dependencies": {
+    "esbuild": "^0.25.12",
+    "firebase": "^13.3.0"
+  }
+}

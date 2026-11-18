@@ -17,6 +17,7 @@ This spec is written so that Sieve can be implemented without design questions. 
 | 50-extension.md | Chrome extension: manifest, side panel, badge, page-to-extension protocol, packaging |
 | 60-testing-bench-submission.md | Test plan, emulators, e2e, the measured number (bench), sample dataset rules, video, README, Devpost |
 | 70-robustness.md | Failure-mode catalog: every common way things break, with detection, handling, exact messages and tests |
+| 80-demo-computer.md | "Try it on a real computer": Mani's Mac mini (M4, 16 GB) streamed into the site so judges without Nano use the real on-device path |
 
 ## 1. What Sieve is
 
@@ -197,6 +198,7 @@ Each work package is one focused build session (or a few), built on `dev`. Merge
 | WP7 | Extension | 50 | WP5 (Requests), WP6 | badge and side panel approve a relay request on a real Chrome |
 | WP8 | Bench, e2e tests, dataset checks | 60 | WP5, WP6 | the measured number is produced from logs |
 | WP9 | Deploy, custom domain, App Check production, README, Devpost text, video assets | 60 | all | submission checklist in 60 is all ticked |
+| WP10 | Demo computer: seats on the Mac mini, seat broker, web viewer, Cloudflare Tunnel, `/try` page | 80 | WP5, WP7, WP9 | section 10 acceptance tests in 80 pass; a judge visit from another network works |
 
 Build order (from the design): WP1 → WP2 + WP3 + WP6 in parallel → WP4 → WP5 (golden path + Playground) → checkpoint (golden path solid?) → WP7 → WP8 → WP9. If the golden path is not solid at the checkpoint, the relay polish and extension wait.
 
