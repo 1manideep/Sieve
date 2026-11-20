@@ -1,21 +1,27 @@
-// AskResult (40 sections 12.4, 13.4 and 13.9): the result area of Ask and the Playground for one useAsk store.
-// PreparingCard while the pipeline runs, then the ApprovalCard in the same container without a layout jump
-// (the container keeps its height, then settles over --dur-base), or the error card.
+// AskResult (40 sections 12.4, 13.4 and 13.9): the result area of Ask and the Playground for one useAsk store, as the
+// final design's conversation (F3): the question as a bubble, "Searched N items on this computer · picked 1", then the
+// PreparingCard while the pipeline runs, the ApprovalCard in the same container without a layout jump (the container
+// keeps its height, then settles over --dur-base), or the error card.
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import type { StoreApi, UseBoundStore } from 'zustand';
 import { useShallow } from 'zustand/shallow';
+import type { TraceStep } from '@sieve/shared';
 import type { AskState } from '@/state/ask';
 import { useRecords } from '@/state/records';
 import type { DbKind } from '@/state/types';
-import { ASK_COPY, RELATED_COPY } from '@/copy/screens-main';
+import { formatCount } from '@/copy/format';
+import { ASK_COPY, CONVERSATION_COPY, RELATED_COPY, fill } from '@/copy/screens-main';
 import { askCardView } from '../ApprovalCard/askView';
 import { ApprovalCard } from '../ApprovalCard/ApprovalCard';
 import type { Compose } from '../ApprovalCard/composedOptions';
 import { Button } from '../Button/Button';
+import { tablesOf, useDb } from '../dbTables';
 import { DraftPanel } from '../DraftPanel/DraftPanel';
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary';
 import { ItemViewer } from '../ItemViewer/ItemViewer';
 import { PreparingCard } from '../PreparingCard/PreparingCard';
+import { Glyph } from './glyphs';
 import styles from './AskResult.module.css';
 
 export type AskStore = UseBoundStore<StoreApi<AskState>>;
@@ -28,6 +34,8 @@ export interface AskResultProps {
   compose?: Compose;
   online: boolean;
   onSeeReceipts(): void;
+  /** Real data: the receipt chip's "open" is a link to this page (the Playground switches its tab instead). */
+  receiptsHref?: string;
   onAskAgain(): void;
   idle?: ReactNode;
   headerSlot?: ReactNode;
@@ -51,6 +59,44 @@ function useCompose(injected?: Compose): Compose | null {
     };
   }, [injected]);
   return injected ?? loaded?.compose ?? null;
+}
+
+/** How many items the index holds (the "Searched N items" line); undefined until the database answers. */
+function useIndexCount(dbKind: DbKind, enabled: boolean): number | undefined {
+  const db = useDb(dbKind, enabled);
+  return useLiveQuery(async () => {
+    if (!db) return undefined;
+    const records = tablesOf(db).records as { count?: () => Promise<number> } | undefined;
+    if (typeof records?.count !== 'function') return undefined;
+    try {
+      return await records.count();
+    } catch {
+      return undefined;
+    }
+  }, [db]);
+}
+
+/**
+ * How many items a model read: the likely matches of the search step ("Found 3 likely matches on this device…"). The
+ * reading step reads those and nothing else, so every other item in the index was never read by a model.
+ */
+export function likelyMatches(trace: readonly TraceStep[]): number | undefined {
+  for (const step of trace) {
+    if (step.kind !== 'retrieve') continue;
+    const found = /^Found (\d+) likely match/.exec(step.label);
+    if (found) return Number(found[1]);
+  }
+  return undefined;
+}
+
+/** "Searched 46 items on this computer · picked 1 · the other 45 were never read by a model" (real numbers only). */
+export function searchedLine(count: number | undefined, read?: number): string {
+  if (count === undefined) return CONVERSATION_COPY.searchedUnknown;
+  const n = formatCount(count);
+  const rest = read === undefined ? 0 : count - read;
+  if (read === undefined || read < 1 || rest < 1) return fill(CONVERSATION_COPY.searched, { n });
+  if (read === 1) return rest === 1 ? fill(CONVERSATION_COPY.searchedOtherOne, { n }) : fill(CONVERSATION_COPY.searchedOthers, { n, rest: formatCount(rest) });
+  return rest === 1 ? fill(CONVERSATION_COPY.searchedRestOne, { n }) : fill(CONVERSATION_COPY.searchedRest, { n, rest: formatCount(rest) });
 }
 
 function PreparingSlot({ useAsk }: { useAsk: AskStore }) {
@@ -108,8 +154,16 @@ function useSettle(phase: AskState['phase']) {
   return ref;
 }
 
+/** The question as it was asked, kept for the bubble while the field below is edited (state kept per request). */
+function useAskedQuestion(useAsk: AskStore): string {
+  const { requestId, question, proposal } = useAsk(useShallow((s) => ({ requestId: s.requestId, question: s.question, proposal: s.proposal })));
+  const [asked, setAsked] = useState<{ requestId?: string; text: string }>({ requestId, text: question });
+  if (asked.requestId !== requestId) setAsked({ requestId, text: proposal?.question ?? question });
+  return proposal?.question ?? (asked.requestId === requestId ? asked.text : question);
+}
+
 export function AskResult(props: AskResultProps) {
-  const { useAsk, variant, dbKind, compose: injectedCompose, online, onSeeReceipts, onAskAgain, idle, headerSlot, sampleData = false, nanoSettingUp = false } = props;
+  const { useAsk, variant, dbKind, compose: injectedCompose, online, onSeeReceipts, receiptsHref, onAskAgain, idle, headerSlot, sampleData = false, nanoSettingUp = false } = props;
   const s = useAsk(
     useShallow((st) => ({
       phase: st.phase,
@@ -131,6 +185,21 @@ export function AskResult(props: AskResultProps) {
   const meta = useRecords((r) => r.meta);
   const [viewing, setViewing] = useState<string | null>(null);
   const containerRef = useSettle(s.phase);
+  const asked = useAskedQuestion(useAsk);
+  const indexCount = useIndexCount(dbKind, s.proposal !== undefined);
+  const bubbleRef = useRef<HTMLParagraphElement>(null);
+  const startedFor = useRef<string | undefined>(undefined);
+
+  // The first question replaces the prompt card (F2 becomes F3), so the field or chip that had focus is gone. Focus
+  // then starts the conversation at the question bubble, once per request; a follow-up keeps focus in its own field.
+  useEffect(() => {
+    if (s.phase === 'idle') return;
+    const key = s.requestId ?? s.phase;
+    if (startedFor.current === key) return;
+    startedFor.current = key;
+    const active = document.activeElement;
+    if (active === null || active === document.body) bubbleRef.current?.focus();
+  }, [s.phase, s.requestId]);
 
   // Titles of related items for the list (ids only; no content kept).
   const relatedIds = s.proposal?.related.map((c) => c.recordId).join('|') ?? '';
@@ -164,6 +233,7 @@ export function AskResult(props: AskResultProps) {
         outcome={s.outcome}
         stepPhrase={view.stepPhrase}
         onSeeReceipts={onSeeReceipts}
+        receiptsHref={receiptsHref}
         onAskAgain={onAskAgain}
       />
     );
@@ -209,8 +279,28 @@ export function AskResult(props: AskResultProps) {
     );
   }
 
+  const conversation = s.phase !== 'idle';
+  // A ticked related item is prepared on this device too, so it counts as read (the number stays a true lower bound).
+  const matches = likelyMatches(s.proposal?.trace ?? []);
+  const readCount = matches === undefined ? undefined : matches + s.relatedSelected.length;
+  const picked = s.proposal?.outcome === 'ready' && s.proposal.item !== undefined;
+
   return (
     <div ref={containerRef} className={styles.container} data-phase={s.phase}>
+      {conversation && asked ? (
+        <div className={styles.bubbleRow}>
+          <p ref={bubbleRef} className={styles.bubble} dir="auto" tabIndex={-1}>
+            <span className="visually-hidden">{CONVERSATION_COPY.you} </span>
+            {asked}
+          </p>
+        </div>
+      ) : null}
+      {picked ? (
+        <p className={styles.searched}>
+          <Glyph name="sparkle" size={16} className={styles.sparkle} />
+          <span>{searchedLine(indexCount, readCount)}</span>
+        </p>
+      ) : null}
       <ErrorBoundary onReset={() => useAsk.getState().reset()}>{content}</ErrorBoundary>
       <ItemViewer dbKind={dbKind} recordId={viewing} onClose={() => setViewing(null)} />
     </div>

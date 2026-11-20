@@ -1,4 +1,25 @@
-.bar { display: grid; gap: var(--space-2); }
-.buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }
+.bar { display: grid; gap: var(--space-2); min-width: 0; }
+.buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; min-width: 0; }
 .buttons > * { white-space: normal; text-align: center; }
-.reason { margin: 0; font-size: 14px; color: var(--color-text-muted); text-align: right; }
+
+/* Approve is the shared Button's blue tone (#1B6EF3, white text) carrying the count; the other choice is a text
+   button in Gemini blue ("Keep it here" in the app, "Decline" for an outside assistant). */
+.approve { min-height: var(--target-min, 44px); padding: 0 20px; font: 500 15px/1.2 var(--font-sans); }
+.keep,
+.keep:hover {
+  min-height: var(--target-min, 44px);
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--radius-pill, 999px);
+  background: transparent;
+  color: var(--color-accent, #8AB4F8);
+  font: 500 15px/1.2 var(--font-sans);
+}
+.keep:hover { background: rgba(138, 180, 248, 0.1); }
+
+.note { margin-left: auto; font: 400 12px/1.5 var(--font-mono); color: var(--color-text-muted, rgba(255, 255, 255, 0.6)); text-align: right; }
+.reason { margin: 0; font-size: 14px; color: var(--color-text-muted, rgba(255, 255, 255, 0.6)); }
+
+@media (max-width: 639px) {
+  .note { margin-left: 0; width: 100%; text-align: left; }
+}

@@ -1,6 +1,7 @@
 // End-to-end tests with the unpacked dev build and a stub home base (50 sections 14.2 and 16, 8.9).
 import AxeBuilder from '@axe-core/playwright';
 import { readFileSync } from 'node:fs';
+import type { Worker } from '@playwright/test';
 import type { Decision, ExtensionToPage } from '@sieve/shared';
 import { deriveExtensionId } from '../scripts/ext-id.mjs';
 import { badgeText, expect, notificationIds, sharedExtensionId, test } from './fixtures';
@@ -44,7 +45,7 @@ test('connect and empty', async ({ openStub, openPanel, sw }) => {
 test('hello-ack carries the open-sieve binding from commands.getAll (8.9 a, d)', async ({ openStub, sw }) => {
   const commands = await sw.evaluate(() => chrome.commands.getAll());
   const open = commands.find((c) => c.name === 'open-sieve');
-  expect(open?.description).toBe("Open or close Sieve's side panel");
+  expect(open?.description).toBe('Open or close Sieve');
   const stub = await connected(openStub);
   const ack = (await stub.received())[0] as Extract<ExtensionToPage, { type: 'sieve/hello-ack' }>;
   expect(ack.shortcut).toBe(open?.shortcut ?? '');
@@ -77,8 +78,10 @@ test('request and approve', async ({ openStub, openPanel, sw }) => {
   });
   await stub.resolved(DEPOSIT.requestId, 'approved');
   await stub.pending([]);
-  await expect(panel.getByRole('heading', { name: 'Shared' })).toBeVisible();
+  // Approved from this panel: the heading counts what it sent (board F8B) and offers the receipt.
+  await expect(panel.getByRole('heading', { name: `Sent ${DEPOSIT_EXCERPT.length} characters to Test assistant` })).toBeVisible();
   await expect(panel.getByText('Sent: excerpt. Nothing else left this device.')).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Open the receipt' })).toBeVisible();
   await expect.poll(() => badgeText(sw)).toBe('');
   expect(await decisions(stub)).toHaveLength(1); // exactly one decision
 
@@ -231,22 +234,142 @@ test('wrong port name is refused', async ({ openStub, openPanel }) => {
   await expect(panel.getByRole('heading', { name: "Sieve isn't open" })).toBeVisible();
 });
 
-test('shortcut toggles the panel (8.9 b, e)', async ({ openPanel, sw }) => {
-  const panel = await openPanel();
+type PanelView = { surface: 'popup' | 'panel'; visible: boolean; windowId?: number };
+type Hook = { __sieveDev: { command(name: string, windowId: number): string; panelWindows(): number[]; panelViews(): PanelView[] } };
+const press = (sw: Worker, w: number) => sw.evaluate(([id]) => (self as unknown as Hook).__sieveDev.command('open-sieve', id), [w] as const);
+const panelViews = (sw: Worker) => sw.evaluate(() => (self as unknown as Hook).__sieveDev.panelViews());
+
+test('shortcut: closes the panel page showing in the window, else opens the popup (8.9 b, e)', async ({ openPanel, sw }) => {
+  const panel = await openPanel(); // a tab, so it counts as the side panel
   await expect(panel.getByRole('heading', { name: 'Sieve', level: 1 })).toBeVisible();
   const windowId = await panel.evaluate(() => chrome.windows.getCurrent().then((w) => w.id ?? -1));
-  type Hook = { __sieveDev: { command(name: string, windowId: number): string; panelWindows(): number[] } };
-  const press = (w: number) => sw.evaluate(([id]) => (self as unknown as Hook).__sieveDev.command('open-sieve', id), [w] as const);
-  // The panel reports its window in panel/hello once chrome.windows.getCurrent() resolves.
+  // The page reports its window and surface in panel/hello once chrome.windows.getCurrent() resolves.
   await expect.poll(() => sw.evaluate(() => (self as unknown as Hook).__sieveDev.panelWindows())).toContain(windowId);
-  // A panel is open in another window only: the command opens one in this window.
-  expect(await press(windowId + 1000)).toBe('open');
-  // With the panel open in this window, the command sends panel/close and the panel closes itself.
+  expect(await panelViews(sw)).toEqual([{ surface: 'panel', visible: true, windowId }]);
+  // Nothing of Sieve shows in another window: the command opens the popup there (this id has no window, so Chrome
+  // refuses, and the side panel fallback is refused too: nothing opens).
+  expect(await press(sw, windowId + 1000)).toBe('popup');
+  // With the panel page showing in this window, the command sends panel/close and the page closes itself.
   const closed = panel.waitForEvent('close');
-  expect(await press(windowId)).toBe('close');
+  expect(await press(sw, windowId)).toBe('close');
   await closed;
-  // A second press opens it again (sidePanel.open needs a real key press; headless cannot show the side panel).
-  await expect.poll(() => press(windowId)).toBe('open');
+  await expect.poll(() => panelViews(sw)).toEqual([]);
+});
+
+test('manifest: the toolbar icon opens the popup, the side panel stays, Chrome 127+', async ({ sw }) => {
+  const info = await sw.evaluate(async () => ({
+    manifest: chrome.runtime.getManifest() as chrome.runtime.ManifestV3,
+    popup: await chrome.action.getPopup({}),
+    behavior: await chrome.sidePanel.getPanelBehavior(),
+    hasOpenPopup: typeof chrome.action.openPopup === 'function',
+  }));
+  expect(info.manifest.action?.default_popup).toBe('sidepanel/index.html');
+  expect(info.popup).toMatch(/^chrome-extension:\/\/[a-p]{32}\/sidepanel\/index\.html$/);
+  expect((info.manifest as { side_panel?: { default_path?: string } }).side_panel?.default_path).toBe('sidepanel/index.html');
+  expect(info.manifest.minimum_chrome_version).toBe('127');
+  // A click on the icon must open the popup, not the side panel.
+  expect(info.behavior.openPanelOnActionClick).toBe(false);
+  expect(info.hasOpenPopup).toBe(true);
+});
+
+test('popup: the shortcut opens the real popup, 400 px wide and as tall as its content; open and close leak nothing', async ({ openStub, openPanel, sw }) => {
+  const stub = await connected(openStub);
+  // An extension tab to look into the popup with chrome.extension.getViews. It is a panel page in window 1, so
+  // the popup goes to a second window.
+  const viewer = await openPanel();
+  await expect.poll(() => panelViews(sw)).toHaveLength(1);
+  const popupWindow = await sw.evaluate(async () => (await chrome.windows.create({ url: 'about:blank', focused: true, width: 1280, height: 1000 }))?.id ?? -1);
+  type Measure = { surface?: string; width: number; height: number; scrollWidth: number; root: number; main: number; mainScroll: number; footer: string[] } | null;
+  const measure = () =>
+    viewer.evaluate((): Measure => {
+      const [w] = chrome.extension.getViews({ type: 'popup' });
+      if (!w) return null;
+      const doc = w.document;
+      const root = doc.getElementById('root')?.firstElementChild;
+      const main = doc.querySelector('main');
+      if (!root || !main) return null;
+      return {
+        surface: doc.documentElement.dataset.surface,
+        width: w.innerWidth,
+        height: w.innerHeight,
+        scrollWidth: doc.documentElement.scrollWidth,
+        root: root.getBoundingClientRect().height,
+        main: main.clientHeight,
+        mainScroll: main.scrollHeight,
+        footer: Array.from(doc.querySelectorAll('footer button'), (b) => b.textContent ?? ''),
+      };
+    });
+
+  for (let round = 0; round < 3; round++) {
+    expect(await press(sw, popupWindow)).toBe('popup');
+    // The popup said hello as a popup, from its own window.
+    await expect.poll(() => panelViews(sw)).toContainEqual({ surface: 'popup', visible: true, windowId: popupWindow });
+    await expect.poll(async () => (await measure())?.footer).toEqual(['Keep open on the side', 'Open Sieve']);
+    const empty = await measure();
+    expect(empty).toMatchObject({ surface: 'popup', width: 400 });
+    expect(empty!.scrollWidth).toBeLessThanOrEqual(400);
+    expect(empty!.root).toBeLessThan(600);
+    expect(Math.abs(empty!.height - empty!.root)).toBeLessThanOrEqual(1); // the popup is as tall as the page
+    if (round === 0) {
+      // A request makes it taller, up to 600 px; past that the main area scrolls, never the page sideways.
+      await stub.pending([DEPOSIT, LEASE, STATEMENT]);
+      await expect.poll(async () => (await measure())?.root ?? 0).toBeGreaterThan(empty!.root);
+      const full = await measure();
+      expect(full!.width).toBe(400);
+      expect(full!.scrollWidth).toBeLessThanOrEqual(400);
+      expect(full!.root).toBeLessThanOrEqual(600);
+      expect(Math.abs(full!.height - full!.root)).toBeLessThanOrEqual(1);
+      if (full!.root === 600) expect(full!.mainScroll).toBeGreaterThan(full!.main);
+      await stub.pending([]);
+      await expect.poll(async () => (await measure())?.root).toBe(empty!.root);
+    }
+    // A second press closes it (the popup gets panel/close and calls window.close()).
+    expect(await press(sw, popupWindow)).toBe('close');
+    await expect.poll(() => viewer.evaluate(() => chrome.extension.getViews({ type: 'popup' }).length)).toBe(0);
+    // Its port went with it: only the viewer tab is left.
+    await expect.poll(() => panelViews(sw)).toEqual([expect.objectContaining({ surface: 'panel' })]);
+  }
+  const contexts = await sw.evaluate(async () => (await chrome.runtime.getContexts({ contextTypes: ['POPUP' as chrome.runtime.ContextType] })).length);
+  expect(contexts).toBe(0);
+});
+
+test('popup layout in a tab: 400 px, content height up to 600 px, the main area scrolls', async ({ openStub, openPanel }) => {
+  const stub = await connected(openStub);
+  const page = await openPanel('?surface=popup');
+  await page.setViewportSize({ width: 400, height: 800 });
+  await expect(page.getByRole('heading', { name: 'No requests waiting' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Keep open on the side' })).toBeVisible();
+  const size = () =>
+    page.evaluate(() => {
+      const root = document.getElementById('root')!.firstElementChild!;
+      const main = document.querySelector('main')!;
+      return {
+        width: document.body.getBoundingClientRect().width,
+        scrollWidth: document.documentElement.scrollWidth,
+        root: root.getBoundingClientRect().height,
+        page: document.documentElement.getBoundingClientRect().height,
+        main: main.clientHeight,
+        mainScroll: main.scrollHeight,
+      };
+    });
+  const empty = await size();
+  expect(empty.width).toBe(400);
+  expect(empty.root).toBeLessThan(600);
+  expect(empty.page).toBe(empty.root); // nothing stretches it to the viewport
+  const long = 'QUJD'.repeat(1250);
+  await stub.pending([variant(DEPOSIT, { requestId: 'tall-1', options: [{ ...DEPOSIT.options[0]!, text: long, chars: long.length }, DEPOSIT.options[1]!, DEPOSIT.options[2]!] }), LEASE]);
+  await expect(page.getByRole('heading', { name: 'A request is waiting' })).toBeVisible();
+  const tall = await size();
+  expect(tall.root).toBe(600);
+  expect(tall.page).toBeLessThanOrEqual(600);
+  expect(tall.mainScroll).toBeGreaterThan(tall.main);
+  expect(tall.scrollWidth).toBeLessThanOrEqual(400);
+  // Approve is reached by scrolling the main area; header and footer stay on screen.
+  const approve = page.getByRole('button', { name: 'Approve' });
+  await approve.scrollIntoViewIfNeeded();
+  await expect(approve).toBeInViewport();
+  await expect(page.getByRole('heading', { name: 'Sieve', level: 1 })).toBeInViewport();
+  await expect(page.getByRole('button', { name: 'Keep open on the side' })).toBeInViewport();
 });
 
 test('long unbroken strings never push Approve off screen (70 R-UI-04)', async ({ openStub, openPanel }) => {

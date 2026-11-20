@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { CATEGORIES } from '@sieve/shared';
-import { HOME_BASE_DIALOG, SETTINGS, TEST_REQUEST, fillText } from '@/copy/screens-controls';
+import { CONSOLE, HOME_BASE_DIALOG, SETTINGS, TEST_REQUEST, fillText } from '@/copy/screens-controls';
 import { STATUS_POPOVER } from '@/copy/strings';
 import { useAvailability } from '@/state/availability';
 import { useGrants, type GrantsState } from '@/state/grants';
@@ -100,6 +100,7 @@ describe('Settings', () => {
     renderSettings('/settings#rules');
     expect(document.title).toBe('Settings · Sieve');
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: CONSOLE.tryNow })).toHaveAttribute('href', '/try');
     for (const h of [
       SETTINGS.aisHeading, SETTINGS.rulesHeading, SETTINGS.defaultStepHeading, SETTINGS.cloudHeading,
       SETTINGS.notificationsHeading, SETTINGS.accountHeading,
@@ -108,6 +109,10 @@ describe('Settings', () => {
     }
     await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: SETTINGS.rulesHeading })).toHaveFocus());
     expect(screen.getByText(SETTINGS.aisEmpty)).toBeInTheDocument();
+    // The blue button that opens the dialog sits under the assistants, with the explainer line.
+    const ais = cardOf(SETTINGS.aisHeading);
+    expect(within(ais).getByRole('button', { name: SETTINGS.connectAi })).toBeInTheDocument();
+    expect(within(ais).getByText(SETTINGS.aisSub)).toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
@@ -193,7 +198,7 @@ describe('Settings', () => {
     expect(useToasts.getState().toasts.map((t) => t.title)).toContain(`${AI} can't ask any more.`);
   });
 
-  it('opens Connect an AI from ?connect=1 and removes the param, keeping the hash', async () => {
+  it('opens Connect an assistant from ?connect=1 and removes the param, keeping the hash', async () => {
     const router = renderSettings('/settings?connect=1#ais');
     expect(await screen.findByRole('dialog', { name: SETTINGS.connectTitle })).toBeInTheDocument();
     await waitFor(() => expect(router.state.location.search).toBe(''));
@@ -205,6 +210,11 @@ describe('Settings', () => {
     renderSettings();
     const rules = cardOf(SETTINGS.rulesHeading);
     expect(within(rules).getByText(SETTINGS.rulesSub)).toBeInTheDocument();
+    // Each row says what its rule means, under the category name.
+    const rowOf = (category: string) => within(rules).getByText(category, { selector: 'span' }).closest('li') as HTMLElement;
+    expect(within(rowOf('Home')).getByText(SETTINGS.ruleLineApprove)).toBeInTheDocument();
+    expect(within(rowOf('Health')).getByText(SETTINGS.ruleLineNever)).toBeInTheDocument();
+    expect(within(rowOf('Money')).getByText(SETTINGS.ruleLineAskFirst)).toBeInTheDocument();
     const home = within(rules).getByRole('radiogroup', { name: 'Rule for Home' });
     expect(within(home).getByRole('radio', { name: SETTINGS.ruleApprove })).toHaveAttribute('aria-checked', 'true');
     await user.click(within(home).getByRole('radio', { name: SETTINGS.ruleAskFirst }));

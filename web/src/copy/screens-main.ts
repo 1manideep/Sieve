@@ -136,6 +136,8 @@ export const ITEM_COPY = {
   from: 'From: {name} · {date}',
   why: 'Why this one:',
   open: 'Open on this device',
+  // The found-item chip names where the item came from (the record id's source prefix).
+  sources: { gmail: 'Gmail', folder: 'Local folder', upload: 'A file you added', playground: 'Sample data' },
 } as const;
 
 export const RELATED_COPY = {
@@ -151,10 +153,12 @@ export const RELATED_COPY = {
 } as const;
 
 export const DECISION_COPY = {
-  inAppDeny: 'Use it here, share nothing',
-  inAppApprove: 'Draft a reply with the cloud model',
-  relayApprove: 'Approve and send',
-  relayDeny: 'Deny',
+  inAppDeny: 'Keep it here',
+  // The final design: the count is the label, in the chat's gate and on Requests alike.
+  approveChars: 'Approve, {chars} characters',
+  inAppApprovePlain: 'Approve',
+  relayApprove: 'Approve and send',               // only when the count is not known
+  relayDeny: 'Decline',
   offlineInApp: "You're offline. Drafting needs the cloud model.",
   offlineRelay: "You're offline. Sieve can send this when you're back online.",
   tooLong: OUTGOING_COPY.overLimit,
@@ -167,15 +171,38 @@ export const DRAFT_COPY = {
   instructionHelp: 'Sent with the text above. Keep personal details out of it.',
   drafting: 'Gemini is drafting in the cloud…',
   cloudTag: 'Cloud · Gemini',
-  title: 'Draft from the cloud model',
-  copy: 'Copy draft',
+  title: 'Gemini drafted a reply from those {chars} characters alone',
+  copy: 'Copy the draft',
   copied: 'Copied',
   note: 'Gemini saw only {stepPhrase} and your instruction: {chars} characters.',
   success: 'Sent only {stepPhrase} to the cloud model. A receipt was saved.',
+  sentChip: 'sent {chars} characters to Gemini · receipt #{id}',
+  open: 'open',
+  openLabel: 'open this receipt in What has AI seen?',   // the accessible name keeps the visible word first
   seeReceipts: 'See what AI has seen',
   retry: 'Try again',
   keptLocal: 'Kept on this device. Nothing was shared.',
-  askAgain: 'Ask something else',
+  askAgain: 'New ask',
+} as const;
+
+/** The conversation after a question (the final design, F3): the searched line, the answer's meta line, the gate. */
+export const CONVERSATION_COPY = {
+  you: 'You asked',
+  // {n} is the index size. The model reads only the likely matches the search found (the retrieve step's count), so
+  // the rest were never read by any model; without that count the line stops at "picked 1".
+  searched: 'Searched {n} items on this computer · picked 1',
+  searchedOthers: 'Searched {n} items on this computer · picked 1 · the other {rest} were never read by a model',
+  searchedOtherOne: 'Searched {n} items on this computer · picked 1 · the other one was never read by a model',
+  searchedRest: 'Searched {n} items on this computer · picked 1 · {rest} were never read by a model',
+  searchedRestOne: 'Searched {n} items on this computer · picked 1 · 1 was never read by a model',
+  searchedUnknown: 'Searched this computer · picked 1',
+  metaDevice: 'written here by Gemini Nano · {t} · nothing has left this computer',
+  metaCloud: 'written in the cloud by Gemini from sample data · {t}',
+  metaCloudOwn: 'written in the cloud by Gemini, with your OK · {t}',
+  metaCode: 'nothing has left this computer',
+  whatHappened: 'What happened, step by step',
+  gateTitle: 'Send this to Gemini in the cloud?',
+  footer: 'Only what you approve leaves your computer. Sieve can make mistakes; the receipt never does.',
 } as const;
 
 export const CONSENT_COPY = {
@@ -188,7 +215,7 @@ export const CONSENT_COPY = {
   allowItem: 'Allow the cloud for this item',
   allowFile: 'Allow the cloud for this file',
   notNow: 'Not now',
-  deny: 'Deny',
+  deny: 'Decline',
 } as const;
 
 export const OUTCOME_COPY = {
@@ -220,7 +247,7 @@ export const COMPOSE_COPY = {
 
 export const APPROVAL_COPY = {
   answerEyebrow: 'Answer, written on this device',
-  approveOnlyIfAsked: "Approve only if you asked {aiName} for this. If you didn't, deny it and turn off this connection in Settings.",   // 70 R-MCP-09
+  approveOnlyIfAsked: "Approve only if you asked {aiName} for this. If you didn't, decline it and turn off this connection in Settings.",   // 70 R-MCP-09
   cardLabel: 'Result',
   cloudWhileSetup: 'Answered in the cloud while Nano sets up (sample data only)',
   askAgainDevice: 'Ask again on this device',
@@ -353,6 +380,54 @@ export const WELCOME_COPY = {
   footerLicense: 'Open source under Apache-2.0',
   footerSource: 'Source code',
   footerHackathon: 'Built for #BuildHybridAI 2026',
+  // F1, the landing (docs/design/final-flow.md)
+  openSieve: 'Open Sieve',
+  tryComputer: 'Try on a real computer',
+  signInNote: 'Open Sieve signs you in with Google. No account?',
+  signInNoteLink: 'The Playground needs none.',
+  sceneLabel: 'A sphere of 1,204 emails, 92 photos and 31 documents on this computer, with one approved line leaving it.',
+  constellation: { emails: '1,204 emails', photos: '92 photos', documents: '31 documents', line: 'one approved line' },
+  numbers: [
+    { value: '46', caption: 'items searched here' },
+    { value: '1', caption: 'read by a model, on this computer' },
+    { value: '44', caption: 'characters that left, with your approval' },
+  ],
+  numbersLabel: 'One question, by the numbers',
+  built: 'Built for #BuildHybridAI · Firebase AI Logic · Gemini Nano · open source',
+} as const;
+
+/** F4, /how: 46 items become one line (docs/design/final-flow.md). */
+export const HOW_COPY = {
+  eyebrow: 'What happens to your data',
+  question: 'What did my landlord say about the deposit?',
+  stageLabel: 'Your 46 items on this computer',
+  stepLabels: ['Ready', 'Step 1 of 4 · searched', 'Step 2 of 4 · picked one', 'Step 3 of 4 · answered here', 'Step 4 of 4 · one line left'],
+  runLabels: ['Run', 'Next', 'Next', 'Approve to continue', 'Run again'],
+  captions: [
+    'Your 46 items: mail, files, photos. This is what an AI with a direct connector reads to answer one question. Press Run to see what Sieve does instead.',
+    'Searched all 46 by meaning, on this computer, in 0.3 seconds. One matched. No model has read anything yet.',
+    'Gemini Nano opens the one item, here. It never sees the other 45, and nothing has left this computer.',
+    'Nano wrote one sentence from it. The sentence holds no name, address or number. Approve it, or keep it here.',
+    'You approved. 44 characters crossed to Gemini in the cloud. 45 items stayed where they were, unread. The receipt says who, what, how much and when.',
+  ],
+  matched: '1 of 46 matched',
+  itemTitle: 'Re: Deposit for the apartment',
+  itemMeta: 'Oct 29 · Home · Gmail',
+  reading: 'Gemini Nano is reading this one item on this computer. The other 45 were never opened by any model.',
+  sentence: 'Your deposit was $1,200, paid on March 3, and it will be returned within 30 days of moving out.',
+  sentenceMeta: 'Gemini Nano · written here · 44 characters · 0 details inside',
+  approve: 'Approve 44 characters',
+  approved: 'approved · receipt #0412',
+  cross: '44 characters cross',
+  cloudTitle: 'Gemini, in the cloud',
+  cloudBody: 'Received 44 characters. Drafted a reply. Never saw the email, the name, the address or the number.',
+  stayed: '45 items, never read by any model, still here',
+  countersLabel: 'The count so far',
+  searched: 'searched here',
+  readByModel: 'read by a model, here',
+  left: 'characters that left',
+  back: 'Go back',
+  stepsLabel: 'The steps',
 } as const;
 
 export const PREPARE_COPY = {
@@ -388,13 +463,37 @@ export const SETUP_COPY = {
   pushError: "Couldn't turn on notifications. Try again.",
   extensionTitle: 'Sieve extension',
   getExtension: 'Get the extension',
-  connectAi: 'Connect an AI',
+  connectAi: 'Connect an assistant',
 } as const;
 
 export const ASK_COPY = {
+  // The final design (F2): the headline, the lead and the prompt card
+  headline: 'Ask your own data. Only one line leaves.',
+  headlineLines: ['Ask your own data.', 'Only one line leaves.'],
+  lead: 'Searched and answered on this computer by Gemini Nano. Outside AIs get what you approve, nothing more.',
+  cardLabel: 'Ask about your own data',
+  ladderLabel: 'How much may leave',
+  ladderSteps: { answer: 'Answer', excerpt: 'Excerpt', full: 'Full' },
+  ladderHints: {
+    answer: 'one sentence, written here',
+    excerpt: 'the lines that hold the answer, masked',
+    full: 'the whole item, masked, asks every time',
+  },
+  attach: 'Add a source',
+  mic: 'Speak your question',
+  micListening: 'Listening. Press to stop.',
+  nanoReady: 'Nano · on this computer',
+  nanoSettingUp: 'Nano · setting up {pct}%',
+  nanoNotSetUp: 'Nano · not set up',
+  nanoNone: 'No Nano in this Chrome',
+  nanoCloud: 'Cloud · Gemini, with your OK each time',
+  nanoChecking: 'Checking Nano…',
+  followUpLabel: 'Ask a follow-up',
+  followUpPlaceholder: 'Ask a follow-up about your own data',
+  footer: 'Only what you approve leaves your computer.',
   questionLabel: 'What are you looking for?',
   placeholder: "e.g. my landlord's email about the deposit",
-  find: 'Find on this device',
+  find: 'Ask',
   stop: 'Stop',
   counter: '{n} of 500',
   empty: 'Type a question first.',
@@ -438,6 +537,22 @@ export const DEFAULT_DRAFT_INSTRUCTION_COPY = 'Draft a short, polite reply.';
 export const PLAYGROUND_COPY = {
   heading: 'Playground',
   tag: 'Playground',
+  // The final design: the public header, the Nano pill, the "What is on this computer" row
+  openSource: 'OPEN SOURCE',
+  tryNow: 'Try now',
+  pillReady: 'Nano · on this computer',
+  pillSimulated: 'Simulated: no Nano',
+  pillNotSetUp: 'Nano · not set up',
+  pillSettingUp: 'Nano · setting up',
+  pillNone: 'No Nano in this Chrome',
+  pillChecking: 'Checking Nano…',
+  computerTitle: 'What is on this computer',
+  computerCount: '{n} items · kept in this browser',
+  computerCountOne: '1 item · kept in this browser',
+  attach: 'Add a file',
+  cardLabel: 'Ask the pretend computer',
+  followUpPlaceholder: 'Ask a follow-up about this computer',
+  footerLine: 'Only what you approve leaves your computer.',
   intro: 'A pretend computer in your browser. Add files, write test emails, ask anything. Nothing leaves it unless you approve.',
   reset: 'Reset the device',
   useOwn: 'Use your own data',
@@ -613,7 +728,7 @@ export const PLAYGROUND_ASSISTANT_COPY = {
     'Cloud Gemini (Firebase AI Logic function calling) calls Sieve\'s real connector link, the same one any MCP assistant uses, with a one-day Playground grant. It can only reach this Playground\'s sample data, and it gets nothing unless you approve it here.',
   cloudColumn: 'Gemini in the cloud',
   deviceColumn: 'Sieve on this device',
-  deviceEmpty: 'When Gemini asks Sieve something, the request shows up here for you to approve or deny.',
+  deviceEmpty: 'When Gemini asks Sieve something, the request shows up here for you to approve or decline.',
   deviceStarting: 'Sieve is starting to listen for Gemini\'s requests…',
   deviceError: 'Sieve on this device couldn\'t start listening for Gemini\'s requests. Reload the page and try again.',
   stepConnect: 'Connect',
@@ -641,7 +756,7 @@ export const PLAYGROUND_ASSISTANT_COPY = {
   noArgs: 'Nothing',
   waitingSieve: 'Waiting for Sieve on this device…',
   waitingApproval: 'Waiting for your approval',
-  waitingApprovalHint: 'Approve or deny it under "Sieve on this device".',
+  waitingApprovalHint: 'Approve or decline it under "Sieve on this device".',
   sieveReplied: 'Sieve replied: {message}',
   received: 'Gemini received {n} characters of your data',
   receivedOne: 'Gemini received 1 character of your data',
@@ -679,6 +794,6 @@ export const PLAYGROUND_ASSISTANT_COPY = {
   replyLabelOne: 'Gemini wrote its reply in the cloud (1 model call)',
   approvedLabel: 'You approved: {step}',
   requestLabel: 'Request from {aiName}',
-  announceAsked: 'Gemini asked Sieve. Approve or deny it under Sieve on this device.',
+  announceAsked: 'Gemini asked Sieve. Approve or decline it under Sieve on this device.',
   announceAnswered: 'Gemini answered.',
 } as const;

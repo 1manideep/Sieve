@@ -21,7 +21,7 @@ test.describe('accessibility', () => {
   test('/welcome', async ({ page }) => {
     await prepareStubs(page, { availability: 'available' });
     await page.goto('/welcome');
-    await expect(page.getByRole('heading', { level: 1, name: 'Give AI the answer, not your inbox.' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Only what you approve leaves your computer.' })).toBeVisible();
     expect(await seriousViolations(page)).toEqual([]);
   });
 

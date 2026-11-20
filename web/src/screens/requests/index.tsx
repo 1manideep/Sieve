@@ -1,15 +1,17 @@
-// Requests (40 section 13.5): requests from connected AIs wait here for the person.
+// Requests (40 section 13.5; docs/design/final-flow.md F5): requests from connected assistants wait here for the
+// person. The pending card sits left; "How a request reaches you" and "Earlier today" sit right.
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
 import { EmptyState } from '@/components/EmptyState/EmptyState';
 import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary';
-import { PageHeader } from '@/components/PageHeader/PageHeader';
-import { REQUESTS, fillText } from '@/copy/screens-controls';
+import { REQUESTS, SENTENCE, fillText } from '@/copy/screens-controls';
 import { SCREENS, TITLES } from '@/copy/strings';
 import { useHomeBase, type PendingEntry } from '@/state/homeBase';
+import kit from '../settings/kit/kit.module.css';
 import { MakeHomeBaseDialog } from '../settings/kit/MakeHomeBaseDialog';
+import { ScreenHead } from '../settings/kit/ScreenHead';
 import { PendingList } from './PendingList';
 import { RecentRequests } from './RecentRequests';
 import { RequestDetail } from './RequestDetail';
@@ -53,44 +55,58 @@ export function Component() {
       : fillText(REQUESTS.waitingOn, { label: label ?? REQUESTS.otherDeviceFallback });
   const selected = selectEntry(list, params.get('id'));
   const hasDone = list.some((e) => e.phase === 'done');
-  // The rail is hidden when there is exactly one entry and no done entries.
+  // The list is hidden when there is exactly one entry and no done entries.
   const showRail = !(list.length === 1 && readOnly.length === 0 && !hasDone);
   const waiting = awaitingCount + readOnly.filter((r) => r.status === 'awaiting-person').length;
   const nothing = list.length === 0 && readOnly.length === 0;
 
   return (
-    <div className={styles.page}>
-      <PageHeader title={SCREENS.requests.heading} lead={SCREENS.requests.lead} size="page" />
+    <div className={kit.screen}>
+      <ScreenHead title={SCREENS.requests.heading} tryNow />
       <RoleBanner onMakeHomeBase={() => setDialogOpen(true)} />
       <GmailTokenBanner />
       <ClickNotice />
       <MemorySaverTip />
       <ShortcutTip />
 
-      {nothing ? (
-        role === 'active' ? (
-          <EmptyState icon="shield" title={REQUESTS.emptyTitle} body={REQUESTS.emptyBody} />
-        ) : null
-      ) : (
-        <div className={showRail ? `${styles.layout} ${styles.withRail}` : styles.layout}>
-          {showRail ? (
-            <PendingList
-              entries={list}
-              readOnly={readOnly}
-              readOnlyLabel={readOnlyLabel}
-              selectedId={selected?.requestId}
-              waitingCount={waiting}
-            />
-          ) : null}
-          {selected ? (
-            <ErrorBoundary>
-              <RequestDetail key={selected.requestId} entry={selected} />
-            </ErrorBoundary>
-          ) : null}
+      <div className={styles.grid}>
+        <div className={styles.main}>
+          {nothing ? (
+            role === 'active' ? (
+              <div className={`${kit.glass} ${styles.empty}`}>
+                <EmptyState icon="shield" title={REQUESTS.emptyTitle} body={REQUESTS.emptyBody} />
+              </div>
+            ) : null
+          ) : (
+            <>
+              {showRail ? (
+                <PendingList
+                  entries={list}
+                  readOnly={readOnly}
+                  readOnlyLabel={readOnlyLabel}
+                  selectedId={selected?.requestId}
+                  waitingCount={waiting}
+                />
+              ) : null}
+              {selected ? (
+                <ErrorBoundary>
+                  <RequestDetail key={selected.requestId} entry={selected} />
+                </ErrorBoundary>
+              ) : null}
+            </>
+          )}
         </div>
-      )}
 
-      <RecentRequests recent={recent} now={now} />
+        <div className={styles.side}>
+          <div className={`${kit.glassSm} ${styles.sideCard}`}>
+            <h2 className={kit.sectionTitle}>{REQUESTS.howTitle}</h2>
+            <p className={kit.small}>{REQUESTS.howBody}</p>
+          </div>
+          <RecentRequests recent={recent} now={now} />
+          <p className={kit.sentence}>{SENTENCE}</p>
+        </div>
+      </div>
+
       <MakeHomeBaseDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
     </div>
   );

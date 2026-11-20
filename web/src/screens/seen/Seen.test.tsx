@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import type { Receipt } from '@sieve/shared';
-import { SEEN, fillText } from '@/copy/screens-controls';
+import { CONSOLE, SEEN, fillText } from '@/copy/screens-controls';
 import { useAudit } from '@/state/audit';
 import { DEFAULT_RECEIPT_FILTERS, useReceipts, type ReceiptsState } from '@/state/receipts';
 import { useRecords, type RecordMeta } from '@/state/records';
@@ -87,6 +87,11 @@ function renderSeen() {
   return render(<RouterProvider router={router} />);
 }
 
+/** The receipt rows of the table (without its header row). */
+function receiptRows(): HTMLElement[] {
+  return within(screen.getByRole('table', { name: SEEN.listLabel })).getAllByRole('row').slice(1);
+}
+
 const sentence = (text: string) => (_: string, el: Element | null) =>
   el !== null && el.textContent === text && Array.from(el.children).every((c) => c.textContent !== text);
 
@@ -129,14 +134,23 @@ describe('What has AI seen?', () => {
     renderSeen();
     expect(screen.getByText(SEEN.empty)).toBeInTheDocument();
     expect(screen.queryByText(SEEN.show)).not.toBeInTheDocument();
+    // The head: no range pill without receipts, and the white link to the demo computer.
+    expect(screen.queryByRole('button', { name: SEEN.range30d })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: CONSOLE.tryNow })).toHaveAttribute('href', '/try');
     await expectNoAxeViolations();
   });
 
   it('writes each row as what left, who asked, and how it was decided', async () => {
     setReceipts([delivered, pending, inAppFull, blocked, declined, expired, missing, revoked]);
     renderSeen();
-    const list = screen.getByRole('list', { name: SEEN.listLabel });
-    const rows = within(list).getAllByRole('listitem');
+    // The four numbers: 4 shares in 30 days (delivered, pending, missing, revoked; the in-app full item from 2025
+    // counts for characters and whole items, not for the 30 days), their characters, one whole item, 2 blocked or
+    // declined.
+    expect(screen.getByText(SEEN.statShares).previousElementSibling).toHaveTextContent('4');
+    expect(screen.getByText(SEEN.statChars).previousElementSibling).toHaveTextContent('2,287');
+    expect(screen.getByText(SEEN.statFull).previousElementSibling).toHaveTextContent('1');
+    expect(screen.getByText(SEEN.statBlocked).previousElementSibling).toHaveTextContent('2');
+    const rows = receiptRows();
     expect(rows).toHaveLength(8);
 
     const [r1, r2, r3, r4, r5, r6, r7, r8] = rows;
@@ -187,13 +201,13 @@ describe('What has AI seen?', () => {
     expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual([SEEN.all, 'Gemini (in Sieve)', AI]);
     await user.click(within(group).getByRole('button', { name: 'Gemini (in Sieve)' }));
     expect(useReceipts.getState().filters.ai).toBe('Gemini (in Sieve)');
-    expect(screen.getAllByRole('listitem')).toHaveLength(1);
+    expect(receiptRows()).toHaveLength(1);
     await expectNoAxeViolations();
 
     await user.click(within(group).getByRole('button', { name: SEEN.all }));
     await user.selectOptions(screen.getByLabelText(SEEN.sourceLabel), SEEN.sourceUpload);
     expect(useReceipts.getState().filters.source).toBe('upload');
-    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    expect(receiptRows()).toHaveLength(2);
 
     await user.selectOptions(screen.getByLabelText(SEEN.whenLabel), SEEN.rangeToday);
     expect(useReceipts.getState().filters.range).toBe('today');
@@ -201,7 +215,25 @@ describe('What has AI seen?', () => {
     await expectNoAxeViolations();
     await user.click(screen.getByRole('button', { name: SEEN.clearFilters }));
     expect(useReceipts.getState().filters).toEqual(DEFAULT_RECEIPT_FILTERS);
-    expect(screen.getAllByRole('listitem')).toHaveLength(3);
+    expect(receiptRows()).toHaveLength(3);
+  });
+
+  it('turns the 30-day range on and off from the pill in the head', async () => {
+    const user = userEvent.setup();
+    setReceipts([delivered, pending, inAppFull]);
+    renderSeen();
+    const pill = screen.getByRole('button', { name: SEEN.range30d });
+    expect(pill).toHaveAttribute('aria-pressed', 'false');
+    await user.click(pill);
+    expect(useReceipts.getState().filters.range).toBe('30d');
+    expect(pill).toHaveAttribute('aria-pressed', 'true');
+    // The in-app full item is from 2025, so it drops out; the When filter shows the same range.
+    expect(receiptRows()).toHaveLength(2);
+    expect(screen.getByLabelText(SEEN.whenLabel)).toHaveValue('30d');
+    await expectNoAxeViolations();
+    await user.click(pill);
+    expect(useReceipts.getState().filters.range).toBe('any');
+    expect(receiptRows()).toHaveLength(3);
   });
 
   it('confirms a revoke, then says so and disables the row', async () => {

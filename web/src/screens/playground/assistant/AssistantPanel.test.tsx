@@ -237,12 +237,12 @@ describe('AssistantPanel', () => {
     expect(within(li).getByText('question')).toBeInTheDocument();
     expect(within(li).getByText(ARGS.question)).toBeInTheDocument();
     expect(within(li).getByText('from')).toBeInTheDocument();
-    expect(within(li).getByTestId('call-wait')).toHaveTextContent('Waiting for your approval Approve or deny it under "Sieve on this device".');
+    expect(within(li).getByTestId('call-wait')).toHaveTextContent('Waiting for your approval Approve or decline it under "Sieve on this device".');
     const approval = screen.getByRole('article', { name: 'Request from Gemini in the cloud' });
     expect(within(approval).getByTestId('outgoing-text')).toHaveTextContent(DEPOSIT_ANSWER);
     await expectNoAxeViolations(container);
 
-    await userEvent.click(within(approval).getByRole('button', { name: 'Approve and send' }));
+    await userEvent.click(within(approval).getByRole('button', { name: 'Approve, 41 characters' }));
     expect(decide).toHaveBeenCalledWith({ requestId: REQ, approved: true, step: 'answer', decidedBy: 'app' });
     finish();
   });

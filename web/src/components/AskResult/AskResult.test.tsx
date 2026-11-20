@@ -7,7 +7,7 @@ import { createAskStore } from '@/state/ask';
 import { useRecords } from '@/state/records';
 import { expectNoAxeViolations } from '@/test/axe';
 import { DEPOSIT_ANSWER, landlordReady, traceSteps } from '../__fixtures__/proposals';
-import { AskResult } from './AskResult';
+import { AskResult, likelyMatches, searchedLine } from './AskResult';
 
 vi.mock('@/index', () => ({ openDb: () => ({}), getRecord: async () => undefined }));
 
@@ -67,14 +67,19 @@ describe('AskResult', () => {
       useAsk.setState({ phase: 'ready', requestId: 'r1', proposal: landlordReady, step: 'answer', approveAndDraft });
     });
     renderResult();
+    // F3: the question as a bubble, the searched line, the item chip, the answer and the gate with the exact text.
+    expect(screen.getByText(landlordReady.question)).toBeInTheDocument();
+    expect(screen.getByText('Searched this computer · picked 1')).toBeInTheDocument();
+    expect(screen.getByTestId('answer-headline').textContent).toBe(DEPOSIT_ANSWER);
+    expect(screen.getByRole('heading', { name: 'Send this to Gemini in the cloud?' })).toBeInTheDocument();
     expect(screen.getByTestId('outgoing-text').textContent).toBe(DEPOSIT_ANSWER);
     expect(screen.getByLabelText('Instruction for the cloud model')).toHaveValue('Draft a short, polite reply.');
     await expectNoAxeViolations();
-    await userEvent.click(screen.getByRole('button', { name: 'Draft a reply with the cloud model' }));
+    await userEvent.click(screen.getByRole('button', { name: `Approve, ${DEPOSIT_ANSWER.length + 'Draft a short, polite reply.'.length} characters` }));
     expect(approveAndDraft).toHaveBeenCalledOnce();
-    expect(await screen.findByRole('heading', { name: 'Draft from the cloud model' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Gemini drafted a reply from those 69 characters alone' })).toBeInTheDocument();
     expect(screen.getByTestId('trace-total')).toHaveTextContent('69 characters left this device');
-    expect(screen.getByText(/Sent only the answer to the cloud model/)).toHaveFocus();
+    expect(screen.getByText('sent 69 characters to Gemini · receipt #rc1').closest('p')).toHaveFocus();
     await expectNoAxeViolations();
   });
 
@@ -83,16 +88,16 @@ describe('AskResult', () => {
       useAsk.setState({ phase: 'ready', requestId: 'r1', proposal: landlordReady, step: 'answer' });
     });
     renderResult(false);
-    expect(screen.getByRole('button', { name: 'Draft a reply with the cloud model' })).toHaveAccessibleDescription("You're offline. Drafting needs the cloud model.");
+    expect(screen.getByRole('button', { name: /^Approve, [\d,]+ characters$/ })).toHaveAccessibleDescription("You're offline. Drafting needs the cloud model.");
   });
 
-  it('keep local: "Use it here, share nothing" keeps it on the device', async () => {
+  it('keep local: "Keep it here" keeps it on the device', async () => {
     const keepLocal = vi.fn(() => useAsk.setState({ phase: 'done', outcome: { kind: 'kept-local' } }));
     act(() => {
       useAsk.setState({ phase: 'ready', requestId: 'r1', proposal: landlordReady, step: 'answer', keepLocal });
     });
     renderResult();
-    await userEvent.click(screen.getByRole('button', { name: 'Use it here, share nothing' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Keep it here' }));
     expect(keepLocal).toHaveBeenCalledOnce();
     expect(await screen.findByText('Kept on this device. Nothing was shared.')).toHaveFocus();
   });
@@ -107,5 +112,14 @@ describe('AskResult', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(ask).toHaveBeenCalledOnce();
     await expectNoAxeViolations();
+  });
+
+  it('the searched line uses real numbers only: the index size and the items a model read', () => {
+    expect(likelyMatches(landlordReady.trace)).toBe(3);
+    expect(searchedLine(46, 1)).toBe('Searched 46 items on this computer · picked 1 · the other 45 were never read by a model');
+    expect(searchedLine(46, 3)).toBe('Searched 46 items on this computer · picked 1 · 43 were never read by a model');
+    expect(searchedLine(2, 1)).toBe('Searched 2 items on this computer · picked 1 · the other one was never read by a model');
+    expect(searchedLine(1204, undefined)).toBe('Searched 1,204 items on this computer · picked 1');
+    expect(searchedLine(undefined, 3)).toBe('Searched this computer · picked 1');
   });
 });

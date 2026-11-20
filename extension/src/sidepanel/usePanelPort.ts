@@ -1,12 +1,14 @@
-// The panel's port to the service worker (50 section 8.1). Opens `sieve-panel`, says hello with its visibility
-// and window id, pings every 20 s while visible, reconnects after 250 ms, 1 s, 2 s, then every 5 s, and closes
-// the panel when the shortcut asks (50 section 8.9). Selection and announcements live in the same reducer, so
-// they change only when a message arrives or the person acts, never in an effect.
+// The panel's port to the service worker (50 section 8.1). Opens `sieve-panel`, says hello with its visibility,
+// window id and surface (popup or side panel), pings every 20 s while visible, reconnects after 250 ms, 1 s, 2 s,
+// then every 5 s, and closes the page when the shortcut asks (50 section 8.9). A popup closes whenever it loses
+// focus; its port goes with it and a new popup starts fresh. Selection and announcements live in the same
+// reducer, so they change only when a message arrives or the person acts, never in an effect.
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import type { ProposalPreview } from '@sieve/shared';
 import { PANEL_PORT_NAME } from '../shared/internal';
-import type { DecideRejection, PanelState, PanelToWorker, WorkerToPanel } from '../shared/internal';
+import type { DecideRejection, PanelState, PanelToWorker, ResolvedEntry, Surface, WorkerToPanel } from '../shared/internal';
 import { newRequestAnnouncement, requesterName, resultCopy } from '../shared/labels';
+import { detectSurface } from './surface';
 
 export const RECONNECT_MS = [250, 1_000, 2_000, 5_000] as const;
 export const PING_MS = 20_000;
@@ -19,13 +21,31 @@ export interface PanelApi {
   };
   getWindowId?: () => Promise<number | undefined>;
   closePanel: () => void;
+  /** Where the page is showing; 'panel' when left out. */
+  surface?: Surface;
+  /** Opens the side panel in this window (the popup's "Keep open on the side"); rejects when Chrome refuses. */
+  openSidePanel?: () => Promise<void>;
 }
 
 export function chromePanelApi(): PanelApi {
+  let windowId: number | undefined;
+  const getWindowId = () =>
+    chrome.windows.getCurrent().then((w) => {
+      windowId = w.id;
+      return w.id;
+    });
   return {
     runtime: chrome.runtime,
-    getWindowId: () => chrome.windows.getCurrent().then((w) => w.id),
+    getWindowId,
     closePanel: () => window.close(),
+    surface: detectSurface(),
+    // Called from the click, so Chrome sees the person's gesture. The window id is read once at start, so
+    // nothing is awaited before sidePanel.open() unless that read has not come back yet.
+    openSidePanel: async () => {
+      const id = windowId ?? (await getWindowId());
+      if (id === undefined) throw new Error('no window');
+      await chrome.sidePanel.open({ windowId: id });
+    },
   };
 }
 
@@ -50,6 +70,12 @@ function firstWaiting(proposals: ProposalPreview[], except?: string): string | n
   return proposals.find((p) => p.requestId !== except)?.requestId ?? null;
 }
 
+/** The newest result of a decision made in this extension (approved, declined or lost here), not yet Done. A page
+ *  that opens shows it first, so a popup closed during the approve animation reopens on the plain result card. */
+function lastDecidedHere(resolved: ResolvedEntry[]): ResolvedEntry | undefined {
+  return resolved.find((r) => r.decidedHere && (r.outcome === 'approved' || r.outcome === 'declined' || r.outcome === 'lost'));
+}
+
 function announce(model: PanelModel, text: string): PanelModel['announcement'] {
   return { text, seq: (model.announcement?.seq ?? 0) + 1 };
 }
@@ -61,10 +87,11 @@ export function panelReducer(model: PanelModel, action: PanelAction): PanelModel
       const dismissed = model.dismissed.filter((id) => st.resolved.some((r) => r.requestId === id));
       const resolvedShown = st.resolved.filter((r) => !dismissed.includes(r.requestId));
       const sel = model.selectedId;
-      const keep = sel !== null && (st.proposals.some((p) => p.requestId === sel) || resolvedShown.some((r) => r.requestId === sel));
-      const selectedId = keep ? sel : firstWaiting(st.proposals);
-      let announcement = model.announcement;
       const prev = model.state;
+      const keep = sel !== null && (st.proposals.some((p) => p.requestId === sel) || resolvedShown.some((r) => r.requestId === sel));
+      const reopened = prev === null && sel === null ? lastDecidedHere(resolvedShown) : undefined;
+      const selectedId = keep ? sel : (reopened?.requestId ?? firstWaiting(st.proposals));
+      let announcement = model.announcement;
       if (prev) {
         const justResolved = sel !== null && prev.proposals.some((p) => p.requestId === sel)
           ? resolvedShown.find((r) => r.requestId === sel)
@@ -130,7 +157,9 @@ export function usePanelPort(api: PanelApi): PanelPort {
         // disconnected; onDisconnect reconnects
       }
     };
-    const hello = () => post({ type: 'panel/hello', visible: visible(), ...(windowId !== undefined ? { windowId } : {}) });
+    const surface = api.surface ?? 'panel';
+    const hello = () =>
+      post({ type: 'panel/hello', visible: visible(), ...(windowId !== undefined ? { windowId } : {}), surface });
 
     const onMessage = (raw: unknown) => {
       if (!isWorkerMessage(raw)) return;

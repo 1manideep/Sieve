@@ -530,6 +530,8 @@ None of these calls needs the `tabs` permission (it only gates reading a tab's U
 
 ## 8. Side panel
 
+**Surface change (Nov 20):** the toolbar icon now opens this page as the action popup (`action.default_popup: "sidepanel/index.html"`), 400 px wide and as tall as its content up to Chrome's 600 px cap, the main area scrolling after that. The side panel stays as a second surface: "Keep open on the side" in the popup's footer opens it, and the side panel hides that button. The worker sets `openPanelOnActionClick: false`; the shortcut and a notification click call `chrome.action.openPopup()` and fall back to the side panel (then, for a notification, the Sieve tab). `minimum_chrome_version` is 127 for `openPopup`. `panel/hello` carries `surface: 'popup' | 'panel'` (the page checks `chrome.extension.getViews({ type: 'popup' })`). A popup closes when it loses focus: the decision is already sent, and a page that opens shows the newest result decided here as the plain card, never the animation.
+
 React 18.3 + TypeScript + CSS Modules, the same stack as `web/`, so components and tests look the same. Fonts are bundled from `@fontsource/inter` (400, 500, 600) and `@fontsource/space-grotesk` (600, 700), both SIL Open Font License. No Google Fonts link: the CSP forbids remote fonts and it would tell Google when the panel opens.
 
 ### 8.1 Internal messages (`src/shared/internal.ts`)

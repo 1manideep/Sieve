@@ -1,6 +1,8 @@
 // Playground (`/playground`, 40 sections 13.9 and 13.2a): a pretend computer with sample mail, photos and documents,
-// no login. The golden path runs through useAskPlayground on the Playground database (40 section 12).
-import { useEffect, useState, useSyncExternalStore } from 'react';
+// no login. The golden path runs through useAskPlayground on the Playground database (40 section 12). The final
+// design: the public header with the Ask / What has AI seen? tabs, a quiet device row (the model toggle, the setup and
+// extension strips), then F2 (the prompt card over "What is on this computer") or F3 (the conversation).
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
 import { TITLES } from '@/copy/strings';
@@ -10,8 +12,8 @@ import { useDb } from '@/components/dbTables';
 import { DeviceFrame } from '@/components/DeviceFrame/DeviceFrame';
 import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary';
 import { ItemViewer } from '@/components/ItemViewer/ItemViewer';
+import { NoticeRow } from '@/components/AskResult/NoticeRow';
 import { ModelSetupPanel } from '@/components/ModelSetupPanel/ModelSetupPanel';
-import { Notice } from '@/components/Notice/Notice';
 import { ProgressBar } from '@/components/ProgressBar/ProgressBar';
 import { Tag } from '@/components/Tag/Tag';
 import { TraceList } from '@/components/TraceList/TraceList';
@@ -28,12 +30,13 @@ import { useSession } from '@/state/session';
 import { useToasts } from '@/state/toasts';
 import type { TraceStep } from '@sieve/shared';
 import { AssistantLauncher } from './assistant/AssistantLauncher';
+import { AskPanel } from './AskPanel';
 import { ExtensionStrip } from './ExtensionStrip';
-import { FilesWindow } from './FilesWindow';
+import { FilesWindow, type FilesWindowHandle } from './FilesWindow';
 import { ModelToggle } from './ModelToggle';
 import { PlaygroundHeader } from './PlaygroundHeader';
-import { answeredInCloud, answeredOnDevice, isOwnItem, playgroundModel, selectMs } from './playgroundModel';
-import { SieveWindow } from './SieveWindow';
+import { answeredInCloud, answeredOnDevice, isOwnItem, modelTag, playgroundModel, selectMs } from './playgroundModel';
+import { PlaygroundReceipts } from './PlaygroundReceipts';
 import styles from './playground.module.css';
 
 const NARROW = '(max-width: 1023px)';
@@ -87,10 +90,13 @@ export function PlaygroundScreen() {
   const db = useDb('playground');
   const narrow = useMediaQuery(NARROW);
   const model = playgroundModel(text, setup.state, pg.simulate);
+  const tag = modelTag(model);
   const [viewing, setViewing] = useState<string | null>(null);
   const [slowSeed, setSlowSeed] = useState(false);
   const [switched, setSwitched] = useState(false);
   const [before, setBefore] = useState<{ trace: TraceStep[]; ms: number; requestId?: string } | null>(null);
+  const files = useRef<FilesWindowHandle | null>(null);
+  const ids = { ask: useId(), seen: useId(), askPanel: useId(), seenPanel: useId() };
 
   // Mount: the auth listener and anonymous sign-in (non-blocking), seed the device, local receipts, and this tab's
   // port to the extension (50 section 11). Unmount: the port closes and the simulation ends here.
@@ -218,24 +224,24 @@ export function PlaygroundScreen() {
     ) : undefined;
 
   const storageBlocked = typeof indexedDB === 'undefined' || /storage|indexeddb/i.test(pg.error ?? '');
-  let setupNotice;
+  let setupNotice: ReactNode;
   if (pg.status === 'error') {
     setupNotice = storageBlocked ? (
-      <Notice tone="warning" live>
+      <NoticeRow tone="warning" live>
         <p>{PLAYGROUND_COPY.storageBlocked}</p>
-      </Notice>
+      </NoticeRow>
     ) : (
-      <Notice
+      <NoticeRow
         tone="warning"
         live
         actions={
-          <Button variant="secondary" size="sm" onClick={() => usePlayground.getState().start().catch(report)}>
+          <Button variant="ghost" size="sm" onClick={() => usePlayground.getState().start().catch(report)}>
             {PLAYGROUND_COPY.tryAgain}
           </Button>
         }
       >
         <p>{PLAYGROUND_COPY.seedError}</p>
-      </Notice>
+      </NoticeRow>
     );
   } else if (slowSeed && (pg.status === 'opening' || pg.status === 'seeding' || pg.status === 'resetting')) {
     const { done, total } = pg.seedProgress;
@@ -247,18 +253,24 @@ export function PlaygroundScreen() {
     );
   }
 
+  // Before a question (or while the sample data is still being set up) the Ask tab is F2, whose headline is the h1.
+  const hero = pg.tab === 'ask' && (phase === 'idle' || setupNotice !== undefined);
+  const tabs = { tab: pg.tab, onTab: (t: 'ask' | 'seen') => usePlayground.getState().setTab(t), seenCount: receipts.length, ids };
+
   return (
     <div className={styles.screen}>
-      <PlaygroundHeader onReset={reset} />
+      <PlaygroundHeader onReset={reset} tabs={tabs} />
       <main id="main" tabIndex={-1} className={styles.main}>
-        <h1 className="visually-hidden">{PLAYGROUND_COPY.heading}</h1>
+        {hero ? null : <h1 className="visually-hidden">{PLAYGROUND_COPY.heading}</h1>}
         <ErrorBoundary>
           <DeviceFrame
             label={PLAYGROUND_COPY.toolbarLabel}
+            controlsAt="bottom"
             toolbar={
               <>
                 <span className={styles.modelLabel}>{PLAYGROUND_COPY.modelLabel}</span>
                 <ModelToggle model={model} onSimulate={simulate} />
+                <Tag tone={tag.tone}>{tag.text}</Tag>
               </>
             }
             strip={
@@ -271,32 +283,40 @@ export function PlaygroundScreen() {
               </div>
             }
           >
-            <SieveWindow
+            <AskPanel
+              id={ids.askPanel}
+              labelledBy={ids.ask}
+              hidden={pg.tab !== 'ask'}
               model={model}
-              tab={pg.tab}
-              onTab={(t) => usePlayground.getState().setTab(t)}
               suggestions={suggestions}
-              receipts={receipts}
               online={online}
               onAsk={ask}
+              onSeeReceipts={() => usePlayground.getState().setTab('seen')}
               headerSlot={headerSlot}
               sampleData={!isOwnItem(proposal)}
               nanoSettingUp={model === 'setting-up'}
               setupNotice={setupNotice}
+              onAttach={() => files.current?.pickFiles()}
+              computer={
+                <FilesWindow
+                  pickRef={files}
+                  db={db}
+                  added={pg.added}
+                  openFolder={pg.openFolder}
+                  onOpenFolder={(f) => usePlayground.getState().setOpenFolder(f)}
+                  onOpenItem={setViewing}
+                  composing={pg.composing}
+                  onComposing={(on) => usePlayground.getState().setComposing(on)}
+                  onAddFiles={(files) => void addFiles(files)}
+                  onAddTestEmail={(input) => void addTestEmail(input)}
+                  liveCaptions={image === 'available' && !pg.simulate}
+                  narrow={narrow}
+                />
+              }
             />
-            <FilesWindow
-              db={db}
-              added={pg.added}
-              openFolder={pg.openFolder}
-              onOpenFolder={(f) => usePlayground.getState().setOpenFolder(f)}
-              onOpenItem={setViewing}
-              composing={pg.composing}
-              onComposing={(on) => usePlayground.getState().setComposing(on)}
-              onAddFiles={(files) => void addFiles(files)}
-              onAddTestEmail={(input) => void addTestEmail(input)}
-              liveCaptions={image === 'available' && !pg.simulate}
-              narrow={narrow}
-            />
+            <div id={ids.seenPanel} role="tabpanel" aria-labelledby={ids.seen} hidden={pg.tab !== 'seen'} className={styles.seenPanel}>
+              <PlaygroundReceipts receipts={receipts} />
+            </div>
           </DeviceFrame>
         </ErrorBoundary>
         <AssistantLauncher />

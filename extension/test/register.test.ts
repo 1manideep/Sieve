@@ -45,6 +45,8 @@ describe('start', () => {
   it('sets the panel behaviour and badge colours, then the disconnected badge after the grace period', () => {
     register(fc.api);
     expect(fc.calls.slice(0, 3)).toEqual(['sidePanel.setPanelBehavior', 'action.setBadgeBackgroundColor', 'action.setBadgeTextColor']);
+    // The icon opens the popup, so the side panel must not take the click (Chrome keeps the old setting otherwise).
+    expect(fc.behaviors).toEqual([{ openPanelOnActionClick: false }]);
     expect(fc.badge).toMatchObject({ color: '#B91C1C', textColor: '#FFFFFF' });
     fc.badge.text = '3'; // left over from before a worker restart
     vi.advanceTimersByTime(1_999);
@@ -218,7 +220,36 @@ describe('notifications', () => {
     expect(fc.notifications.size).toBe(0);
   });
 
-  it('a click opens the side panel in the owner window, synchronously', async () => {
+  it('a click opens the popup in the owner window, synchronously', async () => {
+    register(fc.api);
+    const page = await connectedPage(true, pageSender({ tab: { id: 11, windowId: 7 } }));
+    page.postMessage(pending([DEPOSIT]));
+    await flush();
+    fc.calls.length = 0;
+    fc.raw.notifications.onClicked.emit(`sieve-req-${DEPOSIT.requestId}`);
+    expect(fc.calls[0]).toBe('action.openPopup');
+    expect(fc.popups).toEqual([{ windowId: 7 }]);
+    await flush();
+    expect(fc.opened).toEqual([]);
+    expect(fc.notifications.size).toBe(0);
+    expect(fc.tabUpdates).toEqual([]);
+  });
+
+  it('a click falls back to the side panel when openPopup rejects', async () => {
+    fc = createFakeChrome({ openPopup: 'rejects' });
+    register(fc.api);
+    const page = await connectedPage(true, pageSender({ tab: { id: 11, windowId: 7 } }));
+    page.postMessage(pending([DEPOSIT]));
+    await flush();
+    fc.raw.notifications.onClicked.emit(`sieve-req-${DEPOSIT.requestId}`);
+    await flush();
+    expect(fc.popups).toEqual([{ windowId: 7 }]);
+    expect(fc.opened).toEqual([{ windowId: 7 }]);
+    expect(fc.tabUpdates).toEqual([]);
+  });
+
+  it('without openPopup (Chrome before 127), a click opens the side panel synchronously', async () => {
+    fc = createFakeChrome({ openPopup: 'missing' });
     register(fc.api);
     const page = await connectedPage(true, pageSender({ tab: { id: 11, windowId: 7 } }));
     page.postMessage(pending([DEPOSIT]));
@@ -227,13 +258,10 @@ describe('notifications', () => {
     fc.raw.notifications.onClicked.emit(`sieve-req-${DEPOSIT.requestId}`);
     expect(fc.calls[0]).toBe('sidePanel.open');
     expect(fc.opened).toEqual([{ windowId: 7 }]);
-    await flush();
-    expect(fc.notifications.size).toBe(0);
-    expect(fc.tabUpdates).toEqual([]);
   });
 
-  it('a click falls back to focusing the Sieve tab when sidePanel.open rejects', async () => {
-    fc = createFakeChrome({ sidePanelOpenRejects: true });
+  it('a click falls back to focusing the Sieve tab when the popup and the side panel both fail', async () => {
+    fc = createFakeChrome({ openPopup: 'rejects', sidePanelOpenRejects: true });
     register(fc.api);
     const page = await connectedPage(true, pageSender({ tab: { id: 11, windowId: 7 } }));
     page.postMessage(pending([DEPOSIT]));
@@ -249,6 +277,7 @@ describe('notifications', () => {
     register(fc.api);
     fc.raw.notifications.onClicked.emit('something-else');
     expect(fc.opened).toEqual([]);
+    expect(fc.popups).toEqual([]);
   });
 });
 
@@ -376,30 +405,83 @@ describe('panel ports', () => {
 });
 
 describe('the open-sieve shortcut (50 section 8.9)', () => {
-  it('calls sidePanel.open synchronously, before any other API call', () => {
+  it('opens the popup with action.openPopup, synchronously, before any other API call', () => {
     register(fc.api);
     fc.calls.length = 0;
     fc.raw.commands.onCommand.emit('open-sieve', { windowId: 5 });
     // Nothing was awaited: the call happened inside the same task as the gesture.
+    expect(fc.calls).toEqual(['action.openPopup']);
+    expect(fc.popups).toEqual([{ windowId: 5 }]);
+    expect(fc.opened).toEqual([]);
+  });
+
+  it('falls back to the side panel when openPopup rejects', async () => {
+    fc = createFakeChrome({ openPopup: 'rejects' });
+    const reg = register(fc.api);
+    expect(reg.handleCommand('open-sieve', { windowId: 5 })).toBe('popup');
+    await flush();
+    expect(fc.popups).toEqual([{ windowId: 5 }]);
+    expect(fc.opened).toEqual([{ windowId: 5 }]);
+  });
+
+  it('without openPopup (Chrome before 127), calls sidePanel.open synchronously, before any other API call', () => {
+    fc = createFakeChrome({ openPopup: 'missing' });
+    register(fc.api);
+    fc.calls.length = 0;
+    fc.raw.commands.onCommand.emit('open-sieve', { windowId: 5 });
     expect(fc.calls).toEqual(['sidePanel.open']);
     expect(fc.opened).toEqual([{ windowId: 5 }]);
   });
 
-  it('closes the panel open in that window, and opens one in a window without a panel', () => {
+  it('closes the popup open in that window, and a second press opens it again', () => {
+    const reg = register(fc.api);
+    const popup = fc.connectPanel();
+    popup.postMessage({ type: 'panel/hello', visible: true, windowId: 5, surface: 'popup' });
+    fc.calls.length = 0;
+    expect(reg.handleCommand('open-sieve', { windowId: 5 })).toBe('close');
+    expect(popup.ofType('panel/close')).toEqual([{ type: 'panel/close' }]);
+    expect(fc.calls).toEqual([]); // the popup closes itself; the side panel is not touched
+    popup.disconnect(); // window.close(): the port goes with the page
+    expect(reg.handleCommand('open-sieve', { windowId: 5 })).toBe('popup');
+    expect(fc.popups).toEqual([{ windowId: 5 }]);
+  });
+
+  it('closes the side panel open in that window, and opens the popup in a window without one', () => {
     fc = createFakeChrome({ withSidePanelClose: true });
     const reg = register(fc.api);
     const panel = fc.connectPanel();
-    panel.postMessage({ type: 'panel/hello', visible: true, windowId: 5 });
+    panel.postMessage({ type: 'panel/hello', visible: true, windowId: 5, surface: 'panel' });
     fc.calls.length = 0;
     expect(reg.handleCommand('open-sieve', { windowId: 5 })).toBe('close');
     expect(panel.ofType('panel/close')).toEqual([{ type: 'panel/close' }]);
     expect(fc.closed).toEqual([{ windowId: 5 }]);
     expect(fc.calls).toEqual(['sidePanel.close']);
-    expect(reg.handleCommand('open-sieve', { windowId: 6 })).toBe('open');
-    expect(fc.opened).toEqual([{ windowId: 6 }]);
+    expect(reg.handleCommand('open-sieve', { windowId: 6 })).toBe('popup');
+    expect(fc.popups).toEqual([{ windowId: 6 }]);
     panel.disconnect(); // the panel closed itself
-    expect(reg.handleCommand('open-sieve', { windowId: 5 })).toBe('open');
-    expect(fc.opened).toEqual([{ windowId: 6 }, { windowId: 5 }]);
+    expect(reg.handleCommand('open-sieve', { windowId: 5 })).toBe('popup');
+    expect(fc.popups).toEqual([{ windowId: 6 }, { windowId: 5 }]);
+    expect(fc.opened).toEqual([]);
+  });
+
+  it('a hello without a surface counts as the side panel', () => {
+    fc = createFakeChrome({ openPopup: 'missing' });
+    const reg = register(fc.api);
+    const panel = fc.connectPanel();
+    panel.postMessage({ type: 'panel/hello', visible: true, windowId: 8 });
+    expect(reg.panelViews()).toEqual([{ surface: 'panel', visible: true, windowId: 8 }]);
+    expect(reg.handleCommand('open-sieve', { windowId: 8 })).toBe('close');
+  });
+
+  it('closes the popup first when a popup and the side panel share the window', () => {
+    const reg = register(fc.api);
+    const panel = fc.connectPanel();
+    panel.postMessage({ type: 'panel/hello', visible: true, windowId: 5, surface: 'panel' });
+    const popup = fc.connectPanel();
+    popup.postMessage({ type: 'panel/hello', visible: true, windowId: 5, surface: 'popup' });
+    expect(reg.handleCommand('open-sieve', { windowId: 5 })).toBe('close');
+    expect(popup.ofType('panel/close')).toHaveLength(1);
+    expect(panel.ofType('panel/close')).toHaveLength(0);
   });
 
   it('without sidePanel.close, only the panel/close message closes it', () => {
@@ -416,5 +498,76 @@ describe('the open-sieve shortcut (50 section 8.9)', () => {
     expect(reg.handleCommand('something', { windowId: 1 })).toBe('ignored');
     expect(reg.handleCommand('open-sieve', undefined)).toBe('ignored');
     expect(fc.opened).toEqual([]);
+    expect(fc.popups).toEqual([]);
+  });
+});
+
+describe('the popup', () => {
+  it('panel/open-side opens the side panel in the popup window, then closes the popup', async () => {
+    const reg = register(fc.api);
+    const popup = fc.connectPanel();
+    popup.postMessage({ type: 'panel/hello', visible: true, windowId: 4, surface: 'popup' });
+    expect(reg.panelViews()).toEqual([{ surface: 'popup', visible: true, windowId: 4 }]);
+    popup.postMessage({ type: 'panel/open-side' });
+    await flush();
+    expect(fc.opened).toEqual([{ windowId: 4 }]);
+    expect(popup.ofType('panel/close')).toEqual([{ type: 'panel/close' }]);
+  });
+
+  it('panel/open-side keeps the popup open when Chrome refuses, and does nothing before the window is known', async () => {
+    fc = createFakeChrome({ sidePanelOpenRejects: true });
+    register(fc.api);
+    const early = fc.connectPanel();
+    early.postMessage({ type: 'panel/open-side' }); // no hello yet: no window
+    const popup = fc.connectPanel();
+    popup.postMessage({ type: 'panel/hello', visible: true, windowId: 4, surface: 'popup' });
+    popup.postMessage({ type: 'panel/open-side' });
+    await flush();
+    expect(fc.opened).toEqual([{ windowId: 4 }]);
+    expect(popup.ofType('panel/close')).toEqual([]);
+    expect(early.ofType('panel/close')).toEqual([]);
+  });
+
+  it('opening and closing it 50 times leaves no port behind and no extra state in the hub', async () => {
+    const reg = register(fc.api);
+    const page = await connectedPage(true, pageSender({ tab: { id: 11, windowId: 3 } }));
+    page.postMessage(pending([DEPOSIT]));
+    await flush();
+    const before = reg.view();
+    const notified = fc.calls.filter((c) => c === 'notifications.create').length;
+    for (let i = 0; i < 50; i++) {
+      const popup = fc.connectPanel();
+      popup.postMessage({ type: 'panel/hello', visible: true, windowId: 3, surface: 'popup' });
+      expect(lastState(popup)?.proposals).toEqual([DEPOSIT]); // every popup gets the current state at once
+      expect(reg.panelViews()).toHaveLength(1);
+      popup.disconnect(); // the popup lost focus and closed
+      expect(reg.panelViews()).toEqual([]);
+    }
+    expect(reg.hub.connCount()).toBe(1);
+    expect(reg.view()).toEqual(before);
+    // Nothing is posted to a closed popup, and with none open a new request notifies again.
+    page.postMessage(pending([DEPOSIT, LEASE]));
+    await flush();
+    expect(fc.calls.filter((c) => c === 'notifications.create').length).toBe(notified + 1);
+    expect([...fc.notifications.keys()]).toContain(`sieve-req-${LEASE.requestId}`);
+  });
+
+  it('a decision from a popup that closes at once still reaches the page, and the next popup sees the result', async () => {
+    const reg = register(fc.api);
+    const page = await connectedPage();
+    page.postMessage(pending([DEPOSIT]));
+    const popup = fc.connectPanel();
+    popup.postMessage({ type: 'panel/hello', visible: true, windowId: 1, surface: 'popup' });
+    popup.postMessage({ type: 'panel/decide', requestId: DEPOSIT.requestId, approved: true, step: 'answer' });
+    popup.disconnect();
+    expect(decisionsOn(page)).toHaveLength(1);
+    page.postMessage(resolved(DEPOSIT.requestId, 'approved'));
+    page.postMessage(pending([]));
+    const next = fc.connectPanel();
+    const st = lastState(next);
+    expect(st?.resolved).toHaveLength(1);
+    expect(st?.resolved[0]).toMatchObject({ requestId: DEPOSIT.requestId, outcome: 'approved', step: 'answer', decidedHere: true });
+    expect(st?.inflight).toEqual([]);
+    expect(reg.panelViews()).toEqual([{ surface: 'panel', visible: false }]); // connected, no hello yet
   });
 });

@@ -8,6 +8,7 @@ import {
   outgoingMeta,
   rejectionCopy,
   resultCopy,
+  sentHeading,
   stepLabel,
 } from '../src/shared/labels';
 import { cut, notificationMessage } from '../src/sw/notify';
@@ -24,6 +25,12 @@ describe('labels', () => {
   it('writes the outgoing meta line', () => {
     expect(outgoingMeta(41, 0)).toBe('41 characters');
     expect(outgoingMeta(1234, 2)).toBe('1,234 characters · 2 redacted');
+  });
+
+  it('writes the "Sent N characters to X" heading with a grouped count', () => {
+    expect(sentHeading(41, 'Gemini CLI')).toBe('Sent 41 characters to Gemini CLI');
+    expect(sentHeading(1234, 'Planner')).toBe('Sent 1,234 characters to Planner');
+    expect(COPY.openReceipt).toBe('Open the receipt');
   });
 
   it('uses the shared ladder labels', () => {
@@ -44,6 +51,7 @@ describe('labels', () => {
       collect(resultCopy({ outcome, decidedHere: false }));
     }
     for (const r of ['step-unavailable', 'unknown-request', 'not-ready', 'no-owner'] as const) collect(rejectionCopy(r));
+    collect(sentHeading(1234, 'Test assistant'));
     collect(notificationMessage('Test assistant'));
     expect(strings.length).toBeGreaterThan(40);
     for (const s of strings) expect(s).not.toMatch(/—/);

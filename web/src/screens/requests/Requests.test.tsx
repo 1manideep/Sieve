@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { CATEGORIES, type Proposal, type StepOption } from '@sieve/shared';
 import { DEPOSIT_ANSWER, landlordReady, option, unavailable } from '@/components/__fixtures__/proposals';
-import { HOME_BASE_DIALOG, REQUESTS, fillText } from '@/copy/screens-controls';
+import { CONSOLE, HOME_BASE_DIALOG, REQUESTS, fillText } from '@/copy/screens-controls';
 import { STATUS_POPOVER } from '@/copy/strings';
 import { useGrants } from '@/state/grants';
 import { useHomeBase, type HomeBaseState, type PendingEntry } from '@/state/homeBase';
@@ -135,9 +135,14 @@ describe('Requests', () => {
     renderRequests();
     expect(document.title).toBe('Requests · Sieve');
     expect(screen.getByRole('heading', { level: 1, name: 'Requests' })).toBeInTheDocument();
+    // The head ends with the white link to the demo computer.
+    expect(screen.getByRole('link', { name: CONSOLE.tryNow })).toHaveAttribute('href', '/try');
     expect(screen.getByText(REQUESTS.emptyTitle)).toBeInTheDocument();
     expect(screen.getByText(REQUESTS.emptyBody)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: REQUESTS.howTitle })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: REQUESTS.recentHeading })).toBeInTheDocument();
     expect(screen.getByText(REQUESTS.recentEmpty)).toBeInTheDocument();
+    expect(screen.getByText('Only what you approve leaves your computer.')).toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
@@ -183,7 +188,7 @@ describe('Requests', () => {
     const rail = screen.getByRole('navigation', { name: REQUESTS.pendingNav });
     expect(within(rail).getByText(fillText(REQUESTS.waitingOn, { label: 'Chrome on Windows' }))).toBeInTheDocument();
     expect(within(rail).queryByRole('link')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Approve and send' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: `Approve, ${DEPOSIT_ANSWER.length} characters` })).not.toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
@@ -254,9 +259,10 @@ describe('Requests', () => {
     ]);
     renderRequests();
     expect(screen.getByText('Reading 3 emails on this device…')).toBeInTheDocument();
-    expect(screen.getByText((_, el) => el?.tagName === 'FIGCAPTION' && el.textContent === `${AI} asks:`)).toBeInTheDocument();
+    // No item yet: the first line names the assistant and its step cap, without a category.
+    expect(screen.getByText(sentence(`${AI} asks · Answers only`))).toBeInTheDocument();
     expect(screen.getByText((_, el) => el?.tagName === 'BLOCKQUOTE' && el.textContent === '"What did my landlord say about the deposit?"')).toBeInTheDocument();
-    expect(screen.getByText((_, el) => el?.tagName === 'P' && el.textContent === `Asked for: Answer only. ${AI}'s access stops at Answer only.`)).toBeInTheDocument();
+    expect(screen.queryByText(REQUESTS.cellPicked)).not.toBeInTheDocument();
     // One entry and nothing done: no rail.
     expect(screen.queryByRole('navigation', { name: REQUESTS.pendingNav })).not.toBeInTheDocument();
     await expectNoAxeViolations();
@@ -266,13 +272,18 @@ describe('Requests', () => {
     const user = userEvent.setup();
     setEntries([entry()]);
     renderRequests();
+    // The card's first line, the question and the three cells.
+    expect(screen.getByText(sentence(`${AI} asks · Answers only · Home`))).toBeInTheDocument();
+    expect(screen.getByText(REQUESTS.cellSearched, { selector: 'dt' })).toBeInTheDocument();
+    expect(screen.getByText(REQUESTS.cellPicked, { selector: 'dt' }).nextElementSibling).toHaveTextContent('Re: Deposit for the apartment');
+    expect(screen.getByText(REQUESTS.cellWouldLeave, { selector: 'dt' }).nextElementSibling).toHaveTextContent(`${DEPOSIT_ANSWER.length} characters`);
     expect(screen.getByRole('radio', { name: '1 · Answer only' })).toBeChecked();
     expect(screen.getByRole('radio', { name: '2 · Excerpt' })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('radio', { name: '3 · Full email' })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByText(`Excerpt: ${REASON}`)).toBeInTheDocument();
     expect(screen.getByRole('region', { name: `Exactly what ${AI} would receive` })).toHaveTextContent(DEPOSIT_ANSWER);
     await expectNoAxeViolations();
-    await user.click(screen.getByRole('button', { name: 'Approve and send' }));
+    await user.click(screen.getByRole('button', { name: `Approve, ${DEPOSIT_ANSWER.length} characters` }));
     expect(decide).toHaveBeenCalledWith({ requestId: 'req-1', approved: true, step: 'answer', decidedBy: 'app' });
   });
 
@@ -280,7 +291,7 @@ describe('Requests', () => {
     const user = userEvent.setup();
     setEntries([entry()]);
     renderRequests();
-    await user.click(screen.getByRole('button', { name: 'Deny' }));
+    await user.click(screen.getByRole('button', { name: 'Decline' }));
     expect(decide).toHaveBeenCalledWith({ requestId: 'req-1', approved: false, step: undefined, decidedBy: 'app' });
   });
 
@@ -289,7 +300,7 @@ describe('Requests', () => {
     decide.mockResolvedValueOnce({ ok: false, reason: 'expired', message: 'This request expired. Nothing was sent.' });
     setEntries([entry()]);
     renderRequests();
-    await user.click(screen.getByRole('button', { name: 'Approve and send' }));
+    await user.click(screen.getByRole('button', { name: `Approve, ${DEPOSIT_ANSWER.length} characters` }));
     expect(await screen.findByText('This request expired. Nothing was sent.')).toBeInTheDocument();
     await expectNoAxeViolations();
   });
@@ -298,7 +309,7 @@ describe('Requests', () => {
     useNetwork.setState({ online: false });
     setEntries([entry()]);
     renderRequests();
-    expect(screen.getByRole('button', { name: 'Approve and send' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: `Approve, ${DEPOSIT_ANSWER.length} characters` })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByText(REQUESTS.blockedOffline)).toBeInTheDocument();
   });
 

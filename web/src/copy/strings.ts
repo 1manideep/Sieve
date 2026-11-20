@@ -15,6 +15,7 @@ export const TITLES = {
   seen: 'What has AI seen? · Sieve',
   settings: 'Settings · Sieve',
   notFound: 'Not found · Sieve',
+  how: 'How it works · Sieve',
 } as const;
 
 /** "({n}) " before every title while requests wait (40 section 5.1). */
@@ -44,6 +45,49 @@ export const NAV = {
   settings: 'Settings',
   playground: 'Playground',
   requestsWaiting: (n: number) => `Requests, ${n} waiting`,
+  // The left rail (docs/design/final-flow.md, F3 and F5)
+  newAsk: 'New ask',
+  tryComputer: 'Try on a real computer',
+  control: 'Control',
+  menu: 'Menu',
+  closeMenu: 'Close the menu',
+} as const;
+
+/** The Nano meter card at the bottom of the rail: short words next to "Gemini Nano", the index and the home base. */
+export const RAIL = {
+  nano: 'Gemini Nano',
+  nanoReady: 'ready',
+  nanoSettingUp: (pct: number) => `setting up ${pct}%`,
+  nanoDownloading: 'setting up',
+  nanoNotSetUp: 'not set up',
+  nanoNone: 'not available',
+  nanoChecking: 'checking',
+  index: 'Index',
+  indexing: (pct: number) => `indexing ${pct}%`,
+  indexingYielding: 'paused for your question',
+  indexingPaused: 'paused',
+  homeBase: 'Home base',
+  homeBaseOnline: 'online',
+  homeBaseOff: 'off',
+  homeBaseNeedsClick: 'needs a click',
+  homeBaseStandby: 'another tab',
+  homeBaseOther: 'another computer',
+  homeBaseStarting: 'starting',
+  offline: 'offline',
+} as const;
+
+/** The public header and footer (docs/design/final-flow.md, F1 and F2). */
+export const PUBLIC_NAV = {
+  label: 'Site',
+  openSource: 'Open source',
+  how: 'How it works',
+  playground: 'Playground',
+  tryComputer: 'Try on a real computer',
+  github: 'GitHub',
+  openSieve: 'Open Sieve',
+  menu: 'Menu',
+  closeMenu: 'Close the menu',
+  footer: 'Only what you approve leaves your computer.',
 } as const;
 
 /** Account menu (40 section 7.3). */
@@ -67,6 +111,8 @@ export const ROUTE_ERROR = {
   notFoundTitle: "This page isn't here.",
   goToAsk: 'Go to Ask',
   openPlayground: 'Open the Playground',
+  openSieve: 'Open Sieve',
+  notFoundLine: 'The address is wrong, or the page moved. Nothing was shared.',
   updatedTitle: 'Sieve was updated',
   updatedBody: 'Reload to get the new version.',
   reload: 'Reload',
@@ -148,8 +194,11 @@ export const ETA = {
 /** Screen headings and leads (40 section 13). The full screens arrive with WP5. */
 export const SCREENS = {
   welcome: {
-    heading: 'Give AI the answer, not your inbox.',
-    lead: 'Sieve finds what a task needs in your email, files and photos with a model on your own device, and shares only what you approve.',
+    heading: 'Only what you approve leaves your computer.',
+    lead: 'Sieve reads your mail, files and photos here, with Gemini Nano. An outside AI gets one line, after you say yes. A receipt every time.',
+  },
+  how: {
+    heading: 'What happens to your data',
   },
   prepare: {
     heading: 'Prepare the on-device model',

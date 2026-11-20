@@ -9,7 +9,7 @@ export function ItemSummary({ item, rule }: { item: NonNullable<ProposalPreview[
       <p className={s.itemTitle} dir="auto">
         {item.title}
       </p>
-      <p className={s.meta}>{itemMeta(item)}</p>
+      <p className={s.itemMeta}>{itemMeta(item)}</p>
       {rule === 'ask-first' ? <Tag tone="warn">{ruleTag('ask-first', item.category)}</Tag> : null}
       {rule === 'never' ? <Tag tone="never">{ruleTag('never', item.category)}</Tag> : null}
     </div>

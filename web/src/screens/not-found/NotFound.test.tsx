@@ -1,4 +1,4 @@
-// Not found (40 section 13.10): H1 and one link button, by session kind.
+// Not found (40 section 13.10): H1, one line and Open Sieve, which goes to Ask for a Google user, else the Playground.
 import { render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
@@ -22,16 +22,16 @@ describe('Not found', () => {
     renderNotFound();
     expect(document.title).toBe('Not found · Sieve');
     expect(screen.getByRole('heading', { level: 1, name: SCREENS.notFound.heading })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: ROUTE_ERROR.goToAsk })).toHaveAttribute('href', '/');
-    expect(screen.queryByRole('link', { name: ROUTE_ERROR.openPlayground })).not.toBeInTheDocument();
+    expect(screen.getByText(ROUTE_ERROR.notFoundLine)).toBeInTheDocument();
+    expect(screen.getAllByRole('link')).toHaveLength(1);
+    expect(screen.getByRole('link', { name: ROUTE_ERROR.openSieve })).toHaveAttribute('href', '/');
     await expectNoAxeViolations();
   });
 
   it('sends everyone else to the Playground', async () => {
     useSession.setState({ kind: 'anonymous', user: { uid: 'a', isAnonymous: true } });
     renderNotFound();
-    expect(screen.getByRole('link', { name: ROUTE_ERROR.openPlayground })).toHaveAttribute('href', '/playground');
-    expect(screen.queryByRole('link', { name: ROUTE_ERROR.goToAsk })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: ROUTE_ERROR.openSieve })).toHaveAttribute('href', '/playground');
     await expectNoAxeViolations();
   });
 });

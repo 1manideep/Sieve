@@ -7,7 +7,11 @@ export const BANK = "What's my latest bank balance?";
 export const PARCEL = 'What does the parcel delivery email want?';
 export const MY_TEST = 'What does my test email want?';
 export const INSTRUCTION = 'Draft a short, polite reply.';
-export const APPROVE = 'Draft a reply with the cloud model';
+/** The gate's blue button carries the count it would send: "Approve, 69 characters". */
+export const APPROVE = /^Approve, [\d,]+ characters$/;
+export const KEEP_HERE = 'Keep it here';
+/** The draft's heading names the count that left: "Gemini drafted a reply from those 69 characters alone". */
+export const DRAFT_HEADING = /^Gemini drafted a reply from those [\d,]+ characters alone$/;
 
 /** Open the Playground and wait for the pretend computer to be ready; a seeding failure fails fast with the console errors. */
 export async function openPlayground(page: Page, errors: string[] = []): Promise<void> {
@@ -71,6 +75,13 @@ export function chip(page: Page, text: string): Locator {
 
 export function traceRow(page: Page, kind: string): Locator {
   return page.locator(`li[data-kind="${kind}"]`).first();
+}
+
+/** "What happened, step by step" is folded under the result (the final design); open it to read the rows. */
+export async function openTrace(page: Page): Promise<void> {
+  const toggle = page.locator('article[aria-label="Result"]').getByRole('button', { name: 'What happened, step by step' }).first();
+  if ((await toggle.getAttribute('aria-expanded')) === 'false') await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 }
 
 /** Ask a suggestion and wait for its result card. */

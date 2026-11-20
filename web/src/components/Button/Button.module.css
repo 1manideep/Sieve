@@ -1,32 +1,38 @@
+/* Pills. primary: white on black (public) or blue (tone="blue", the app's Approve). secondary: outline. ghost: blue text. */
 .button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  min-height: var(--target-min);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-pill);
   border: 1px solid transparent;
-  font-weight: 600;
+  font-family: var(--font-sans);
+  font-weight: 500;
+  line-height: 1;
   text-decoration: none;
   cursor: pointer;
   white-space: nowrap;
-  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
-.md { font-size: 15px; padding: 12px 18px; }
-.sm { font-size: 14px; padding: 10px 14px; }
+.md { min-height: var(--target-min); font-size: 15px; padding: 0 20px; }
+.sm { min-height: 40px; font-size: 14px; padding: 0 14px; }
+.lg { min-height: 52px; font-size: 16px; padding: 0 26px; }
 
-.primary { background: var(--color-device); color: var(--color-on-device); }
-.primary:hover { background: var(--color-device-strong); color: var(--color-on-device); }
+.primary { background: #FFFFFF; color: #000000; }
+.primary:hover { background: rgba(255, 255, 255, 0.86); color: #000000; }
 
-.secondary { background: var(--color-surface); border-color: var(--color-border-strong); color: var(--color-text); }
-.secondary:hover { background: var(--color-surface-sunken); color: var(--color-text); }
+.primary.blue { background: var(--color-primary); color: var(--color-on-primary); }
+.primary.blue:hover { background: #3581F5; color: var(--color-on-primary); }
 
-.danger { background: var(--color-surface); border-color: var(--color-never-border); color: var(--color-never-text); }
+.secondary { background: transparent; border-color: var(--color-border-strong); color: var(--color-text); }
+.secondary:hover { background: rgba(255, 255, 255, 0.06); border-color: var(--color-border-control); color: var(--color-text); }
+
+.danger { background: transparent; border-color: var(--color-never-border); color: var(--color-never-text); }
 .danger:hover { background: var(--color-never-tint); color: var(--color-never-text); }
 
-.ghost { background: transparent; color: var(--color-text-secondary); }
-.ghost:hover { background: var(--color-surface-hover); color: var(--color-text-secondary); }
+.ghost { background: transparent; color: var(--color-accent); }
+.ghost:hover { background: var(--color-device-tint-2); color: var(--color-device-strong); }
 
 .button:disabled,
 .button[aria-disabled='true'] { opacity: 0.45; cursor: default; }

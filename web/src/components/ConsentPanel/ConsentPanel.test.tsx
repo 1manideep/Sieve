@@ -41,8 +41,9 @@ describe('ConsentPanel', () => {
     await expectNoAxeViolations();
   });
 
-  it('relay: Deny instead of Not now', () => {
+  it('relay: Decline instead of Not now, after the blue Allow', () => {
     render(<ConsentPanel variant="relay" item={item} onAllow={() => undefined} onDecline={() => undefined} />);
-    expect(screen.getByRole('button', { name: 'Deny' })).toBeInTheDocument();
+    const allow = screen.getByRole('button', { name: 'Allow the cloud for this item' });
+    expect(allow.compareDocumentPosition(screen.getByRole('button', { name: 'Decline' }))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 });

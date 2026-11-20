@@ -1,6 +1,23 @@
-.summary { display: grid; gap: var(--space-2); min-width: 0; }
-.tags { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.title { font: var(--text-h2); overflow-wrap: anywhere; min-width: 0; }
-.compact .title { font: var(--text-h4); }
-.meta { margin: 0; font-size: 14px; color: var(--color-text-subtle); overflow-wrap: anywhere; }
-.reason { margin: 0; font-size: 14px; color: var(--color-text-body); overflow-wrap: anywhere; }
+/* The found-item chip: an icon, the title, the meta line, Open on this device. */
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  justify-self: start;
+  min-width: 0;
+  max-width: 100%;
+  padding: 10px 14px;
+  border-radius: var(--radius-xl, 14px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--color-glass, rgba(11, 11, 15, 0.8));
+}
+.icon { flex: none; color: var(--color-text-secondary, rgba(255, 255, 255, 0.75)); }
+.text { flex: 1 1 240px; min-width: 0; display: grid; gap: 2px; }
+.title { font: 500 14px/1.4 var(--font-sans); letter-spacing: 0; overflow-wrap: anywhere; min-width: 0; }
+.compact .title { font: 500 14px/1.4 var(--font-sans); }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0; font-size: 13px; color: var(--color-text-subtle, rgba(255, 255, 255, 0.55)); overflow-wrap: anywhere; }
+.metaItem::after { content: '·'; margin-left: 8px; color: var(--color-text-subtle, rgba(255, 255, 255, 0.5)); }
+.reason { flex-basis: 100%; margin: 0; font-size: 13px; color: var(--color-text-muted); overflow-wrap: anywhere; }
+.open, .open:hover { flex: none; border-radius: var(--radius-pill, 999px); color: var(--color-accent, #8AB4F8); }
+.minimal { border-color: rgba(242, 139, 130, 0.35); }

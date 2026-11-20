@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import type { Category, SourceKind } from '@sieve/shared';
-import { SOURCES, fillText } from '@/copy/screens-controls';
+import { CONSOLE, SOURCES, fillText } from '@/copy/screens-controls';
 import { useIndexing } from '@/state/indexing';
 import { useSources, type SourceRowView, type SourcesState } from '@/state/sources';
 import { expectNoAxeViolations } from '@/test/axe';
@@ -102,7 +102,8 @@ describe('Sources', () => {
   it('shows every source as not connected, the Gmail testing-mode note and the categories', async () => {
     renderSources();
     expect(document.title).toBe('Sources · Sieve');
-    expect(await screen.findByRole('heading', { level: 1, name: 'Sources and your private index' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Sources' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: CONSOLE.tryNow })).toHaveAttribute('href', '/try');
     for (const name of ['Gmail', 'Local folder', 'Files you add']) {
       expect(within(card(name)).getByText(SOURCES.tagNotConnected)).toBeInTheDocument();
     }
@@ -141,7 +142,12 @@ describe('Sources', () => {
     useIndexing.setState({ state: 'running', left: 60, done: 40, total: 100, etaMs: 120_000 });
     renderSources();
     const gmail = card('Gmail');
-    expect(await within(gmail).findByText(SOURCES.tagConnected)).toBeInTheDocument();
+    // Gmail reads "Live" while connected; the folder reads "Connected". Each card shows its count and, while it
+    // indexes, the percentage over the progress bar.
+    expect(await within(gmail).findByText(SOURCES.tagLive)).toBeInTheDocument();
+    expect(within(card('Local folder')).getByText(SOURCES.tagConnected)).toBeInTheDocument();
+    expect(within(gmail).getByText('indexing 40%')).toBeInTheDocument();
+    expect(within(gmail).getByText(SOURCES.countLabel).previousElementSibling).toHaveTextContent('3');
     expect(within(gmail).getByText('Indexing 40 of 100 items')).toBeInTheDocument();
     expect(within(gmail).queryByText(SOURCES.gmailTesting)).not.toBeInTheDocument();
     expect(within(card('Local folder')).getByText((_, el) => el?.tagName === 'P' && el.textContent === 'Up to date · Folder: Taxes')).toBeInTheDocument();

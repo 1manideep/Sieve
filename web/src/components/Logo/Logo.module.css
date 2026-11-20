@@ -1,23 +1,17 @@
 .logo {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  min-height: var(--target-min);
+  min-height: 40px;
   color: var(--color-text);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: -0.01em;
   text-decoration: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
 }
 
 .logo:hover { color: var(--color-text); }
 
-.mark { color: var(--color-device); flex: none; }
-
-.wordmark {
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 20px;
-  line-height: 1;
-  letter-spacing: var(--tracking-tight);
-}
-
-.splash .wordmark { font-size: 28px; }
+.splash { font-size: 32px; }

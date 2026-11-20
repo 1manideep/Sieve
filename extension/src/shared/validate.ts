@@ -21,6 +21,7 @@ import type {
   Warning,
   WarningKind,
 } from '@sieve/shared';
+import { SURFACES } from './internal';
 import type { PanelToWorker } from './internal';
 
 export const LIMITS = {
@@ -199,7 +200,7 @@ export function parsePageMessage(raw: unknown): PageToExtension | null {
   }
 }
 
-/** A message from the extension's own side panel (50 section 8.1), or null. */
+/** A message from the extension's own panel page, popup or side panel (50 section 8.1), or null. */
 export function parsePanelMessage(raw: unknown): PanelToWorker | null {
   if (!isObject(raw)) return null;
   switch (raw.type) {
@@ -209,6 +210,7 @@ export function parsePanelMessage(raw: unknown): PanelToWorker | null {
         type: 'panel/hello',
         visible: raw.visible,
         ...(typeof raw.windowId === 'number' && Number.isInteger(raw.windowId) ? { windowId: raw.windowId } : {}),
+        ...(oneOf(SURFACES, raw.surface) ? { surface: raw.surface } : {}),
       };
     case 'panel/visibility':
       return typeof raw.visible === 'boolean' ? { type: 'panel/visibility', visible: raw.visible } : null;
@@ -228,6 +230,8 @@ export function parsePanelMessage(raw: unknown): PanelToWorker | null {
       return { type: 'panel/open-app', ...(isRequestId(raw.requestId) ? { requestId: raw.requestId } : {}) };
     case 'panel/dismiss':
       return isRequestId(raw.requestId) ? { type: 'panel/dismiss', requestId: raw.requestId } : null;
+    case 'panel/open-side':
+      return { type: 'panel/open-side' };
     default:
       return null;
   }

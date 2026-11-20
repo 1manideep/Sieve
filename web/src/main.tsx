@@ -1,5 +1,3 @@
-import '@fontsource-variable/inter';
-import '@fontsource-variable/space-grotesk';
 import './styles/tokens.css';
 import './styles/base.css';
 import { StrictMode } from 'react';

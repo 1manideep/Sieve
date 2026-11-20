@@ -1,46 +1,81 @@
-/* Panel tokens (50 section 8.2): the web app's tokens (40 section 15.1), then panel aliases with the mockup
-   values as fallbacks. Vite resolves the import at build time; nothing is loaded at run time. */
-@import '../../../web/src/styles/tokens.css';
+/* Panel tokens: the final scheme (docs/design/final-flow.md, boards F7, F8 and F8B). Black ground with the
+   24 px dot grid, glass cards, Gemini blue for the one approved line. The values are set here on purpose
+   (not imported from web/src/styles/tokens.css) so the panel never depends on the web app's stylesheet.
+   The CSP forbids remote fonts: 'Google Sans' resolves when it is installed, otherwise system-ui. */
 
 :root {
-  --p-font: var(--font-sans, Inter, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji');   /* 70 R-EMO-06 */
-  --p-font-head: var(--font-display, 'Space Grotesk', Inter, sans-serif);
-  --p-ink: var(--color-text, #0F172A);
-  --p-text: var(--color-text-body, #1F2937);
-  --p-label: var(--color-text-secondary, #334155);
-  --p-muted: var(--color-text-muted, #475569);
-  --p-subtle: var(--color-text-subtle, #64748B);
-  --p-bg: var(--color-surface, #FFFFFF);
-  --p-surface: var(--color-surface-sunken, #F8FAFC);
-  --p-border: var(--color-border, #E2E8F0);
-  --p-border-strong: var(--color-border-strong, #CBD5E1);
-  --p-device: var(--color-device, #0F766E);           /* teal: on-device, primary button */
-  --p-device-hover: var(--color-device-strong, #115E59);
-  --p-device-tag-bg: var(--color-device-tint, #E3F2EF);
-  --p-device-tag-fg: var(--color-device-strong, #115E59);
-  --p-cloud-tag-bg: var(--color-cloud-tint, #E6EDFD);  /* blue: cloud */
-  --p-cloud-tag-fg: var(--color-cloud, #1E40AF);
-  --p-warn-tag-bg: var(--color-warn-tint, #FEF3C7);    /* amber: warnings */
-  --p-warn-tag-fg: var(--color-warn-text, #92400E);
-  --p-warn-box-bg: var(--color-warn-tint-2, #FFFBEB);
-  --p-warn-box-border: var(--color-warn-border, #FCD34D);
-  --p-never-tag-bg: var(--color-never-tint, #FEE2E2);
-  --p-never-tag-fg: var(--color-never-text, #991B1B);
-  --p-muted-tag-bg: var(--color-surface-muted, #F1F5F9);
-  --p-muted-tag-fg: var(--color-text-secondary, #334155);
-  --p-radius-card: var(--radius-xl, 14px);
-  --p-radius-box: var(--radius-lg, 12px);
-  --p-radius-pill: var(--radius-pill, 999px);
-  color-scheme: light;
+  --p-font: 'Google Sans', system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';   /* 70 R-EMO-06 */
+  --p-font-head: 'Google Sans', system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
+  --p-mono: 'Google Sans Code', ui-monospace, monospace;
+
+  --p-ink: #FFFFFF;
+  --p-text: rgba(255, 255, 255, 0.88);
+  --p-label: rgba(255, 255, 255, 0.75);
+  --p-muted: rgba(255, 255, 255, 0.6);
+  --p-subtle: rgba(255, 255, 255, 0.5);
+
+  --p-bg: #000000;
+  --p-surface: rgba(11, 11, 15, 0.85);
+  --p-surface-card: rgba(11, 11, 15, 0.88);
+  --p-inner: rgba(255, 255, 255, 0.05);
+  --p-inner-border: rgba(255, 255, 255, 0.1);
+  --p-track: rgba(255, 255, 255, 0.08);
+  --p-track-selected: rgba(255, 255, 255, 0.18);
+  --p-border: rgba(255, 255, 255, 0.12);
+  --p-border-strong: rgba(255, 255, 255, 0.25);
+  --p-border-faint: rgba(255, 255, 255, 0.08);
+
+  --p-device: #8AB4F8;                                /* Gemini blue: the one approved line, counts, receipts */
+  --p-device-hover: #C2D7FE;
+  --p-device-tag-bg: rgba(138, 180, 248, 0.14);
+  --p-device-tag-fg: #C2D7FE;
+  --p-cloud-tag-bg: rgba(27, 110, 243, 0.16);
+  --p-cloud-tag-fg: #8AB4F8;
+  --p-primary: #1B6EF3;                               /* Approve */
+  --p-primary-hover: #3B82F6;
+  --p-on-primary: #FFFFFF;
+  --p-warn: #FDD663;
+  --p-warn-tag-bg: rgba(253, 214, 99, 0.12);
+  --p-warn-tag-fg: #FDD663;
+  --p-warn-box-bg: rgba(253, 214, 99, 0.12);
+  --p-warn-box-border: rgba(253, 214, 99, 0.5);
+  --p-never: #F28B82;
+  --p-never-tag-bg: rgba(242, 139, 130, 0.12);
+  --p-never-tag-fg: #F28B82;
+  --p-never-box-border: rgba(242, 139, 130, 0.5);
+  --p-muted-tag-bg: rgba(255, 255, 255, 0.08);
+  --p-muted-tag-fg: rgba(255, 255, 255, 0.75);
+  --p-ok: #6DD58C;
+  --p-glow: rgba(27, 110, 243, 0.16);
+
+  --p-radius-card: 18px;
+  --p-radius-box: 12px;
+  --p-radius-pill: 999px;
+  color-scheme: dark;
 }
 
 html {
   -webkit-text-size-adjust: 100%;
 }
 
+/* The surface is set on <html> by main.tsx before the first render. The side panel fills Chrome's panel; the
+   popup is 400 px wide and as tall as its content (Chrome sizes a popup to its page, up to 800 x 600), so nothing
+   here uses viewport units. */
+html[data-surface='panel'],
+html[data-surface='panel'] body,
+html[data-surface='panel'] #root {
+  height: 100%;
+}
+html[data-surface='popup'],
+html[data-surface='popup'] body {
+  width: 400px;
+}
+
 body {
   margin: 0;
-  background: var(--p-bg);
+  background-color: var(--p-bg);
+  background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1.4px);
+  background-size: 24px 24px;
   color: var(--p-ink);
   font-family: var(--p-font);
 }

@@ -52,9 +52,17 @@ describe('ApprovalCard', () => {
     expect(screen.getByTestId('outgoing-text').textContent).toBe(DEPOSIT_ANSWER);
     expect(screen.getByText('Plus your instruction')).toBeInTheDocument();
     expect(screen.getByText('instruction slot')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Use it here, share nothing' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Draft a reply with the cloud model' })).toBeInTheDocument();
+    // The gate (F3): its question, then Approve with the count (the text and the instruction), then Keep it here.
+    expect(screen.getByRole('heading', { level: 3, name: 'Send this to Gemini in the cloud?' })).toBeInTheDocument();
+    const approve = screen.getByRole('button', { name: `Approve, ${DEPOSIT_ANSWER.length + 'Draft a short, polite reply.'.length} characters` });
+    const keep = screen.getByRole('button', { name: 'Keep it here' });
+    expect(approve.compareDocumentPosition(keep)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(screen.getByText(/^written here by Gemini Nano · .+ · nothing has left this computer$/)).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Might also matter' })).toBeInTheDocument();
+    // "What happened, step by step" is folded under the result; opening it shows the two lanes.
+    const trace = screen.getByRole('button', { name: 'What happened, step by step' });
+    expect(trace).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(trace);
     expect(screen.getByRole('group', { name: 'Where each step ran' })).toBeInTheDocument();
     expect(screen.queryByText(/Approve only if you asked/)).toBeNull();   // 70 R-MCP-09: relay cards only
     await expectNoAxeViolations();
@@ -65,12 +73,14 @@ describe('ApprovalCard', () => {
     expect(screen.queryByTestId('answer-headline')).toBeNull();
     expect(screen.getByRole('radiogroup', { name: 'What Gemini CLI would receive' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Exactly what Gemini CLI would receive' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Approve and send' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Deny' })).toBeInTheDocument();
+    // The final design: the blue "Approve, N characters" and the "Decline" text button, the count and masks in mono.
+    const approve = screen.getByRole('button', { name: `Approve, ${DEPOSIT_ANSWER.length} characters` });
+    expect(screen.getByRole('button', { name: 'Decline' })).toBeInTheDocument();
+    expect(screen.getByText(`${DEPOSIT_ANSWER.length} characters · No personal details found`)).toBeInTheDocument();
     expect(screen.getByText('Best match')).toBeInTheDocument();
     // 70 R-MCP-09: the social-engineering line, last before the decision buttons
-    const line = screen.getByText("Approve only if you asked Gemini CLI for this. If you didn't, deny it and turn off this connection in Settings.");
-    expect(line.compareDocumentPosition(screen.getByRole('button', { name: 'Approve and send' }))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    const line = screen.getByText("Approve only if you asked Gemini CLI for this. If you didn't, decline it and turn off this connection in Settings.");
+    expect(line.compareDocumentPosition(approve)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     await expectNoAxeViolations();
   });
 
@@ -88,10 +98,11 @@ describe('ApprovalCard', () => {
     renderCard(props(bankAskFirst, { instructionSlot: <label>Instruction<input /></label> }));
     const banner = document.querySelector('[data-warning="ask-first"]') as HTMLElement;
     expect(banner).toHaveTextContent('Money asks first');
-    const deny = screen.getByRole('button', { name: 'Use it here, share nothing' });
+    const approve = screen.getByRole('button', { name: /^Approve, [\d,]+ characters$/ });
     const focusables = [...document.querySelectorAll('input, button')];
     const afterBanner = focusables.filter((e) => banner.compareDocumentPosition(e) & Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(afterBanner[0]).toBe(deny);
+    expect(afterBanner[0]).toBe(approve);
+    expect(afterBanner[1]).toBe(screen.getByRole('button', { name: 'Keep it here' }));
     const warnings = [...document.querySelectorAll('[data-warning]')];
     expect(warnings[warnings.length - 1]).toBe(banner);
     await expectNoAxeViolations();
@@ -105,7 +116,7 @@ describe('ApprovalCard', () => {
 
   it('decided: the ladder and related checkboxes are disabled, buttons gone, the result shows', async () => {
     renderCard(props(landlordReady, { phase: 'decided', resultSlot: <p data-result-line tabIndex={-1}>Sent only the answer to the cloud model.</p> }));
-    expect(screen.queryByRole('button', { name: 'Draft a reply with the cloud model' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
     expect(screen.getByRole('radiogroup')).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getAllByRole('checkbox').every((c) => (c as HTMLInputElement).disabled)).toBe(true);
     expect(screen.getByText('Sent only the answer to the cloud model.')).toHaveFocus();
@@ -131,7 +142,7 @@ describe('ApprovalCard', () => {
   ])('outcome %#: the outcome panel and the trace, no decision buttons', async (proposal, title) => {
     renderCard(props(proposal, { onRetry: vi.fn() }));
     expect(screen.getByText(title)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Draft a reply with the cloud model' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Approve/ })).toBeNull();
     expect(screen.getByRole('button', { name: 'What happened, step by step' })).toBeInTheDocument();
     await expectNoAxeViolations();
   });

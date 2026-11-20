@@ -5,7 +5,7 @@ import { expectNoAxeViolations } from '@/test/axe';
 import { Logo } from './Logo';
 
 describe('Logo', () => {
-  it('links the wordmark home, with the shield hidden from assistive tech', async () => {
+  it('links the name home, as text with no mark', async () => {
     const { container } = render(
       <MemoryRouter>
         <main>
@@ -14,7 +14,7 @@ describe('Logo', () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole('link', { name: 'Sieve' })).toHaveAttribute('href', '/');
-    expect(container.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+    expect(container.querySelector('svg')).toBeNull();
     await expectNoAxeViolations();
   });
 

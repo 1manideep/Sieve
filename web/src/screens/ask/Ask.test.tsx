@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -50,11 +50,21 @@ afterEach(() => {
 });
 
 describe('Ask', () => {
-  it('idle: header, question card, three example chips and the idle hint', async () => {
+  it('idle (F2): the headline, the lead, the prompt card with the ladder and the Nano pill, three chips, the idle hint', async () => {
     renderAsk();
-    expect(screen.getByRole('heading', { level: 1, name: 'Ask your own data' })).toBeInTheDocument();
-    expect(screen.getByLabelText('What are you looking for?')).toHaveAttribute('placeholder', "e.g. my landlord's email about the deposit");
-    expect(screen.getByRole('button', { name: 'Find on this device' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Ask your own data. Only one line leaves.' })).toBeInTheDocument();
+    expect(screen.getByText('Searched and answered on this computer by Gemini Nano. Outside AIs get what you approve, nothing more.')).toBeInTheDocument();
+    const card = screen.getByRole('region', { name: 'Ask about your own data' });
+    expect(within(card).getByLabelText('What are you looking for?')).toHaveAttribute('placeholder', "e.g. my landlord's email about the deposit");
+    expect(within(card).getByRole('button', { name: 'Ask' })).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Add a source' })).toBeInTheDocument();
+    expect(within(card).getByText('Nano · on this computer')).toBeInTheDocument();
+    // The ladder chooses the step before the question; each step says what it sends.
+    expect(within(card).getByRole('radiogroup', { name: 'How much may leave' })).toBeInTheDocument();
+    expect(within(card).getByRole('radio', { name: 'Answer' })).toHaveAttribute('aria-checked', 'true');
+    expect(within(card).getByText('one sentence, written here')).toBeInTheDocument();
+    await userEvent.click(within(card).getByRole('radio', { name: 'Excerpt' }));
+    expect(within(card).getByText('the lines that hold the answer, masked')).toBeInTheDocument();
     for (const name of ["Landlord's email about the deposit", 'The photo with five hot dogs in my mouth', 'What does my lease say about pets?']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
@@ -64,7 +74,7 @@ describe('Ask', () => {
 
   it('a chip sets the question and runs it; an empty submit shows the inline error', async () => {
     renderAsk();
-    await userEvent.click(screen.getByRole('button', { name: 'Find on this device' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Ask' }));
     expect(screen.getByText('Type a question first.')).toBeInTheDocument();
     expect(ask).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: "Landlord's email about the deposit" }));
@@ -73,7 +83,7 @@ describe('Ask', () => {
     expect(screen.getByRole('button', { name: "Landlord's email about the deposit" })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('notices: an empty index, and a model to set up that blocks Find with its reason', async () => {
+  it('notices: an empty index, and a model to set up that blocks Ask with its reason', async () => {
     await db.table('sources').clear();
     useAvailability.setState({ text: 'downloadable', setup: { state: 'idle' } });
     renderAsk();
@@ -82,8 +92,9 @@ describe('Ask', () => {
     const notice = 'Set up the on-device model once to ask about your own data. It takes about 3 to 4 minutes.';
     expect(screen.getByText(notice)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Set it up' })).toHaveAttribute('href', '/prepare?back=/');
-    const find = screen.getByRole('button', { name: 'Find on this device' });
+    const find = screen.getByRole('button', { name: 'Ask' });
     expect(find).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByText('Nano · not set up')).toBeInTheDocument();
     expect(find).toHaveAccessibleDescription(notice);
     await userEvent.type(screen.getByLabelText('What are you looking for?'), 'deposit{Enter}');
     expect(ask).not.toHaveBeenCalled();
@@ -118,7 +129,7 @@ describe('Ask', () => {
     expect(askNotices({ ...base, sourcesConnected: false, text: 'downloadable', cloudFallback: false, indexing: 'running', left: 3 })).toHaveLength(2);
   });
 
-  it('preparing: Stop replaces Find; ready: the approval card with the exact text', async () => {
+  it('preparing: Stop replaces Ask; ready (F3): the question bubble, the gate with the exact text, the follow-up pill', async () => {
     const stop = vi.fn();
     act(() => {
       useAskReal.setState({
@@ -132,8 +143,12 @@ describe('Ask', () => {
     expect(stop).toHaveBeenCalled();
     await expectNoAxeViolations();
     act(() => useAskReal.setState({ phase: 'ready', proposal: landlordReady, step: 'answer' }));
+    expect(screen.getByText(landlordReady.question)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Send this to Gemini in the cloud?' })).toBeInTheDocument();
     expect(screen.getByTestId('outgoing-text').textContent).toBe(DEPOSIT_ANSWER);
-    expect(screen.getByRole('button', { name: 'Find on this device' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Ask a follow-up')).toHaveAttribute('placeholder', 'Ask a follow-up about your own data');
+    expect(screen.getByRole('button', { name: 'Ask' })).toBeInTheDocument();
+    expect(screen.getByText('Only what you approve leaves your computer. Sieve can make mistakes; the receipt never does.')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 3, name: 'Might also matter' })).toBeInTheDocument();
     await expectNoAxeViolations();
   });

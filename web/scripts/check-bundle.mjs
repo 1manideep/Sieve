@@ -19,7 +19,7 @@ const BUDGETS = {
   afterSignIn: 180 * KB,   // additional JS for / after Google sign-in (Firestore, RTDB, messaging, services, engine); 160 in 40 section 17.1, raised Nov 18: firebase/firestore 13.3.0 alone is 147.7 KB gzipped
   routeChunk: 60 * KB,     // any single route chunk
   css: 35 * KB,            // all CSS
-  fonts: 110 * KB,         // two variable woff2 files, latin
+  fonts: 0,                // none bundled: Google Sans and Google Sans Code come from Google Fonts (index.html)
 };
 /** Never in an initial graph; their owners load them with a dynamic import on first need. */
 const FORBIDDEN_INITIAL = ['pdfjs-dist', '@huggingface/transformers', 'onnxruntime-web', 'onnxruntime-common'];
@@ -99,12 +99,14 @@ const assetsDir = join(dist, 'assets');
 const assets = existsSync(assetsDir) ? readdirSync(assetsDir) : [];
 check('All CSS', sum(assets.filter((f) => f.endsWith('.css')).map((f) => `assets/${f}`)), BUDGETS.css);
 
-const fonts = assets.filter((f) => /^(inter|space-grotesk)-latin-wght-normal-.*\.woff2$/.test(f));
-const families = new Set(fonts.map((f) => f.split('-latin-')[0]));
-if (!families.has('inter') || !families.has('space-grotesk')) {
-  problems.push(`fonts: expected latin variable woff2 files for inter and space-grotesk, found ${fonts.join(', ') || 'none'}`);
-}
-check('Fonts (two variable woff2, latin)', sum(fonts.map((f) => `assets/${f}`)), BUDGETS.fonts);
+// The final design (docs/design/final-flow.md) loads its two families from Google Fonts css2, linked in index.html;
+// no font file is bundled, and the link must name both families.
+const fonts = assets.filter((f) => /\.(woff2?|ttf|otf)$/.test(f));
+check('Bundled fonts (none: Google Fonts css2)', sum(fonts.map((f) => `assets/${f}`)), BUDGETS.fonts);
+const html = existsSync(join(dist, 'index.html')) ? readFileSync(join(dist, 'index.html'), 'utf8') : '';
+const fontLink = /<link[^>]+href="https:\/\/fonts\.googleapis\.com\/css2\?[^"]*family=Google\+Sans:[^"]*family=Google\+Sans\+Code:[^"]*"/.test(html);
+if (!fontLink) problems.push('fonts: dist/index.html has no Google Fonts css2 link for Google Sans and Google Sans Code');
+rows.push({ check: 'Google Fonts link in index.html', gzip: '', budget: '', result: fontLink ? 'ok' : 'FAIL' });
 
 if (chunkPackages) {
   for (const [label, files] of [['/welcome', welcome], ['/playground', playground]]) {

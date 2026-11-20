@@ -1,10 +1,12 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { WELCOME_COPY } from '@/copy/screens-main';
+import { SCREENS } from '@/copy/strings';
 import { useSession } from '@/state/session';
 import { expectNoAxeViolations } from '@/test/axe';
-import { WelcomeScreen } from './index';
+import { WelcomeScreen, makeStars } from './index';
 
 vi.mock('firebase/app', () => import('@/test/fakes/firebaseApp'));
 vi.mock('firebase/auth', () => import('@/test/fakes/firebaseAuth'));
@@ -17,6 +19,7 @@ function renderWelcome(path = '/welcome') {
         <Route path="/welcome" element={<main><WelcomeScreen /></main>} />
         <Route path="/" element={<p>Ask page</p>} />
         <Route path="/sources" element={<p>Sources page</p>} />
+        <Route path="/playground" element={<p>Playground page</p>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -27,37 +30,43 @@ afterEach(() => {
 });
 
 describe('Welcome', () => {
-  it('shows the hero, the example, the three tiles, the requirements and the footer', async () => {
+  it('shows the sentence, the lead, the two buttons, the scene and the footer numbers', async () => {
     renderWelcome();
-    expect(screen.getByText('Built with Gemini Nano and Firebase AI Logic')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 1, name: 'Give AI the answer, not your inbox.' })).toBeInTheDocument();
-    expect(
-      screen.getByText('Sieve finds what a task needs in your email, files and photos with a model on your own device, and shares only what you approve.'),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Try the Playground' })).toHaveAttribute('href', '/playground');
-    expect(screen.getByText('No sign-in. A pretend computer with sample mail, photos and documents.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Sign in with Google' })).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: 'Example: Gemini CLI asked about a deposit and received only the answer.' })).toBeInTheDocument();
-    for (const title of ['Found on your device', 'You approve every share', 'A receipt for everything']) {
-      expect(screen.getByRole('heading', { level: 2, name: title })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Only what you approve leaves your computer.' })).toBeInTheDocument();
+    expect(screen.getByText(SCREENS.welcome.lead)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Sieve' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Try on a real computer' })).toHaveAttribute('href', '/try');
+    expect(screen.getByRole('link', { name: WELCOME_COPY.signInNoteLink })).toHaveAttribute('href', '/playground');
+    expect(screen.getByRole('img', { name: WELCOME_COPY.sceneLabel })).toBeInTheDocument();
+    const numbers = screen.getByRole('list', { name: WELCOME_COPY.numbersLabel });
+    for (const n of WELCOME_COPY.numbers) {
+      expect(within(numbers).getByText(n.value)).toBeInTheDocument();
+      expect(within(numbers).getByText(n.caption)).toBeInTheDocument();
     }
-    expect(screen.getByText(/Works best in Chrome 139 or later with Gemini Nano/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Source code' })).toHaveAttribute('href', 'https://example.com/sieve');
-    expect(screen.getByText('Built for #BuildHybridAI 2026')).toBeInTheDocument();
-    expect(screen.getByText('Request from Gemini CLI')).toBeInTheDocument();
+    expect(screen.getByText(WELCOME_COPY.built)).toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
-  it('keeps focus on the document; Tab reaches the Playground link before sign-in', async () => {
+  it('draws 120 seeded stars, hidden from assistive tech, each on its own clock', () => {
+    renderWelcome();
+    const sky = screen.getByTestId('stars');
+    expect(sky).toHaveAttribute('aria-hidden', 'true');
+    expect(sky.children).toHaveLength(120);
+    const first = sky.children[0] as HTMLElement;
+    expect(first.style.animationDuration).toMatch(/^[4-9](\.\d)?s$/);
+    expect(makeStars(3, 7)).toEqual(makeStars(3, 7));
+  });
+
+  it('keeps focus on the document; Tab reaches Open Sieve, then Try on a real computer', async () => {
     renderWelcome();
     expect(document.activeElement).toBe(document.body);
     await userEvent.tab();
-    expect(screen.getByRole('link', { name: 'Try the Playground' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Open Sieve' })).toHaveFocus();
     await userEvent.tab();
-    expect(screen.getByRole('button', { name: 'Sign in with Google' })).toHaveFocus();
+    expect(screen.getByRole('link', { name: 'Try on a real computer' })).toHaveFocus();
   });
 
-  it('signs in with Google and goes to ?next (same origin only)', async () => {
+  it('Open Sieve signs in with Google and goes to ?next (same origin only)', async () => {
     const signInWithGoogle = vi.fn(async () => {
       useSession.setState({ kind: 'google', user: { uid: 'u1', email: 'a@example.com', isAnonymous: false } });
       return 'ok' as const;
@@ -66,7 +75,7 @@ describe('Welcome', () => {
       useSession.setState({ signInWithGoogle });
     });
     renderWelcome('/welcome?next=%2Fsources');
-    await userEvent.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Open Sieve' }));
     expect(signInWithGoogle).toHaveBeenCalledOnce();
     expect(await screen.findByText('Sources page')).toBeInTheDocument();
   });
@@ -77,7 +86,17 @@ describe('Welcome', () => {
       useSession.setState({ signInWithGoogle });
     });
     renderWelcome('/welcome?next=%2F%2Fevil.example');
-    await userEvent.click(screen.getByRole('button', { name: 'Sign in with Google' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Open Sieve' }));
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+  });
+
+  it('goes to the Playground when sign-in is not possible', async () => {
+    const signInWithGoogle = vi.fn(async () => 'error' as const);
+    act(() => {
+      useSession.setState({ signInWithGoogle });
+    });
+    renderWelcome();
+    await userEvent.click(screen.getByRole('button', { name: 'Open Sieve' }));
+    expect(await screen.findByText('Playground page')).toBeInTheDocument();
   });
 });

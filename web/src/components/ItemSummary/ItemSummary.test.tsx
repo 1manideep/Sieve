@@ -6,11 +6,11 @@ import { healthBlocked, landlordReady, uploadNeedsConsent } from '../__fixtures_
 import { ItemSummary, senderName } from './ItemSummary';
 
 describe('ItemSummary', () => {
-  it('an email: tags, title, "From: {name} · {date}", why this one, and Open on this device', async () => {
+  it('an email (the found-item chip): title, "From: {name} · {date}", kind, source, category, why this one, Open on this device', async () => {
     const onOpen = vi.fn();
     render(<main><ItemSummary item={landlordReady.item!} rule="approve" reason={'Picked "Re: Deposit for the apartment" and wrote the answer'} onOpen={onOpen} /></main>);
-    expect(screen.getByText('Found on this device')).toBeInTheDocument();
     expect(screen.getByText('Email')).toBeInTheDocument();
+    expect(screen.getByText('Sample data')).toBeInTheDocument();
     expect(screen.getByText('Home')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'Re: Deposit for the apartment' })).toBeInTheDocument();
     expect(screen.getByText(/^From:/).textContent).toBe('From: Dana Whitfield · Oct 29, 2026');

@@ -8,16 +8,16 @@
 
 .text { flex: 1 1 480px; min-width: 0; }
 
-.title { font: var(--text-h1-page); letter-spacing: var(--tracking-tight); }
-.ask .title { font: var(--text-h1); letter-spacing: var(--tracking-tight); }
+.title { font: var(--text-h1-page); font-weight: 400; letter-spacing: var(--tracking-tight); color: var(--color-text); }
+.ask .title { font: var(--text-h1); font-weight: 400; letter-spacing: var(--tracking-tight); }
 
 .lead {
   margin: var(--space-2) 0 0;
   font-size: 16px;
   line-height: 1.5;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   max-width: 72ch;
 }
-.ask .lead { font: var(--text-lead); color: var(--color-text-muted); }
+.ask .lead { font: var(--text-lead); color: var(--color-text-secondary); }
 
 .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }

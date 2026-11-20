@@ -1,9 +1,10 @@
 .text { white-space: pre-wrap; overflow-wrap: anywhere; }
 
+/* A masked detail: a quiet chip, never a fill behind readable text */
 .redaction {
-  padding: 0 4px;
-  border-radius: var(--radius-xs);
-  background: var(--color-inverse);
-  color: var(--color-on-inverse);
-  font-weight: 600;
+  padding: 0 6px;
+  border-radius: var(--radius-xs, 4px);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.75);
+  font-weight: 500;
 }

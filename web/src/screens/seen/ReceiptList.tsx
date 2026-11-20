@@ -1,9 +1,10 @@
-// ReceiptList (40 section 13.7): one row per receipt, never the content. The Playground's "What has AI seen?" tab
-// reuses it with variant="playground" (no Revoke, its own "You asked" line).
+// ReceiptList (40 section 13.7; F5): one row per receipt, never the content, in one glass table: Question,
+// Assistant, Step, Chars, When and (variant "real") Revoke. The newest row is tinted; blocked rows read in the
+// never colour, declined rows in the waiting colour. variant="playground" is the same table without Revoke. Under
+// 760px the rows stack (seen.module.css); the explicit table roles keep the semantics when the display changes.
 import { useState, type ReactNode } from 'react';
 import { LADDER_LABELS, type LadderStep } from '@sieve/shared';
 import { Button } from '@/components/Button/Button';
-import { Tag } from '@/components/Tag/Tag';
 import { SEEN, fillText } from '@/copy/screens-controls';
 import { formatCount } from '@/copy/format';
 import { useReceipts } from '@/state/receipts';
@@ -12,6 +13,7 @@ import { useToasts } from '@/state/toasts';
 import type { ReceiptView } from '@/state/types';
 import { Confirm } from '../settings/kit/Confirm';
 import { Fill, Iso } from '../settings/kit/Fill';
+import kit from '../settings/kit/kit.module.css';
 import { formatDayTime, isoTime } from '../settings/kit/when';
 import styles from './seen.module.css';
 
@@ -33,7 +35,8 @@ function stepLabel(step: LadderStep | undefined): string {
   return LADDER_LABELS[step ?? 'answer'];
 }
 
-function isShared(r: ReceiptView): boolean {
+/** Something left the device for this receipt (or will, once collected). */
+export function isShared(r: ReceiptView): boolean {
   return r.status === 'delivered' || r.status === 'pending-collection' || r.status === 'revoked';
 }
 
@@ -66,48 +69,53 @@ function WhoLine({ receipt, variant }: { receipt: ReceiptView; variant: ReceiptL
   return <Fill template={SEEN.whoInApp} values={{ question }} />;
 }
 
-function Tags({ receipt }: { receipt: ReceiptView }) {
+/** The Step cell: the step that left (or the category that stopped it), then who decided and the status. */
+function StepCell({ receipt, meta }: { receipt: ReceiptView; meta: Record<string, RecordMeta | null> }) {
   const aiName = receipt.requester.aiName;
-  const tags: ReactNode[] = [];
+  let main: ReactNode = null;
   if (isShared(receipt) || receipt.status === 'expired') {
     const step = receipt.step ?? 'answer';
-    tags.push(
-      <Tag key="step" tone={step === 'full' ? 'warn' : 'device'}>
-        {stepLabel(step)}
-      </Tag>,
-    );
+    main = <span className={step === 'full' ? kit.warn : undefined}>{stepLabel(step)}</span>;
+  } else {
+    const category = receipt.itemIds[0] ? meta[receipt.itemIds[0]]?.category : undefined;
+    if (category) main = <span className={receipt.status === 'blocked' ? kit.never : kit.warn}>{category}</span>;
   }
-  if (receipt.status === 'declined') tags.push(<Tag key="by" tone="muted">{SEEN.byDeclined}</Tag>);
-  else if (receipt.decidedBy === 'rule') tags.push(<Tag key="by" tone="muted">{SEEN.byRule}</Tag>);
-  else if (receipt.decidedBy === 'extension') tags.push(<Tag key="by" tone="muted">{SEEN.byExtension}</Tag>);
-  else if (receipt.decidedBy === 'app') tags.push(<Tag key="by" tone="muted">{SEEN.byApp}</Tag>);
 
+  let by: string | undefined;
+  if (receipt.status === 'declined') by = SEEN.byDeclined;
+  else if (receipt.decidedBy === 'rule') by = SEEN.byRule;
+  else if (receipt.decidedBy === 'extension') by = SEEN.byExtension;
+  else if (receipt.decidedBy === 'app') by = SEEN.byApp;
+
+  let status: string | undefined;
   switch (receipt.status) {
     case 'pending-collection':
-      tags.push(<Tag key="status" tone="cloud">{fillText(SEEN.statusPending, { aiName })}</Tag>);
+      status = fillText(SEEN.statusPending, { aiName });
       break;
     case 'delivered':
-      tags.push(<Tag key="status" tone="cloud">{SEEN.statusDelivered}</Tag>);
+      status = SEEN.statusDelivered;
       break;
     case 'revoked':
-      tags.push(<Tag key="status" tone="muted">{SEEN.statusRevoked}</Tag>);
+      status = SEEN.statusRevoked;
       break;
     case 'declined':
     case 'blocked':
-      tags.push(<Tag key="status" tone="muted">{SEEN.statusNothingLeft}</Tag>);
+      status = SEEN.statusNothingLeft;
       break;
     case 'expired':
-      tags.push(<Tag key="status" tone="muted">{SEEN.statusExpired}</Tag>);
+      status = SEEN.statusExpired;
       break;
   }
-  const left = receipt.chars > 0 && receipt.status !== 'expired';
+
   return (
-    <>
-      {tags}
-      <span className={styles.chars}>
-        {left ? fillText(SEEN.charsLeft, { chars: formatCount(receipt.chars) }) : SEEN.nothingLeft}
+    <div className={styles.stepStack}>
+      {main}
+      <span className={styles.subline}>
+        {by ? <span>{by}</span> : null}
+        {by && status ? <span aria-hidden="true"> · </span> : null}
+        {status ? <span>{status}</span> : null}
       </span>
-    </>
+    </div>
   );
 }
 
@@ -132,49 +140,77 @@ export function ReceiptList({ variant, receipts, meta, now: nowProp }: ReceiptLi
 
   return (
     <>
-      <ul className={styles.list} aria-label={SEEN.listLabel}>
-        {receipts.map((r) => {
-          const outside = r.requester.kind === 'outside';
-          const revocable = variant === 'real' && outside && (r.status === 'delivered' || r.status === 'pending-collection');
-          const wasRevoked = variant === 'real' && outside && (r.status === 'revoked' || revoked.includes(r.id));
-          return (
-            <li key={r.id} className={styles.row}>
-              <time className={styles.when} dateTime={isoTime(r.createdAt)}>
-                {formatDayTime(r.createdAt, now)}
-              </time>
-              <div className={styles.whatWho}>
-                <p className={styles.what} dir="auto">
-                  <WhatLine receipt={r} meta={meta} />
-                </p>
-                <p className={styles.who} dir="auto">
-                  <WhoLine receipt={r} variant={variant} />
-                </p>
-              </div>
-              <div className={styles.tags}>
-                <Tags receipt={r} />
-              </div>
-              {wasRevoked ? (
-                <div className={styles.action}>
-                  <Button variant="danger" size="sm" disabled>
-                    {SEEN.revoked}
-                  </Button>
-                </div>
-              ) : revocable ? (
-                <div className={styles.action}>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    aria-label={fillText(SEEN.revokeLabel, { aiName: r.requester.aiName })}
-                    onClick={() => setConfirming(r)}
-                  >
-                    {SEEN.revoke}
-                  </Button>
-                </div>
+      <div className={`${kit.glassSm} ${styles.tableWrap}`}>
+        <table role="table" className={styles.table} aria-label={SEEN.listLabel}>
+          <thead role="rowgroup">
+            <tr role="row">
+              <th role="columnheader" scope="col">{SEEN.colQuestion}</th>
+              <th role="columnheader" scope="col">{SEEN.colAssistant}</th>
+              <th role="columnheader" scope="col">{SEEN.colStep}</th>
+              <th role="columnheader" scope="col">{SEEN.colChars}</th>
+              <th role="columnheader" scope="col">{SEEN.colWhen}</th>
+              {variant === 'real' ? (
+                <th role="columnheader" scope="col">
+                  <span className="visually-hidden">{SEEN.colActions}</span>
+                </th>
               ) : null}
-            </li>
-          );
-        })}
-      </ul>
+            </tr>
+          </thead>
+          <tbody role="rowgroup">
+            {receipts.map((r, i) => {
+              const outside = r.requester.kind === 'outside';
+              const revocable = variant === 'real' && outside && (r.status === 'delivered' || r.status === 'pending-collection');
+              const wasRevoked = variant === 'real' && outside && (r.status === 'revoked' || revoked.includes(r.id));
+              const left = r.chars > 0 && r.status !== 'expired';
+              return (
+                <tr role="row" key={r.id} data-status={r.status} className={i === 0 ? styles.newest : undefined}>
+                  <td role="cell" className={styles.cellQuestion}>
+                    <p className={styles.who} dir="auto">
+                      <WhoLine receipt={r} variant={variant} />
+                    </p>
+                    <p className={styles.what} dir="auto">
+                      <WhatLine receipt={r} meta={meta} />
+                    </p>
+                  </td>
+                  <td role="cell" className={styles.cellAi}>
+                    <bdi>{r.requester.aiName}</bdi>
+                  </td>
+                  <td role="cell" className={styles.cellStep}>
+                    <StepCell receipt={r} meta={meta} />
+                  </td>
+                  <td role="cell" className={styles.cellChars}>
+                    <span className={styles.charsNumber} aria-hidden="true">
+                      {left ? formatCount(r.chars) : '0'}
+                    </span>
+                    <span className={styles.charsText}>{left ? fillText(SEEN.charsLeft, { chars: formatCount(r.chars) }) : SEEN.nothingLeft}</span>
+                  </td>
+                  <td role="cell" className={styles.when}>
+                    <time dateTime={isoTime(r.createdAt)}>{formatDayTime(r.createdAt, now)}</time>
+                  </td>
+                  {variant === 'real' ? (
+                    <td role="cell" className={styles.cellAction}>
+                      {wasRevoked ? (
+                        <Button variant="danger" size="sm" disabled>
+                          {SEEN.revoked}
+                        </Button>
+                      ) : revocable ? (
+                        <Button
+                          variant="danger"
+                          size="sm"
+                          aria-label={fillText(SEEN.revokeLabel, { aiName: r.requester.aiName })}
+                          onClick={() => setConfirming(r)}
+                        >
+                          {SEEN.revoke}
+                        </Button>
+                      ) : null}
+                    </td>
+                  ) : null}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
       {variant === 'real' ? (
         <Confirm
           open={confirming !== null}

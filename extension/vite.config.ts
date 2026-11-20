@@ -23,7 +23,7 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: resolve(__dirname, m.out),
       emptyOutDir: true,
-      target: 'chrome116',
+      target: 'chrome127', // manifest minimum_chrome_version (chrome.action.openPopup)
       minify: false, // reviewable build (50 section 10.3)
       sourcemap: mode === 'dev',
       modulePreload: { polyfill: false }, // no inline script and no fetch() in the panel page

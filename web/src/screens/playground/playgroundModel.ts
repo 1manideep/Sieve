@@ -38,6 +38,24 @@ export function modelTag(m: PlaygroundModel): { tone: TagTone; text: string } {
   }
 }
 
+/** The prompt card's Nano pill (the final design): a dot and a few words for the same state. */
+export function playgroundModelPill(m: PlaygroundModel): { tone: 'ok' | 'warn' | 'never' | 'muted'; text: string } {
+  switch (m) {
+    case 'ready':
+      return { tone: 'ok', text: PLAYGROUND_COPY.pillReady };
+    case 'simulated':
+      return { tone: 'warn', text: PLAYGROUND_COPY.pillSimulated };
+    case 'not-set-up':
+      return { tone: 'warn', text: PLAYGROUND_COPY.pillNotSetUp };
+    case 'setting-up':
+      return { tone: 'warn', text: PLAYGROUND_COPY.pillSettingUp };
+    case 'none':
+      return { tone: 'never', text: PLAYGROUND_COPY.pillNone };
+    case 'checking':
+      return { tone: 'muted', text: PLAYGROUND_COPY.pillChecking };
+  }
+}
+
 export type ToggleValue = 'on' | 'off';
 export interface ToggleOption { value: ToggleValue; label: string; disabled?: boolean }
 

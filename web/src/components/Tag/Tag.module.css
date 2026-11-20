@@ -14,9 +14,9 @@
 .text { min-width: 0; overflow-wrap: anywhere; }
 .icon { flex: none; width: 14px; height: 14px; }
 
-.device { background: var(--color-device-tint); color: var(--color-device-strong); }
+.device { background: var(--color-device-tint); border-color: rgba(138, 180, 248, 0.35); color: var(--color-device-strong); }
 .deviceCode { background: var(--color-device-tint-2); border-color: var(--color-device); color: var(--color-device-strong); }
-.cloud { background: var(--color-cloud-tint); color: var(--color-cloud); }
-.warn { background: var(--color-warn-tint); color: var(--color-warn-text); }
-.never { background: var(--color-never-tint); color: var(--color-never-text); }
-.muted { background: var(--color-surface-muted); color: var(--color-text-secondary); }
+.cloud { background: var(--color-cloud-tint); border-color: var(--color-cloud-border); color: var(--color-device-strong); }
+.warn { background: var(--color-warn-tint); border-color: var(--color-warn-border); color: var(--color-warn-text); }
+.never { background: var(--color-never-tint); border-color: var(--color-never-border); color: var(--color-never-text); }
+.muted { background: var(--color-surface-muted); border-color: var(--color-border); color: var(--color-text-secondary); }

@@ -16,6 +16,7 @@ export interface LadderControlProps {
   aiName?: string;
   disabled?: boolean;               // after a decision
   previewId: string;                // aria-controls target (the OutgoingPreview region)
+  labelHidden?: boolean;            // the gate names the ladder in its own title; the label stays for screen readers
 }
 
 /** "Answer only", "Excerpt", "Full email": the step name without its number. */
@@ -23,7 +24,7 @@ export function stepLabel(step: LadderStep, kind?: ItemKind): string {
   return step === 'full' ? fullStepLabel(kind) : LADDER_LABELS[step];
 }
 
-export function LadderControl({ label, options, value, onChange, kind, requestedStep, aiName, disabled = false, previewId }: LadderControlProps) {
+export function LadderControl({ label, options, value, onChange, kind, requestedStep, aiName, disabled = false, previewId, labelHidden = false }: LadderControlProps) {
   const labelId = useId();
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
   const byStep = LADDER_STEPS.map((step) => options.find((o) => o.step === step));
@@ -47,7 +48,7 @@ export function LadderControl({ label, options, value, onChange, kind, requested
 
   return (
     <div className={styles.ladder}>
-      <p id={labelId} className={styles.label}>
+      <p id={labelId} className={labelHidden ? 'visually-hidden' : styles.label}>
         {label}
       </p>
       <div

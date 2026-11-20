@@ -1,12 +1,12 @@
-// "AIs that can ask" (40 sections 13.8.1 to 13.8.3): grants with their limits, Narrow and Revoke, past connections,
-// and the Connect an AI dialog (also opened by ?connect=1, which is then removed from the URL).
+// "Assistants" (40 sections 13.8.1 to 13.8.3; F5): each connected assistant as a glass card with its state, its
+// limits, Change limits and Revoke; past connections under a disclosure; the blue "Connect an assistant" button
+// that opens the dialog (also opened by ?connect=1, which is then removed from the URL); the explainer line.
 import { useEffect, useId, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
 import { Button } from '@/components/Button/Button';
 import { Icon } from '@/components/icons';
 import { Skeleton } from '@/components/Skeleton/Skeleton';
-import { Tag, type TagProps } from '@/components/Tag/Tag';
 import { SETTINGS, fillText } from '@/copy/screens-controls';
 import { useGrants } from '@/state/grants';
 import { useNetwork } from '@/state/network';
@@ -15,17 +15,18 @@ import type { GrantView } from '@/state/types';
 import type { RealSource } from '../sources/sourcesDb';
 import { ConnectAiDialog } from './ConnectAiDialog';
 import { Confirm } from './kit/Confirm';
+import kit from './kit/kit.module.css';
 import { formatDate, formatRelative } from './kit/when';
 import { NarrowDialog } from './NarrowDialog';
 import { SettingsCard } from './SettingsCard';
 import { callableMessage, capLabel, categoriesLabel, sourcesLabel } from './settingsText';
 import styles from './settings.module.css';
 
-const STATE_TAGS: Record<GrantView['state'], { label: string; tone: TagProps['tone'] }> = {
-  active: { label: SETTINGS.grantActive, tone: 'device' },
-  expiring: { label: SETTINGS.grantExpiring, tone: 'warn' },
-  expired: { label: SETTINGS.grantExpired, tone: 'muted' },
-  revoked: { label: SETTINGS.grantRevoked, tone: 'muted' },
+const STATE_TAGS: Record<GrantView['state'], { label: string; className: string }> = {
+  active: { label: SETTINGS.grantActive, className: kit.ok },
+  expiring: { label: SETTINGS.grantExpiring, className: kit.warn },
+  expired: { label: SETTINGS.grantExpired, className: kit.muted },
+  revoked: { label: SETTINGS.grantRevoked, className: kit.muted },
 };
 
 export function grantLimits(g: GrantView): string {
@@ -47,22 +48,23 @@ export function grantMeta(g: GrantView, now: number = Date.now()): string {
 function GrantRow({ grant, onNarrow, onRevoke }: { grant: GrantView; onNarrow?(): void; onRevoke?(): void }) {
   const tag = STATE_TAGS[grant.state];
   return (
-    <li className={styles.grantRow}>
-      <div className={styles.grantMain}>
+    <li className={`${kit.glassSm} ${styles.grantRow}`}>
+      <div className={styles.grantTop}>
         <p className={styles.grantName}>
-          <bdi>{grant.aiName}</bdi> <Tag tone={tag.tone}>{tag.label}</Tag>
+          <bdi>{grant.aiName}</bdi>
         </p>
-        <p className={styles.grantLimits}>{grantLimits(grant)}</p>
-        <p className={styles.grantMeta}>{grantMeta(grant)}</p>
+        <span className={`${kit.status} ${tag.className}`}>{tag.label}</span>
       </div>
+      <p className={styles.grantLimits}>{grantLimits(grant)}</p>
+      <p className={styles.grantMeta}>{grantMeta(grant)}</p>
       {onNarrow && onRevoke ? (
         <div className={styles.grantActions}>
           <Button variant="secondary" size="sm" onClick={onNarrow}>
             {SETTINGS.narrow}
           </Button>
-          <Button variant="danger" size="sm" onClick={onRevoke}>
+          <button type="button" className={`${kit.textButton} ${kit.never}`} onClick={onRevoke}>
             {SETTINGS.revoke}
-          </Button>
+          </button>
         </div>
       ) : null}
     </li>
@@ -112,19 +114,19 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
   let body;
   if (status === 'idle' || status === 'loading') {
     body = (
-      <div className={styles.grantList} aria-busy="true">
+      <div className={`${kit.glassSm} ${styles.emptyRow}`} aria-busy="true">
         <span className="visually-hidden">{SETTINGS.aisLoading}</span>
         <Skeleton lines={2} />
         <Skeleton lines={2} />
       </div>
     );
   } else if (status === 'error') {
-    body = <p className={styles.text}>{SETTINGS.aisError}</p>;
+    body = <p className={`${kit.glassSm} ${styles.emptyRow} ${kit.text}`}>{SETTINGS.aisError}</p>;
   } else {
     body = (
       <>
         {current.length === 0 ? (
-          <p className={styles.text}>{SETTINGS.aisEmpty}</p>
+          <p className={`${kit.glassSm} ${styles.emptyRow} ${kit.text}`}>{SETTINGS.aisEmpty}</p>
         ) : (
           <ul className={styles.grantList}>
             {current.map((g) => (
@@ -156,18 +158,12 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
   }
 
   return (
-    <SettingsCard
-      id="ais"
-      title={SETTINGS.aisHeading}
-      wide
-      actions={
-        <Button variant="primary" onClick={() => setConnectOpen(true)}>
-          {SETTINGS.connectAi}
-        </Button>
-      }
-    >
-      <p className={styles.sub}>{SETTINGS.aisSub}</p>
+    <SettingsCard id="ais" title={SETTINGS.aisHeading} bare>
       {body}
+      <Button variant="primary" tone="blue" size="lg" className={styles.connect} onClick={() => setConnectOpen(true)}>
+        {SETTINGS.connectAi}
+      </Button>
+      <p className={kit.help}>{SETTINGS.aisSub}</p>
       <ConnectAiDialog open={connectOpen} onClose={() => setConnectOpen(false)} connected={connected} />
       <NarrowDialog grant={narrowing} onClose={() => setNarrowing(null)} />
       <Confirm

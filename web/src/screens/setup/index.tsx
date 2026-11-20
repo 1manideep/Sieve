@@ -13,6 +13,8 @@ import { Icon } from '@/components/icons';
 import { ModelSetupPanel } from '@/components/ModelSetupPanel/ModelSetupPanel';
 import { STATUS_POPOVER, TITLES } from '@/copy/strings';
 import { SETUP_COPY, fill } from '@/copy/screens-main';
+import kit from '@/screens/settings/kit/kit.module.css';
+import { ScreenHead } from '@/screens/settings/kit/ScreenHead';
 import { SourceCard } from '@/screens/sources/SourceCard';
 import { preloadSources, type SourceRowView } from '@/state/sources';
 import { useAvailability } from '@/state/availability';
@@ -62,7 +64,7 @@ function StepCard({ n, title, children, footer, focusOnMount }: { n: number; tit
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [n]);
   return (
-    <section className={styles.card} aria-labelledby={`setup-step-${n}`}>
+    <section className={`${kit.glass} ${styles.card}`} aria-labelledby={`setup-step-${n}`}>
       <h2 id={`setup-step-${n}`} ref={headingRef} tabIndex={-1} className={styles.cardTitle}>
         {title}
       </h2>
@@ -253,12 +255,14 @@ export function SetupScreen() {
 
   return (
     <div className={styles.page}>
-      <div className={styles.head}>
-        <h1 className={styles.title}>{SETUP_COPY.heading}</h1>
-        <Button variant="ghost" onClick={finish}>
-          {SETUP_COPY.skip}
-        </Button>
-      </div>
+      <ScreenHead
+        title={SETUP_COPY.heading}
+        actions={
+          <Button variant="ghost" onClick={finish}>
+            {SETUP_COPY.skip}
+          </Button>
+        }
+      />
       <div className={styles.stepper}>
         <p className={styles.stepOf}>{fill(SETUP_COPY.stepOf, { n: step })}</p>
         <span className={styles.dots} aria-hidden="true">

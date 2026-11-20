@@ -44,12 +44,13 @@ export function ConsentPanel({ variant, item, fullOption, busy = false, onAllow,
           <p className={styles.noText}>{CONSENT_COPY.noText}</p>
         )}
       </div>
+      {/* As at the gate: the blue action first, then the text button that keeps everything here. */}
       <div className={styles.buttons}>
-        <Button variant={variant === 'relay' ? 'danger' : 'secondary'} onClick={onDecline} disabled={busy}>
-          {variant === 'relay' ? CONSENT_COPY.deny : CONSENT_COPY.notNow}
-        </Button>
-        <Button variant="primary" onClick={onAllow} busy={busy} disabled={busy}>
+        <Button variant="primary" tone="blue" onClick={onAllow} busy={busy} disabled={busy}>
           {variant === 'playground-upload' ? CONSENT_COPY.allowFile : CONSENT_COPY.allowItem}
+        </Button>
+        <Button variant="ghost" className={styles.decline} onClick={onDecline} disabled={busy}>
+          {variant === 'relay' ? CONSENT_COPY.deny : CONSENT_COPY.notNow}
         </Button>
       </div>
     </section>

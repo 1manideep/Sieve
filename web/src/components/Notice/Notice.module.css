@@ -4,32 +4,32 @@
   min-width: 0;
   padding: 14px 16px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface);
+  border-radius: 18px;
+  background: var(--color-glass);
   color: var(--color-text-body);
 }
 
 .icon { flex: none; margin-top: 1px; }
 .content { display: grid; gap: var(--space-2); min-width: 0; }
-.title { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.title { margin: 0; font-size: 15px; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; color: var(--color-text); }
 .body { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .body p { margin: 0; }
 .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
-.info { background: var(--color-device-tint-2); border-color: var(--color-device); }
+.info { background: var(--color-device-tint-2); border-color: rgba(138, 180, 248, 0.35); }
 .info .icon { color: var(--color-device); }
 
-.success { background: var(--color-device-tint-2); border-color: var(--color-device); }
-.success .icon { color: var(--color-device); }
+.success { background: rgba(109, 213, 140, 0.08); border-color: rgba(109, 213, 140, 0.4); }
+.success .icon { color: var(--color-ok); }
 
-.warning { background: var(--color-warn-tint-2); border-color: var(--color-warn-border); color: var(--color-warn-body); }
+.warning { background: var(--color-warn-tint-2); border-color: var(--color-warn-border); }
 .warning .icon { color: var(--color-warn-icon); }
 
 .cloud { background: var(--color-cloud-tint-2); border-color: var(--color-cloud-border); }
-.cloud .icon { color: var(--color-cloud); }
+.cloud .icon { color: var(--color-link); }
 
-.never { background: var(--color-never-tint); border-color: var(--color-never-border); color: var(--color-never-text); }
-.never .icon { color: var(--color-never-strong); }
+.never { background: var(--color-never-tint); border-color: var(--color-never-border); }
+.never .icon { color: var(--color-never-text); }
 
 .compact { padding: 10px 12px; }
 .compact .title { font-size: 14px; }

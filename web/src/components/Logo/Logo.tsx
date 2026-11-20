@@ -1,7 +1,6 @@
-// Shield logo and wordmark (40 sections 7.2 and 15.7).
+// The name as text, no mark: "Sieve" in Google Sans 500 (docs/design/final-flow.md).
 import { Link } from 'react-router-dom';
 import { APP_NAME } from '@/copy/strings';
-import { Icon } from '../icons';
 import styles from './Logo.module.css';
 
 export interface LogoProps {
@@ -11,17 +10,11 @@ export interface LogoProps {
 }
 
 export function Logo({ to, size = 'header' }: LogoProps) {
-  const content = (
-    <>
-      <Icon name="shield" size={size === 'splash' ? 40 : 28} className={styles.mark} />
-      <span className={styles.wordmark}>{APP_NAME}</span>
-    </>
-  );
   const className = `${styles.logo} ${size === 'splash' ? styles.splash : ''}`;
-  if (to === undefined) return <span className={className}>{content}</span>;
+  if (to === undefined) return <span className={className}>{APP_NAME}</span>;
   return (
     <Link to={to} className={className}>
-      {content}
+      {APP_NAME}
     </Link>
   );
 }

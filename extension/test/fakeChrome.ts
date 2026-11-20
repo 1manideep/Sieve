@@ -88,6 +88,8 @@ export interface FakeChromeOptions {
   shortcut?: string | null; // null: commands.getAll() rejects
   sidePanelOpenRejects?: boolean;
   withSidePanelClose?: boolean;
+  /** 'ok' (the default, Chrome 127+), 'rejects', or 'missing' (Chrome before 127: no action.openPopup). */
+  openPopup?: 'ok' | 'rejects' | 'missing';
   session?: Record<string, unknown>;
   version?: string;
 }
@@ -99,6 +101,8 @@ export function createFakeChrome(opts: FakeChromeOptions = {}) {
   const session: Record<string, unknown> = opts.session ?? {};
   const localCalls: string[] = [];
   const opened: { windowId?: number; tabId?: number }[] = [];
+  const popups: { windowId?: number }[] = [];
+  const behaviors: unknown[] = [];
   const closed: { windowId?: number }[] = [];
   const tabUpdates: { tabId: number; props: unknown }[] = [];
   const windowUpdates: { windowId: number; props: unknown }[] = [];
@@ -113,7 +117,7 @@ export function createFakeChrome(opts: FakeChromeOptions = {}) {
   const sidePanel: Record<string, unknown> = {
     setPanelBehavior: (b: unknown) => {
       log('sidePanel.setPanelBehavior');
-      void b;
+      behaviors.push(b);
       return Promise.resolve();
     },
     open: (o: { windowId?: number; tabId?: number }) => {
@@ -132,6 +136,15 @@ export function createFakeChrome(opts: FakeChromeOptions = {}) {
     };
   }
 
+  const action: Record<string, unknown> = {};
+  if ((opts.openPopup ?? 'ok') !== 'missing') {
+    action.openPopup = (o: { windowId?: number } = {}) => {
+      log('action.openPopup');
+      popups.push(o);
+      return opts.openPopup === 'rejects' ? Promise.reject(new Error('Failed to open popup.')) : Promise.resolve();
+    };
+  }
+
   const api = {
     runtime: {
       id: FAKE_EXTENSION_ID,
@@ -142,6 +155,7 @@ export function createFakeChrome(opts: FakeChromeOptions = {}) {
       onConnectExternal: new FakeEvent<[FakePort]>(),
     },
     action: {
+      ...action,
       setBadgeText: (d: { text: string }) => {
         log('action.setBadgeText');
         badge.text = d.text;
@@ -223,7 +237,7 @@ export function createFakeChrome(opts: FakeChromeOptions = {}) {
         log('commands.getAll');
         if (opts.shortcut === null) return Promise.reject(new Error('commands unavailable'));
         return Promise.resolve([
-          { name: 'open-sieve', shortcut: opts.shortcut ?? '⌃⇧S', description: "Open or close Sieve's side panel" },
+          { name: 'open-sieve', shortcut: opts.shortcut ?? '⌃⇧S', description: 'Open or close Sieve' },
         ]);
       },
       onCommand: new FakeEvent<[string, { windowId?: number } | undefined]>(),
@@ -251,6 +265,8 @@ export function createFakeChrome(opts: FakeChromeOptions = {}) {
     session,
     localCalls,
     opened,
+    popups,
+    behaviors,
     closed,
     tabUpdates,
     windowUpdates,

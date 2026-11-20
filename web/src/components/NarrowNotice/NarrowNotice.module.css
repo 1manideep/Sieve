@@ -1,11 +1,12 @@
+/* Under 768px: a dismissible notice at the top (40 section 15.4), on the solid surface. */
 .notice {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-2) var(--space-2) var(--gutter-narrow);
-  background: var(--color-surface-muted);
-  border-bottom: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
+  gap: 8px;
+  padding: 8px 8px 8px var(--gutter-narrow, 16px);
+  background: var(--color-surface, #0b0b0f);
+  border-bottom: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.75));
 }
 
 .text { flex: 1; margin: 0; font-size: 14px; line-height: 1.5; }
@@ -15,11 +16,12 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--target-min);
-  height: var(--target-min);
+  width: var(--target-min, 44px);
+  height: var(--target-min, 44px);
   border: 0;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill, 999px);
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--color-text-muted, rgba(255, 255, 255, 0.55));
   cursor: pointer;
 }
+.dismiss:hover { background: rgba(255, 255, 255, 0.08); color: var(--color-text, #ffffff); }

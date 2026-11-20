@@ -30,12 +30,25 @@ export const COPY = {
   slowNote: 'Still waiting for your Sieve tab to confirm. Open Sieve to check.',
   sourceFootnote: 'This preview came from your Sieve tab on this computer, not through the server.',
   openSieve: 'Open Sieve',
+  keepOpen: 'Keep open on the side',
   done: 'Done',
   recent: 'Recent',
   receiptShared: 'Receipt saved in "What has AI seen?"',
   receiptDeclined: 'Receipt saved: declined',
   stepUnavailable: "That step isn't available for this request.",
+  openReceipt: 'Open the receipt',
 } as const;
+
+/** The result heading after an approval from this panel (board F8B): "Sent 41 characters to Gemini CLI". The name
+ *  sits at the end so the card can isolate it (<bdi>); the count is known only to the panel that approved. */
+export const SENT_HEADING = {
+  before: 'Sent ',
+  after: ' characters to ',
+} as const;
+
+export function sentHeading(chars: number, aiName: string): string {
+  return `${SENT_HEADING.before}${chars.toLocaleString('en-US')}${SENT_HEADING.after}${aiName}`;
+}
 
 /** Text for a step button: "Answer only", "Excerpt", "Full item". */
 export function stepLabel(step: LadderStep): string {

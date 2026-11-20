@@ -1,26 +1,56 @@
+/* In-app and Playground: the conversation column. Relay: the list column and the decision, with no box of its own:
+   the screen that shows it (Requests, the Playground's "Sieve on this device") already draws the card around it. */
 .card {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   gap: var(--space-6);
   min-width: 0;
-  padding: 22px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2xl);
-  background: var(--color-surface);
   animation: appear var(--dur-base) var(--ease-out);
 }
+.relay { gap: var(--space-5, 20px); }
+.askedNote { margin: 0; font-size: 14px; line-height: 1.5; color: var(--color-text-secondary, rgba(255, 255, 255, 0.75)); overflow-wrap: anywhere; }
 
-.main { flex: 999 1 560px; min-width: 0; display: grid; gap: var(--space-4); }
-.aside { flex: 1 1 320px; min-width: 0; }
+.main { flex: 999 1 560px; min-width: 0; display: grid; gap: 18px; }
 .relayList { flex: 1 1 300px; min-width: 0; }
+.related { min-width: 0; }
 
-.playground { padding: 16px; }
-.playground .main { flex-basis: 100%; }
+.ruleLine { display: flex; }
 
-.answer { display: grid; gap: var(--space-1); }
-.eyebrow { margin: 0; font: var(--text-label); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-device-strong); }
-.answerText { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+/* The answer with the ribbon behind it */
+/* The ribbon sits behind the whole conversation (z-index -1 inside AskResult's stacking context), spans the column
+   with its transparent ends at the edges, and is not clipped, so it fades out on its own. Still, like every ribbon. */
+.answer { position: relative; min-width: 0; padding: 6px 0; }
+.ribbonLayer { position: absolute; inset: 0; pointer-events: none; z-index: -1; }
+.ribbon { left: 0; top: 50%; width: 100%; height: 170px; margin-top: -85px; opacity: 0.6; transform: rotate(-6deg); }
+.answerText {
+  position: relative;
+  margin: 0;
+  font: 400 24px/1.4 var(--font-sans);
+  letter-spacing: -0.01em;
+  color: var(--color-text);
+  text-shadow: 0 2px 30px rgba(0, 0, 0, 0.8);
+  overflow-wrap: anywhere;
+}
+.metaLine { margin: 0; font: 400 12px/1.5 var(--font-mono); color: var(--color-text-muted, rgba(255, 255, 255, 0.6)); }
+
+/* The gate card */
+.gate {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 20px 22px;
+  border-radius: var(--radius-card, 24px);
+  background: var(--color-glass, rgba(11, 11, 15, 0.82));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.gateDecided { opacity: 0.8; }
+.gateHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.gateTitle { display: flex; align-items: center; gap: 10px; margin: 0; font: 500 16px/1.3 var(--font-sans); color: var(--color-text); }
+.gateGlyph { flex: none; color: var(--color-accent, #8AB4F8); }
+.decidedNote { margin: 0; font: 400 12px/1.5 var(--font-mono); color: var(--color-text-muted, rgba(255, 255, 255, 0.6)); }
 
 .disclosureBlock { display: grid; gap: var(--space-2); }
 .disclosure {
@@ -33,10 +63,14 @@
   border: 0;
   background: transparent;
   color: var(--color-text-secondary);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   cursor: pointer;
 }
 
 @keyframes appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .card { animation: none; } }
+@media (max-width: 639px) {
+  .answerText { font-size: 20px; }
+  .gate { padding: 16px; }
+}

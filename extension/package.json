@@ -2,7 +2,7 @@
   "name": "@sieve/extension",
   "version": "0.1.0",
   "private": true,
-  "description": "Sieve Chrome extension: the badge and side panel for approving relay requests from the home base tab.",
+  "description": "Sieve Chrome extension: the badge and toolbar popup (or side panel) for approving relay requests from the home base tab.",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {

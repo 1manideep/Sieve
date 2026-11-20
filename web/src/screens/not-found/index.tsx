@@ -1,26 +1,24 @@
-// Not found (40 section 13.10): H1 and a link button, "Go to Ask" for Google users, else "Open the Playground".
+// Not found (40 section 13.10, in the final scheme): black, one sentence, Open Sieve. A Google user goes to Ask,
+// everyone else to the Playground.
 import { useDocumentTitle } from '@/app/useDocumentTitle';
 import { LinkButton } from '@/components/Button/Button';
 import { ROUTE_ERROR, SCREENS, TITLES } from '@/copy/strings';
 import { useSession } from '@/state/session';
-import styles from '../screen.module.css';
+import styles from './notFound.module.css';
 
 export function Component() {
   useDocumentTitle(TITLES.notFound);
   const google = useSession((s) => s.kind === 'google');
   return (
     <div className={styles.page}>
-      <h1 className={styles.display}>{SCREENS.notFound.heading}</h1>
+      <div className={`ribbon ${styles.ribbon}`} aria-hidden="true" />
+      <p className={styles.code}>404</p>
+      <h1 className={styles.title}>{SCREENS.notFound.heading}</h1>
+      <p className={styles.line}>{ROUTE_ERROR.notFoundLine}</p>
       <div className={styles.actions}>
-        {google ? (
-          <LinkButton to="/" variant="primary">
-            {ROUTE_ERROR.goToAsk}
-          </LinkButton>
-        ) : (
-          <LinkButton to="/playground" variant="primary">
-            {ROUTE_ERROR.openPlayground}
-          </LinkButton>
-        )}
+        <LinkButton to={google ? '/' : '/playground'} variant="primary" size="lg">
+          {ROUTE_ERROR.openSieve}
+        </LinkButton>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
-// CategoryList (40 section 13.6): one disclosure per category with its count and rule; expanded, the five newest
-// titles from the real index.
+// CategoryList (40 section 13.6; F5): one disclosure per category with its count and rule in a glass card;
+// expanded, the five newest titles from the real index.
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CATEGORIES, type Category, type CategoryRule } from '@sieve/shared';
@@ -8,6 +8,7 @@ import { Icon } from '@/components/icons';
 import { SOURCES, fillText } from '@/copy/screens-controls';
 import { formatCount } from '@/copy/format';
 import type { SieveDb } from '@/index';
+import kit from '../settings/kit/kit.module.css';
 import { useNewestTitles } from './sourcesDb';
 import styles from './sources.module.css';
 
@@ -19,7 +20,7 @@ export interface CategoryListProps {
 
 export function CategoryList({ db, counts, rules }: CategoryListProps) {
   return (
-    <section className={styles.card} aria-labelledby="categories-heading">
+    <section className={`${kit.glass} ${styles.categoriesCard}`} aria-labelledby="categories-heading">
       <div>
         <h2 id="categories-heading" className={styles.cardTitle}>
           {SOURCES.categoriesHeading}

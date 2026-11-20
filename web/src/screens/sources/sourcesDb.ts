@@ -23,6 +23,11 @@ export function useCategoryCounts(db: SieveDb | null): Record<Category, number> 
   }, [db]);
 }
 
+/** How many items the real index holds: the "Searched" cell on Requests. */
+export function useRecordCount(db: SieveDb | null): number | undefined {
+  return useLiveQuery(async () => (db ? tablesOf(db).records.count() : undefined), [db]);
+}
+
 export function useSourceCounts(db: SieveDb | null): Record<RealSource, number> | undefined {
   return useLiveQuery(async () => {
     if (!db) return undefined;

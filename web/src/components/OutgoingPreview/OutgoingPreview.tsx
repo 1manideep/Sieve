@@ -13,6 +13,8 @@ export interface OutgoingPreviewProps {
   option: StepOption;     // composed; option.text is rendered exactly, through RedactedText
   instruction?: string;   // in-app: rendered as a second block
   overLimit?: boolean;
+  /** Leave out the characters-and-redactions line (the gate shows it next to its buttons instead). */
+  hideFooter?: boolean;
 }
 
 /** The shared photo comes as base64 JPEG (re-encoded on the device, no EXIF); show it through an object URL. */
@@ -45,7 +47,7 @@ export function footerText(option: StepOption, instruction?: string): string {
   return parts.join(' · ');
 }
 
-export function OutgoingPreview({ id, label, option, instruction, overLimit = false }: OutgoingPreviewProps) {
+export function OutgoingPreview({ id, label, option, instruction, overLimit = false, hideFooter = false }: OutgoingPreviewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [scrolls, setScrolls] = useState(false);
 
@@ -74,7 +76,7 @@ export function OutgoingPreview({ id, label, option, instruction, overLimit = fa
           </p>
         </div>
       ) : null}
-      <p className={styles.footer}>{footerText(option, instruction)}</p>
+      {hideFooter ? null : <p className={styles.footer}>{footerText(option, instruction)}</p>}
       {overLimit ? <p className={styles.over}>{OUTGOING_COPY.overLimit}</p> : null}
     </section>
   );

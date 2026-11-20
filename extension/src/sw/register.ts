@@ -1,10 +1,13 @@
 // Wires chrome events to the hub (50 sections 7.1 to 7.4, 8.9 and 9). The only worker file that touches chrome.*;
 // it takes the API object as a parameter so unit tests pass a fake. Every listener is added synchronously.
+// The panel page opens as the toolbar popup (manifest action.default_popup); the side panel stays as a second
+// surface ("Keep open on the side"). The shortcut and a notification click open the popup with
+// chrome.action.openPopup() (Chrome 127+) and fall back to the side panel when it is missing or rejects.
 import { HOME_BASE_PORT_NAME, MESSAGE_VERSION } from '@sieve/shared';
 import type { ExtensionToPage } from '@sieve/shared';
 import { ALLOWED_ORIGINS, BUILD_MODE } from '../shared/env';
 import { COMMAND_OPEN_SIEVE, PANEL_PORT_NAME } from '../shared/internal';
-import type { PanelState, WorkerToPanel } from '../shared/internal';
+import type { PanelState, Surface, WorkerToPanel } from '../shared/internal';
 import { parsePageMessage, parsePanelMessage } from '../shared/validate';
 import { BADGE_COLOR, BADGE_TEXT_COLOR, badgeFor } from './badge';
 import { openApp } from './focus';
@@ -15,7 +18,15 @@ export const HELLO_TIMEOUT_MS = 5_000;
 export const SLOW_MS = 15_000;
 export const MAX_INVALID = 5;
 
-export type CommandResult = 'open' | 'close' | 'ignored';
+/** 'popup': openPopup was called; 'open': sidePanel.open was called; 'close': a popup or panel was told to close. */
+export type CommandResult = 'popup' | 'open' | 'close' | 'ignored';
+
+/** One connected panel page, as the worker sees it (exposed for tests). */
+export interface PanelView {
+  surface: Surface;
+  visible: boolean;
+  windowId?: number;
+}
 
 export interface RegisterDeps {
   now?: () => number;
@@ -27,18 +38,18 @@ export interface Registered {
   /** The open-sieve shortcut handler; returns what it did (used by tests). */
   handleCommand(command: string, tab?: Pick<chrome.tabs.Tab, 'windowId'>): CommandResult;
   view(): PanelState;
+  /** The connected panel pages (popups and side panels). */
+  panelViews(): PanelView[];
 }
 
-interface PanelInfo {
-  visible: boolean;
-  windowId?: number;
-}
+type PanelInfo = PanelView;
 
 /** Dev builds expose the shortcut handler so e2e tests can press it without a keyboard. */
 export interface SieveDevHook {
   command(name: string, windowId: number): CommandResult;
   state(): PanelState;
   panelWindows(): number[];
+  panelViews(): PanelView[];
 }
 
 export function register(api: typeof chrome, deps: RegisterDeps = {}): Registered {
@@ -52,8 +63,9 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
   const helloTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const slowTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
-  // 1 and 2 (50 section 7.1)
-  api.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+  // 1 and 2 (50 section 7.1). A click on the icon opens the popup: the side panel must not take the click, and
+  // Chrome keeps this setting across restarts, so installs that had it on get it turned off here.
+  api.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {});
   api.action.setBadgeBackgroundColor({ color: BADGE_COLOR }).catch(() => {});
   api.action.setBadgeTextColor({ color: BADGE_TEXT_COLOR }).catch(() => {});
   const notifier = createNotifier(api, debug); // reads the announced ids back from storage.session
@@ -226,8 +238,8 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
     });
   });
 
-  function panelInWindow(windowId: number): chrome.runtime.Port | undefined {
-    for (const [port, info] of panels) if (info.windowId === windowId) return port;
+  function panelInWindow(windowId: number, surface: Surface): chrome.runtime.Port | undefined {
+    for (const [port, info] of panels) if (info.windowId === windowId && info.surface === surface) return port;
     return undefined;
   }
 
@@ -236,7 +248,11 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
     if (!msg || !panels.has(port)) return;
     switch (msg.type) {
       case 'panel/hello':
-        panels.set(port, { visible: msg.visible, ...(msg.windowId !== undefined ? { windowId: msg.windowId } : {}) });
+        panels.set(port, {
+          surface: msg.surface ?? 'panel',
+          visible: msg.visible,
+          ...(msg.windowId !== undefined ? { windowId: msg.windowId } : {}),
+        });
         safePost(port, { type: 'panel/state', state: hub.view() } satisfies WorkerToPanel);
         return;
       case 'panel/visibility': {
@@ -275,17 +291,28 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
         hub.dismiss(msg.requestId);
         broadcast();
         return;
+      case 'panel/open-side': {
+        // The popup could not open the side panel itself: try from here, and close the popup only if it opened.
+        const windowId = panels.get(port)?.windowId;
+        if (windowId === undefined) return;
+        api.sidePanel
+          .open({ windowId })
+          .then(() => safePost(port, { type: 'panel/close' } satisfies WorkerToPanel))
+          .catch(() => {});
+        return;
+      }
     }
   }
 
-  // Side panel ports (50 section 7.4)
+  // Panel ports, from the popup or the side panel (50 section 7.4). Each page has one port; it is forgotten when
+  // the page closes (a popup closes whenever it loses focus), so opening and closing never adds up.
   api.runtime.onConnect.addListener((port) => {
     const s = port.sender;
     if (port.name !== PANEL_PORT_NAME || s?.id !== api.runtime.id || !s.url?.startsWith(api.runtime.getURL('sidepanel/'))) {
       port.disconnect();
       return;
     }
-    panels.set(port, { visible: false });
+    panels.set(port, { surface: 'panel', visible: false });
     port.onMessage.addListener((raw: unknown) => onPanelMessage(port, raw));
     port.onDisconnect.addListener(() => {
       void api.runtime.lastError;
@@ -294,34 +321,56 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
     safePost(port, { type: 'panel/state', state: hub.view() } satisfies WorkerToPanel);
   });
 
-  // The shortcut toggles the panel (50 section 8.9). Chrome accepts sidePanel.open() only inside the gesture, so
-  // the open call is made synchronously: nothing is awaited before it.
+  /** chrome.action.openPopup, when this Chrome has it (127+). */
+  function canOpenPopup(): boolean {
+    return typeof (api.action as Partial<typeof chrome.action>).openPopup === 'function';
+  }
+
+  // The shortcut toggles Sieve (50 section 8.9): it closes the popup or side panel showing in that window, or
+  // opens the popup. Without openPopup, or when it rejects, it opens the side panel as before. Chrome accepts
+  // sidePanel.open() only inside the gesture, so every lookup is synchronous and nothing is awaited before an open.
   function handleCommand(command: string, tab?: Pick<chrome.tabs.Tab, 'windowId'>): CommandResult {
     if (command !== COMMAND_OPEN_SIEVE || tab?.windowId === undefined) return 'ignored';
     const windowId = tab.windowId;
-    const panel = panelInWindow(windowId);
-    if (!panel) {
-      api.sidePanel.open({ windowId }).catch(() => {});
-      return 'open';
+    const popup = panelInWindow(windowId, 'popup');
+    if (popup) {
+      safePost(popup, { type: 'panel/close' } satisfies WorkerToPanel); // the popup calls window.close()
+      return 'close';
     }
-    safePost(panel, { type: 'panel/close' } satisfies WorkerToPanel); // the panel calls window.close()
-    if (typeof api.sidePanel.close === 'function') api.sidePanel.close({ windowId }).catch(() => {}); // Chrome 141+
-    return 'close';
+    const panel = panelInWindow(windowId, 'panel');
+    if (panel) {
+      safePost(panel, { type: 'panel/close' } satisfies WorkerToPanel); // the panel calls window.close()
+      if (typeof api.sidePanel.close === 'function') api.sidePanel.close({ windowId }).catch(() => {}); // Chrome 141+
+      return 'close';
+    }
+    if (canOpenPopup()) {
+      api.action.openPopup({ windowId }).catch(() => {
+        api.sidePanel.open({ windowId }).catch(() => {});
+      });
+      return 'popup';
+    }
+    api.sidePanel.open({ windowId }).catch(() => {});
+    return 'open';
   }
   api.commands.onCommand.addListener((command, tab) => {
     handleCommand(command, tab);
   });
 
-  // Notifications (50 section 7.7)
+  // Notifications (50 section 7.7). A click opens the popup in the Sieve tab's window; if that fails, the side
+  // panel there; if that fails too, it focuses the Sieve tab. The first open call is synchronous, inside the click.
   api.notifications.onClicked.addListener((notificationId) => {
     const requestId = requestIdOfNotification(notificationId);
     if (!requestId) return;
     const windowId = hub.owner(requestId)?.windowId ?? hub.homeBaseConn()?.windowId;
-    const fallback = () => {
+    const openTab = () => {
       openApp(api, hub, postTo, requestId).catch(() => {});
     };
-    if (windowId !== undefined) api.sidePanel.open({ windowId }).catch(fallback); // synchronous, inside the click
-    else fallback();
+    const openSide = () => {
+      if (windowId !== undefined) api.sidePanel.open({ windowId }).catch(openTab);
+      else openTab();
+    };
+    if (canOpenPopup()) api.action.openPopup(windowId !== undefined ? { windowId } : {}).catch(openSide);
+    else openSide();
     notifier.clear(requestId);
   });
   api.notifications.onClosed.addListener((notificationId, byUser) => {
@@ -331,12 +380,14 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
   // 4. Grace timer: without a ready connection after 2 s, show the disconnected badge and state.
   setTimeout(update, GRACE_MS);
 
-  const registered: Registered = { hub, handleCommand, view: () => hub.view() };
+  const panelViews = (): PanelView[] => [...panels.values()].map((p) => ({ ...p }));
+  const registered: Registered = { hub, handleCommand, view: () => hub.view(), panelViews };
   if (BUILD_MODE === 'dev') {
     const hook: SieveDevHook = {
       command: (name, windowId) => handleCommand(name, { windowId }),
       state: () => hub.view(),
       panelWindows: () => [...panels.values()].flatMap((p) => (p.windowId === undefined ? [] : [p.windowId])),
+      panelViews,
     };
     (globalThis as { __sieveDev?: SieveDevHook }).__sieveDev = hook;
   }

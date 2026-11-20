@@ -1,8 +1,10 @@
-// ReceiptFilters (40 section 13.7): AI toggles, then Source and When selects. Pure view over useReceipts.filters.
+// ReceiptFilters (40 section 13.7): AI toggles as pills, then Source and When as pill selects. Pure view over
+// useReceipts.filters.
 import { useId } from 'react';
 import { Chip } from '@/components/Chip/Chip';
 import { SEEN } from '@/copy/screens-controls';
 import { useReceipts, type ReceiptFilters as Filters } from '@/state/receipts';
+import kit from '../settings/kit/kit.module.css';
 import styles from './seen.module.css';
 
 const SOURCE_OPTIONS: { value: Filters['source']; label: string }[] = [
@@ -45,7 +47,7 @@ export function ReceiptFilters({ ais, filters }: { ais: string[]; filters: Filte
         </label>
         <select
           id={sourceId}
-          className={styles.select}
+          className={kit.select}
           value={filters.source}
           onChange={(e) => set('source', e.target.value as Filters['source'])}
         >
@@ -62,7 +64,7 @@ export function ReceiptFilters({ ais, filters }: { ais: string[]; filters: Filte
         </label>
         <select
           id={whenId}
-          className={styles.select}
+          className={kit.select}
           value={filters.range}
           onChange={(e) => set('range', e.target.value as Filters['range'])}
         >

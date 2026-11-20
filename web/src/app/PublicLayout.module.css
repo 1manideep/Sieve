@@ -1,11 +1,90 @@
-.header { background: transparent; }
+/* The public shell: a transparent header over the black ground, the page, one footer line. */
+.shell { display: flex; flex-direction: column; min-height: 100vh; min-height: 100dvh; }
+
+.header { position: relative; z-index: var(--z-header); }
+/* /welcome: the header floats over the stage, as on the board. The shell is its containing block, so it sits below
+   anything the app shell renders above it (the narrow-screen notice). */
+.overlay { position: relative; }
+.overlay .header { position: absolute; top: 0; left: 0; right: 0; }
 
 .inner {
   display: flex;
   align-items: center;
-  max-width: var(--content-max);
-  margin: 0 auto;
-  padding: 14px var(--gutter);
+  gap: var(--space-2);
+  padding: 24px 56px;
 }
 
+.brand { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
+.brand > :first-child { font-size: 26px; }
+
+.openSource {
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.85);
+  white-space: nowrap;
+}
+
+.nav { display: flex; align-items: center; gap: 6px; }
+
+.link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: var(--radius-pill);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 15px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+.link:hover { background: var(--color-surface-muted); color: var(--color-text); }
+.active, .active:hover { color: var(--color-text); background: var(--color-surface-muted); }
+
+.cta { margin-left: 4px; }
+
+.menuButton {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+.menuButton:hover { background: var(--color-surface-muted); color: var(--color-text); }
+
+.main { flex: 1; min-width: 0; }
 .main:focus { outline: none; }
+
+.footer {
+  padding: 14px var(--gutter) 18px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+/* Phones and small tablets: Sieve, the menu button and Open Sieve on one row; the links open under them. */
+@media (max-width: 1023px) {
+  .inner { flex-wrap: wrap; padding: 12px var(--gutter); }
+  .brand > :first-child { font-size: 22px; }
+  .menuButton { display: inline-flex; order: 2; }
+  .cta { order: 3; margin-left: 0; }
+  .nav { order: 4; display: none; flex-basis: 100%; flex-direction: column; align-items: stretch; gap: 2px; padding: 6px 0 8px; }
+  .menuOpen { background: rgba(0, 0, 0, 0.92); border-bottom: 1px solid var(--color-divider); }
+  .menuOpen .nav { display: flex; }
+}
+
+@media (max-width: 419px) {
+  .openSource { display: none; }
+}

@@ -45,6 +45,8 @@ describe('Setup', () => {
     expect(screen.getByRole('button', { name: 'Start setup' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { level: 1, name: 'Prepare the on-device model' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeInTheDocument();
+    // First-run setup has no "Try now" link in its head; the control screens do.
+    expect(screen.queryByRole('link', { name: 'Try now' })).not.toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
@@ -69,7 +71,7 @@ describe('Setup', () => {
     await expectNoAxeViolations();
   });
 
-  it('step 3: the folder and Gmail cards and the note; step 4: push, Connect an AI, Finish', async () => {
+  it('step 3: the folder and Gmail cards and the note; step 4: push, Connect an assistant, Finish', async () => {
     const setPushEnabled = vi.fn(async () => 'denied' as const);
     useSettings.setState({ setPushEnabled });
     renderSetup();
@@ -84,7 +86,7 @@ describe('Setup', () => {
     await userEvent.click(screen.getByLabelText('Push notification when a request is waiting'));
     expect(setPushEnabled).toHaveBeenCalledWith(true);
     expect(await screen.findByText("Notifications are blocked for this site. Allow them in Chrome's site settings, then turn this on.")).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Connect an AI' })).toHaveAttribute('href', '/settings?connect=1#ais');
+    expect(screen.getByRole('link', { name: 'Connect an assistant' })).toHaveAttribute('href', '/settings?connect=1#ais');
     await expectNoAxeViolations();
     await userEvent.click(screen.getByRole('button', { name: 'Finish' }));
     expect(localStorage.getItem(setupDoneKey('u1'))).toBe('1');

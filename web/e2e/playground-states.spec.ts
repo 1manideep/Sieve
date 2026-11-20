@@ -1,7 +1,7 @@
 // Playground states (40 section 19.2; acceptance AT-5 to AT-9, AT-18, AT-33).
 import { expect, test } from '@playwright/test';
 import { fakeDraft } from './fixtures/fakeModel';
-import { APPROVE, BANK, HEALTH, HEALTH_TEXT, LANDLORD, MY_TEST, PARCEL, askChip, chip, openPlayground } from './fixtures/helpers';
+import { APPROVE, BANK, HEALTH, HEALTH_TEXT, KEEP_HERE, LANDLORD, MY_TEST, PARCEL, askChip, openPlayground, openTrace } from './fixtures/helpers';
 import { cloudCalls, prepareStubs, seamCalls } from './fixtures/stubs';
 
 const desktopOnly = (name: string) => test.skip(name !== 'desktop', 'desktop project only');
@@ -14,12 +14,12 @@ test.describe('Playground states', () => {
     await askChip(page, HEALTH);
     await expect(page.getByText('Health is never shared').first()).toBeVisible();
     await expect(page.getByRole('button', { name: APPROVE })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Use it here, share nothing' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: KEEP_HERE })).toHaveCount(0);
     const calls = await seamCalls(page);
     expect(calls.some((c) => c.prompt.includes(HEALTH_TEXT) || c.recordIds.includes('playground:pg-mail-15'))).toBe(false);
   });
 
-  test('Money asks first: the banner sits directly above the buttons, and approving still works', async ({ page }, info) => {
+  test('Money asks first: the banner sits directly above the buttons (Approve first), and approving still works', async ({ page }, info) => {
     desktopOnly(info.project.name);
     const { errors } = await prepareStubs(page, { availability: 'available' });
     await openPlayground(page, errors);
@@ -32,7 +32,7 @@ test.describe('Playground states', () => {
       const all = [...document.querySelectorAll('button, input, a[href]')];
       return all.find((c) => el.compareDocumentPosition(c) & Node.DOCUMENT_POSITION_FOLLOWING)?.textContent ?? '';
     });
-    expect(nextControl).toBe('Use it here, share nothing');
+    expect(nextControl).toMatch(APPROVE);
     await page.getByRole('button', { name: APPROVE }).click();
     await expect(page.getByTestId('draft-text')).toHaveText(/^Draft: /);
   });
@@ -56,7 +56,8 @@ test.describe('Playground states', () => {
     await page.getByRole('button', { name: 'Add to the inbox' }).click();
     await expect(page.getByText('Added by you')).toBeVisible();
     await expect(page.getByText('Indexed on this device')).toBeVisible({ timeout: 30_000 });
-    await expect(chip(page, MY_TEST)).toBeVisible();
+    // Adding the email asks about it at once, so the conversation (F3) replaces the chips; the field keeps the question.
+    await expect(page.getByLabel('Ask the Playground')).toHaveValue(MY_TEST);
     await expect(page.locator('article[aria-label="Result"]')).toBeVisible({ timeout: 45_000 });
     await expect(page.getByText(/Possible instruction aimed at an AI|Hidden text removed before any model read it/).first()).toBeVisible();
     await expect(page.getByTestId('outgoing-text')).not.toContainText('bank statement');
@@ -74,6 +75,7 @@ test.describe('Playground states', () => {
     expect((await cloudCalls(page)).some((c) => c.prompt.includes('return the keys'))).toBe(false);
     await page.getByRole('button', { name: 'Allow the cloud for this file' }).click();
     await expect(page.getByRole('radiogroup', { name: 'Share the least it can' })).toBeVisible({ timeout: 45_000 });
+    await openTrace(page);
     await expect(page.locator('li[data-kind="select"][data-where="cloud"]').getByText(/^Cloud · Gemini/)).toBeVisible();
   });
 

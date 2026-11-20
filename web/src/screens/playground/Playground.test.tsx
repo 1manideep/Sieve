@@ -35,6 +35,8 @@ const actions = {
 };
 const ask = vi.fn(async () => undefined);
 const announce = vi.fn();
+// One test swaps the store's reset for a spy; every test starts from the real one so state never leaks between them.
+const realReset = useAskPlayground.getState().reset;
 
 function renderPlayground() {
   return render(
@@ -53,7 +55,8 @@ beforeEach(() => {
   ask.mockClear();
   announce.mockClear();
   usePlayground.setState({ ...actions, status: 'ready', simulateNoModel: false, composing: false, added: [], tab: 'ask', openFolder: undefined });
-  useAskPlayground.setState({ ask, question: '' });
+  useAskPlayground.setState({ ask, reset: realReset, question: '' });
+  realReset();
   useReceipts.setState({ start: vi.fn(() => () => undefined), receipts: [] });
   useRecords.setState({ ensure: vi.fn(async () => undefined) });
   useSession.setState({ kind: 'none', ensureAnonymous: vi.fn(async () => undefined) });
@@ -66,14 +69,24 @@ afterEach(() => {
 });
 
 describe('Playground', () => {
-  it('opens without sign-in: header, device frame, five suggestions, files window, footnote', async () => {
+  it('opens without sign-in (F2): the public header, the headline and the prompt card, five suggestions, "What is on this computer", the device bar, footnote', async () => {
     renderPlayground();
-    expect(screen.getByRole('heading', { level: 1, name: 'Playground' })).toBeInTheDocument();
+    // The public header: Sieve as text, the OPEN SOURCE pill, the tabs and the white Try now.
+    expect(screen.getByRole('link', { name: 'Sieve' })).toHaveAttribute('href', '/welcome');
+    expect(screen.getByText('OPEN SOURCE')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Try now' })).toHaveAttribute('href', '/try');
+    expect(screen.getByRole('heading', { level: 1, name: 'Ask your own data. Only one line leaves.' })).toBeInTheDocument();
     expect(screen.getByText('A pretend computer in your browser. Add files, write test emails, ask anything. Nothing leaves it unless you approve.')).toBeInTheDocument();
+    const card = screen.getByRole('region', { name: 'Ask the pretend computer' });
+    expect(within(card).getByLabelText('Ask the Playground')).toBeInTheDocument();
+    expect(within(card).getByRole('radiogroup', { name: 'How much may leave' })).toBeInTheDocument();
+    expect(within(card).getByText('Nano · on this computer')).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Ask' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Playground device' })).toBeInTheDocument();
     expect(screen.getByText('Playground device · sample data')).toBeInTheDocument();
     expect(screen.getByRole('radiogroup', { name: 'On-device model' })).toBeInTheDocument();
     expect(screen.getAllByText('On-device model ready').length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { level: 2, name: 'What is on this computer' })).toBeInTheDocument();
     const suggestions = screen.getByText('Try asking').parentElement as HTMLElement;
     expect(within(suggestions).getAllByRole('button').map((b) => b.textContent)).toEqual([
       'What did my landlord say about the deposit? Draft a reply.',
@@ -84,6 +97,7 @@ describe('Playground', () => {
     ]);
     expect(screen.getByText('Pick a question to see each step: what ran on this device, what you approved, and what went to the cloud.')).toBeInTheDocument();
     expect(await screen.findByText('2 emails')).toBeInTheDocument();
+    expect(screen.getByText('4 items · kept in this browser')).toBeInTheDocument();
     expect(screen.getByText('1 photo')).toBeInTheDocument();
     expect(screen.getByText('1 file')).toBeInTheDocument();
     expect(screen.getByText('Nothing yet. Add a file, or write a test email that tries to trick the AI.')).toBeInTheDocument();
@@ -110,7 +124,12 @@ describe('Playground', () => {
     await userEvent.click(screen.getByRole('button', { name: 'What did my landlord say about the deposit? Draft a reply.' }));
     expect(ask).toHaveBeenCalledWith('What did my landlord say about the deposit? Draft a reply.');
     act(() => useAskPlayground.setState({ phase: 'ready', requestId: 'r1', proposal: landlordReady, step: 'answer' }));
+    // F3: the conversation replaces the home; the headline is gone and the page keeps a hidden h1.
+    expect(await screen.findByTestId('outgoing-text')).toHaveTextContent(DEPOSIT_ANSWER);
     expect(screen.getByTestId('outgoing-text').textContent).toBe(DEPOSIT_ANSWER);
+    expect(screen.getByRole('heading', { level: 1, name: 'Playground' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: `Approve, ${DEPOSIT_ANSWER.length + 'Draft a short, polite reply.'.length} characters` })).toBeInTheDocument();
+    expect(screen.getByLabelText('Ask the Playground')).toHaveAttribute('placeholder', 'Ask a follow-up about this computer');
     expect(screen.getByRole('radio', { name: '1 · Answer only' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByText('Home · shares with your approval')).toBeInTheDocument();
     await expectNoAxeViolations();

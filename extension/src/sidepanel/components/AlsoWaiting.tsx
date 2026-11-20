@@ -1,4 +1,4 @@
-// The other waiting requests (50 section 8.3): one line each; clicking a row selects it.
+// The other waiting requests (50 section 8.3): a mono label and one glass row each; clicking a row selects it.
 import { useId } from 'react';
 import type { ProposalPreview } from '@sieve/shared';
 import { alsoWaitingHeading, requesterName } from '../../shared/labels';
@@ -9,7 +9,7 @@ export function AlsoWaiting({ proposals, onSelect }: { proposals: ProposalPrevie
   if (proposals.length === 0) return null;
   return (
     <section className={s.list} aria-labelledby={headingId}>
-      <h3 id={headingId} className={s.h3}>
+      <h3 id={headingId} className={s.listLabel}>
         {alsoWaitingHeading(proposals.length)}
       </h3>
       <ul className={s.rows}>

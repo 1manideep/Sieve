@@ -1,53 +1,127 @@
-/* Welcome (40 section 13.1). */
-.page {
-  max-width: var(--content-max);
-  margin: 0 auto;
-  padding: 40px var(--gutter) 64px;
-  display: grid;
-  gap: var(--space-10);
-  min-width: 0;
+/* F1, the landing. The board is 1440x900; below 1440px the sphere and the constellation shrink together with the
+   window (down to 0.72 of the board, where the constellation is hidden anyway). */
+/* The public header floats over the stage (PublicLayout), so the stage is the whole window, as on the board. */
+.stage {
+  --sphere: clamp(460.8px, 44.444vw, 640px);
+  --sky-w: clamp(1036.8px, 100vw, 1440px);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: max(100vh, 640px);
+  min-height: max(100dvh, 640px);
+  padding-top: 92px;
+  overflow: hidden;
 }
 
-.hero { display: grid; gap: var(--space-8); align-items: center; min-width: 0; }
-@media (min-width: 1024px) { .hero { grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); } }
-
-.copy { display: grid; gap: var(--space-5); min-width: 0; }
-.title { font: 700 44px/1.05 var(--font-display); letter-spacing: var(--tracking-tight); max-width: 16ch; }
-@media (min-width: 1280px) { .title { font: var(--text-display); letter-spacing: var(--tracking-tight); } }
-.lead { margin: 0; font: var(--text-lead); color: var(--color-text-muted); max-width: 58ch; }
-
-.ctas { display: flex; flex-wrap: wrap; gap: var(--space-5); }
-.cta { flex: 1 1 240px; display: grid; justify-items: start; align-content: start; gap: var(--space-2); max-width: 320px; }
-.caption { margin: 0; font-size: 14px; line-height: 1.5; color: var(--color-text-muted); }
-
-.example {
-  display: grid;
-  gap: var(--space-3);
-  padding: 22px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-2xl);
-  background: var(--color-surface);
-  min-width: 0;
+/* The ribbons, still (opacity 75, softness 90, shade 70). */
+.ribbonA { left: -17%; top: 42%; width: 68%; min-width: 620px; transform: rotate(-14deg); }
+.ribbonB {
+  right: -19%;
+  top: 37%;
+  width: 69%;
+  min-width: 640px;
+  background: linear-gradient(90deg, transparent 0%, #1B6EF3 22%, #8AB4F8 48%, #1B6EF3 72%, transparent 100%);
+  transform: rotate(12deg);
 }
-.exampleEyebrow { margin: 0; font: var(--text-label); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-cloud); }
-.exampleRequest { margin: 0; font-size: 17px; font-weight: 600; }
-.exampleLadder { display: flex; flex-wrap: wrap; }
-.exampleStep { flex: 1 1 100px; padding: 10px 12px; border: 1px solid var(--color-border-strong); font: var(--text-ui); text-align: center; color: var(--color-text-muted); background: var(--color-surface); }
-.exampleStep + .exampleStep { margin-left: -1px; }
-.exampleStep:first-child { border-radius: var(--radius-lg) 0 0 var(--radius-lg); }
-.exampleStep:last-child { border-radius: 0 var(--radius-lg) var(--radius-lg) 0; }
-.exampleStepOn { background: var(--color-inverse); border-color: var(--color-inverse); color: var(--color-on-inverse); }
-.examplePreview { display: grid; gap: var(--space-1); padding: 14px 16px; border: 1px dashed var(--color-border-strong); border-radius: var(--radius-lg); background: var(--color-surface-sunken); }
-.examplePreviewLabel { margin: 0; font: var(--text-label); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--color-text-subtle); }
-.examplePreviewText { margin: 0; font-size: 16px; line-height: 1.6; }
-.exampleTags { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 
-.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-4); }
-.tile { display: grid; align-content: start; gap: var(--space-2); padding: 20px; border: 1px solid var(--color-border); border-radius: var(--radius-2xl); background: var(--color-surface); }
-.tileTitle { font: var(--text-h4); }
-.tileBody { margin: 0; font-size: 15px; line-height: 1.55; color: var(--color-text-muted); }
+/* Stars: each on its own clock; nothing moves under prefers-reduced-motion. */
+.sky { position: absolute; inset: 0; pointer-events: none; }
+.star {
+  position: absolute;
+  border-radius: 50%;
+  background: #FFFFFF;
+  animation-name: twinkle;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) { .star { animation: none; } }
 
-.requirements { margin: 0; font-size: 15px; color: var(--color-text-muted); max-width: 80ch; }
+/* The sphere (640px, masked to a soft circle) with its 1px rim and the inset blue glow, and the constellation. */
+.scene { position: absolute; inset: 0; pointer-events: none; }
+/* The board puts the sphere's centre 10px below the constellation's. */
+.sphere,
+.rim {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + var(--sphere) / 64);
+  width: var(--sphere);
+  height: var(--sphere);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.sphere {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.7) 1.2px, transparent 1.6px);
+  background-size: 18px 18px;
+  opacity: 0.3;
+  -webkit-mask-image: radial-gradient(circle, #000 55%, transparent 72%);
+  mask-image: radial-gradient(circle, #000 55%, transparent 72%);
+}
+.rim { border: 1px solid rgba(255, 255, 255, 0.3); box-shadow: inset 0 0 120px rgba(138, 180, 248, 0.12); }
+.constellation {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--sky-w);
+  height: auto;
+  aspect-ratio: 1440 / 900;
+  overflow: visible;
+  transform: translate(-50%, -50%);
+}
+@media (max-width: 1023px) { .constellation { display: none; } }
 
-.footer { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: 13px; color: var(--color-text-muted); }
-.footer a { display: inline-flex; align-items: center; min-height: var(--target-min); }
+/* The sentence, the lead and the two buttons, centred over the sphere. */
+.hero {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  padding: 40px var(--gutter);
+  text-align: center;
+}
+.title {
+  margin: 0;
+  max-width: 1000px;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: clamp(36px, 5.28vw, 76px);
+  line-height: 1.06;
+  letter-spacing: -0.025em;
+  text-shadow: 0 2px 40px rgba(0, 0, 0, 0.8);
+  text-wrap: balance;
+}
+.lead { margin: 0; max-width: 640px; font-size: clamp(16px, 1.32vw, 19px); line-height: 1.5; color: rgba(255, 255, 255, 0.85); }
+.ctas { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 10px; }
+.note { margin: 0; font-size: 13px; line-height: 1.5; color: var(--color-text-muted); }
+.note a { color: var(--color-link); }
+
+/* The three numbers and the built line. */
+.footer {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-4) var(--space-8);
+  padding: 0 56px 34px;
+}
+.numbers { display: flex; flex-wrap: wrap; gap: var(--space-4) 40px; margin: 0; padding: 0; list-style: none; }
+.number { display: flex; flex-direction: column; gap: 2px; }
+.value { margin: 0; font-size: 30px; font-weight: 400; line-height: 1; letter-spacing: var(--tracking-tight); }
+.valueBlue { color: var(--color-accent); }
+.caption { margin: 0; font-family: var(--font-mono); font-size: 11px; color: rgba(255, 255, 255, 0.7); }
+.built { margin: 0; font-family: var(--font-mono); font-size: 11px; color: var(--color-text-muted); }
+
+@media (max-width: 1023px) {
+  .stage { padding-top: 68px; }
+  .hero { padding: 32px var(--gutter); }
+  .footer { padding: 0 var(--gutter) 24px; }
+}

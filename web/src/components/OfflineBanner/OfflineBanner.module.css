@@ -1,7 +1,7 @@
 .banner {
-  background: var(--color-warn-tint-2);
+  background: var(--color-warn-tint);
   border-bottom: 1px solid var(--color-warn-border);
-  color: var(--color-warn-body);
+  color: var(--color-text-body);
 }
 
 .inner {

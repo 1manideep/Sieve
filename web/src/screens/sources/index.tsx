@@ -1,14 +1,16 @@
-// Sources and your private index (40 section 13.6).
+// Sources (40 section 13.6; docs/design/final-flow.md F5): three glass cards in a row, the "Add a source" row, the
+// indexing row above them and the categories below. The index lives only on this device.
 import { useEffect, useState } from 'react';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
 import { Button } from '@/components/Button/Button';
-import { PageHeader } from '@/components/PageHeader/PageHeader';
-import { SOURCES } from '@/copy/screens-controls';
-import { SCREENS, TITLES } from '@/copy/strings';
+import { SENTENCE, SOURCES } from '@/copy/screens-controls';
+import { TITLES } from '@/copy/strings';
 import { useIndexing } from '@/state/indexing';
 import { useSettings } from '@/state/settings';
 import { useSources } from '@/state/sources';
 import { Confirm } from '../settings/kit/Confirm';
+import kit from '../settings/kit/kit.module.css';
+import { ScreenHead } from '../settings/kit/ScreenHead';
 import { CategoryList } from './CategoryList';
 import { IndexingCard } from './IndexingCard';
 import { SourceCard } from './SourceCard';
@@ -55,15 +57,15 @@ export function Component() {
   );
 
   return (
-    <div className={styles.page}>
-      <PageHeader
-        title={SCREENS.sources.heading}
-        lead={SCREENS.sources.lead}
-        size="page"
+    <div className={kit.screen}>
+      <ScreenHead
+        title={SOURCES.heading}
+        tryNow
         actions={
           <>
             <Button
               variant="secondary"
+              size="sm"
               busy={pauseBusy}
               disabled={!anyConnected}
               onClick={() => {
@@ -72,24 +74,23 @@ export function Component() {
             >
               {paused ? SOURCES.resume : SOURCES.pause}
             </Button>
-            <Button variant="secondary" busy={rebuildBusy} disabled={!anyConnected} onClick={() => setConfirmRebuild(true)}>
+            <Button variant="secondary" size="sm" busy={rebuildBusy} disabled={!anyConnected} onClick={() => setConfirmRebuild(true)}>
               {SOURCES.rebuild}
             </Button>
           </>
         }
       />
       {anyConnected ? <IndexingCard lastSyncAt={lastSyncAt} /> : null}
-      <div className={styles.layout}>
-        <section className={styles.sources} aria-label={SOURCES.sourcesLabel}>
-          {REAL_SOURCES.map((kind) => (
-            <SourceCard key={kind} kind={kind} row={rows?.find((r) => r.kind === kind)} itemCount={sourceCounts?.[kind] ?? 0} />
-          ))}
-          <p className={styles.later}>{SOURCES.laterSources}</p>
-        </section>
-        <aside className={styles.aside} aria-label={SOURCES.categoriesLabel}>
-          <CategoryList db={db} counts={counts} rules={rules} />
-        </aside>
-      </div>
+      <section className={styles.sources} aria-label={SOURCES.sourcesLabel}>
+        {REAL_SOURCES.map((kind) => (
+          <SourceCard key={kind} kind={kind} row={rows?.find((r) => r.kind === kind)} itemCount={sourceCounts?.[kind] ?? 0} />
+        ))}
+        <p className={`${kit.dashed} ${styles.later}`}>{SOURCES.laterSources}</p>
+      </section>
+      <aside className={styles.aside} aria-label={SOURCES.categoriesLabel}>
+        <CategoryList db={db} counts={counts} rules={rules} />
+      </aside>
+      <p className={kit.sentence}>{SENTENCE}</p>
       <Confirm
         open={confirmRebuild}
         title={SOURCES.rebuildTitle}

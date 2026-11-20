@@ -1,33 +1,37 @@
-.ladder { display: grid; gap: var(--space-2); min-width: 0; }
-.label { margin: 0; font-size: 14px; font-weight: 600; color: var(--color-text-secondary); }
+/* The ladder as the final design's segmented pill: a dark track, the chosen step lifted in white at .18. */
+.ladder { display: grid; gap: var(--space-2); min-width: 0; justify-items: start; }
+.label { margin: 0; font: 400 11px/1.4 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-subtle, rgba(255, 255, 255, 0.5)); }
 
-.group { display: flex; flex-wrap: wrap; }
+.group { display: inline-flex; flex-wrap: wrap; max-width: 100%; padding: 4px; border-radius: var(--radius-pill, 999px); background: rgba(255, 255, 255, 0.08); }
 
 .segment {
-  flex: 1 1 140px;
-  min-height: var(--target-min);
-  padding: 10px 16px;
-  border: 1px solid var(--color-border-strong);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: var(--text-ui);
+  flex: 0 1 auto;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-pill, 999px);
+  background: transparent;
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.75));
+  font: 500 13px/1.2 var(--font-sans);
+  white-space: nowrap;
   cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease-out);
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
-.segment + .segment { margin-left: -1px; }
-.segment:first-child { border-radius: var(--radius-lg) 0 0 var(--radius-lg); }
-.segment:last-child { border-radius: 0 var(--radius-lg) var(--radius-lg) 0; }
-.segment:hover { background: var(--color-surface-sunken); }
+.segment:hover { background: rgba(255, 255, 255, 0.08); color: var(--color-text); }
 .segment:focus-visible { position: relative; z-index: 1; }
 
 .checked,
-.checked:hover { position: relative; background: var(--color-inverse); border-color: var(--color-inverse); color: var(--color-on-inverse); }
+.checked:hover { position: relative; background: rgba(255, 255, 255, 0.18); color: var(--color-text); }
 
 .unavailable,
-.unavailable:hover { border-style: dashed; background: var(--color-surface); color: var(--color-text-subtle); cursor: default; }
+.unavailable:hover { background: transparent; color: var(--color-text-subtle, rgba(255, 255, 255, 0.4)); text-decoration: line-through; text-decoration-color: rgba(255, 255, 255, 0.3); cursor: default; }
 
 .locked { cursor: default; }
-.locked:not(.checked):hover { background: var(--color-surface); }
+.locked:not(.checked):hover { background: transparent; }
 
 .reasons { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; font-size: 13px; color: var(--color-text-muted); }
-.more { margin: 0; font-size: 13px; font-weight: 600; color: var(--color-warn-text); }
+.more { margin: 0; font-size: 13px; font-weight: 500; color: var(--color-warn-text, #FDD663); }
+
+@media (max-width: 479px) {
+  .segment { padding: 0 10px; font-size: 12px; }
+}

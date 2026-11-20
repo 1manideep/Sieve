@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '@/test/axe';
 import { DraftPanel, type DraftPanelProps } from './DraftPanel';
@@ -35,18 +36,26 @@ describe('DraftPanel', () => {
     await expectNoAxeViolations();
   });
 
-  it('done: the draft, Copy draft, the note and the receipt line', async () => {
+  it('done: the receipt chip, the draft under its heading, Copy the draft, New ask and the note', async () => {
     const onSeeReceipts = vi.fn();
+    const onAskAgain = vi.fn();
     const draft = 'Hi, thanks for confirming the deposit.';
-    render(<main><DraftPanel {...base} phase="done" outcome={shared} draft={draft} onSeeReceipts={onSeeReceipts} /></main>);
-    expect(screen.getByRole('heading', { name: 'Draft from the cloud model' })).toBeInTheDocument();
+    render(<main><DraftPanel {...base} phase="done" outcome={{ ...shared, receiptId: 'rcpt-0412' }} draft={draft} onSeeReceipts={onSeeReceipts} onAskAgain={onAskAgain} /></main>);
+    expect(screen.getByText('sent 69 characters to Gemini · receipt #0412')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Gemini drafted a reply from those 69 characters alone' })).toBeInTheDocument();
     expect(screen.getByTestId('draft-text').textContent).toBe(draft);
-    expect(screen.getByRole('button', { name: 'Copy draft' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy the draft' })).toBeInTheDocument();
     expect(screen.getByText(/Gemini saw only/).textContent).toBe('Gemini saw only the answer and your instruction: 69 characters.');
-    expect(screen.getByText(/Sent only the answer/)).toHaveTextContent('Sent only the answer to the cloud model. A receipt was saved.');
-    await userEvent.click(screen.getByRole('button', { name: 'See what AI has seen' }));
+    await userEvent.click(screen.getByRole('button', { name: 'open this receipt in What has AI seen?' }));
     expect(onSeeReceipts).toHaveBeenCalledOnce();
+    await userEvent.click(screen.getByRole('button', { name: 'New ask' }));
+    expect(onAskAgain).toHaveBeenCalledOnce();
     await expectNoAxeViolations();
+  });
+
+  it('real data: the receipt chip opens What has AI seen? as a link', () => {
+    render(<MemoryRouter><main><DraftPanel {...base} phase="done" outcome={shared} draft="Hi." receiptsHref="/seen" /></main></MemoryRouter>);
+    expect(screen.getByRole('link', { name: 'open this receipt in What has AI seen?' })).toHaveAttribute('href', '/seen');
   });
 
   it('done with an error: the warning and Try again, and the receipt line still shows', async () => {
@@ -55,15 +64,15 @@ describe('DraftPanel', () => {
     expect(screen.getByText('The cloud model is busy right now. Try again in a minute.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(onRetry).toHaveBeenCalledOnce();
-    expect(screen.getByText(/A receipt was saved/)).toBeInTheDocument();
+    expect(screen.getByText('sent 69 characters to Gemini · receipt #r1')).toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
-  it('kept local: the line and Ask something else', async () => {
+  it('kept local: the line and New ask', async () => {
     const onAskAgain = vi.fn();
     render(<main><DraftPanel {...base} phase="done" outcome={{ kind: 'kept-local' }} onAskAgain={onAskAgain} /></main>);
     expect(screen.getByText('Kept on this device. Nothing was shared.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Ask something else' }));
+    await userEvent.click(screen.getByRole('button', { name: 'New ask' }));
     expect(onAskAgain).toHaveBeenCalledOnce();
     await expectNoAxeViolations();
   });

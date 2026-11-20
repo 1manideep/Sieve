@@ -11,6 +11,14 @@ export function fillText<T extends string>(template: T, values: Record<Placehold
   return template.replace(/\{([A-Za-z]+)\}/g, (whole, name: string) => (name in map ? String(map[name]) : whole));
 }
 
+/** The sentence on every screen, somewhere small (docs/design/final-flow.md). */
+export const SENTENCE = 'Only what you approve leaves your computer.';
+
+/** The head of the control screens (F5): the white link to the demo computer at the right of the title. */
+export const CONSOLE = {
+  tryNow: 'Try now',
+} as const;
+
 /** Requests (40 section 13.5, with 11.4, 11.6 and 50 section 8.9). */
 export const REQUESTS = {
   bannerNotHomeBase: "This computer isn't your home base, so requests from AIs aren't handled here.",
@@ -18,10 +26,10 @@ export const REQUESTS = {
     'Requests are handled on {label}. Open Sieve there to approve them, or make this computer the home base.',
   bannerStandby: 'Another Sieve tab on this computer is the home base. Approve requests there, or use this tab instead.',
   bannerOffline: "This tab lost its connection. New requests wait until it's back.",
-  bannerNoGrant: 'No AI can ask yet. Connect an AI in Settings to get a link for it.',
+  bannerNoGrant: 'No assistant can ask yet. Connect one in Settings to get a link for it.',
   makeHomeBase: 'Make this my home base',
   useThisTab: 'Use this tab instead',
-  connectAi: 'Connect an AI',
+  connectAi: 'Connect an assistant',
   otherDeviceFallback: 'another computer',
   memorySaverTip:
     "Keep this tab open. If Chrome's Memory Saver is on, add this site under Settings › Performance › Always keep these sites active.",
@@ -41,14 +49,26 @@ export const REQUESTS = {
   phaseBlocked: 'Blocked by your rules',
   phaseNoMatch: 'No match',
   phaseError: "Couldn't prepare",
-  eyebrow: 'Request from {aiName} · through your connector · {time}',
-  asks: '{aiName} asks:',
+  /** The pending card's first line: the assistant, its step cap and, once an item is picked, the item's category. */
+  eyebrow: '{aiName} asks · {cap}',
+  eyebrowCategory: '{aiName} asks · {cap} · {category}',
   quoted: '"{question}"',
-  askedFor: "Asked for: {requested}. {aiName}'s access stops at {max}.",
+  cellSearched: 'Searched',
+  cellPicked: 'Picked',
+  cellWouldLeave: 'Would leave',
+  searchedHere: '{n} items, here',
+  searchedHereUnknown: 'Here, on this computer',
+  wouldLeave: '{n} characters',
+  wouldLeaveNothing: 'Nothing yet',
+  maskedNote: '{n} personal details masked',
+  maskedNoteOne: '1 personal detail masked',
+  howTitle: 'How a request reaches you',
+  howBody:
+    'An assistant you connected asks through Sieve. Sieve searches here, writes the answer here, and waits. The request shows up in this list, in the side panel next to any tab, and as a notification. Nothing leaves until you press Approve.',
   detailLabel: 'Request from {aiName}',
   waitingOn: 'Waiting on {label}',
   waitingInOtherTab: 'Waiting in another tab',
-  recentHeading: 'Recent requests',
+  recentHeading: 'Earlier today',
   recentSub: 'From the last 24 hours. Sieve deletes requests after a day; receipts stay in What has AI seen?',
   recentCaption: 'Recent requests',
   colWhen: 'When',
@@ -101,6 +121,9 @@ export const CONFIRM = {
 
 /** Sources (40 section 13.6; 00 decision D9). */
 export const SOURCES = {
+  heading: 'Sources',
+  countLabel: 'items on this computer',
+  indexingPct: 'indexing {pct}%',
   pause: 'Pause indexing',
   resume: 'Resume indexing',
   rebuild: 'Rebuild index',
@@ -125,6 +148,8 @@ export const SOURCES = {
   },
   tagNotConnected: 'Not connected',
   tagConnected: 'Connected',
+  /** Gmail while it is connected and not paused: new mail is added while Sieve is open. */
+  tagLive: 'Live',
   tagPaused: 'Paused',
   connect: { gmail: 'Connect Gmail', folder: 'Choose a folder', upload: 'Add files', playground: '' },
   noFolderPicker: "This browser can't open folders. Use Chrome on a computer.",
@@ -147,7 +172,7 @@ export const SOURCES = {
   gmailTesting:
     'Gmail access is in Google\'s testing mode, so only accounts added as testers can connect. Others see Google\'s "access blocked" page. A local folder works for everyone.',
   useFolderInstead: 'Use a local folder instead',
-  laterSources: 'Coming later: Google Calendar and Google Drive.',
+  laterSources: 'Add a source: Google Calendar and Google Drive come later.',
   rebuildTitle: 'Rebuild the index?',
   rebuildBody:
     'Sieve reads your sources again on this device and sorts everything from scratch. This can take a while. Your questions still go first.',
@@ -177,6 +202,17 @@ export const SEEN = {
   auditPopover:
     'Every allow and deny on your connectors is written to a hash-chained log. If any entry were changed or removed, this check would fail.',
   tryAgain: 'Try again',
+  /** The four numbers at the top, from the receipts the screen has loaded. */
+  statShares: 'shares in 30 days',
+  statChars: 'characters, total',
+  statFull: 'whole items, ever',
+  statBlocked: 'blocked or declined',
+  colQuestion: 'Question',
+  colAssistant: 'Assistant',
+  colStep: 'Step',
+  colChars: 'Chars',
+  colWhen: 'When',
+  colActions: 'Actions',
   show: 'Show:',
   all: 'All',
   aiFilterLabel: 'AI',
@@ -240,10 +276,11 @@ export const SETTINGS = {
   queued: "Saves when you're back online",
   saveError: "Couldn't save",
   // 13.8.1
-  aisHeading: 'AIs that can ask',
-  connectAi: 'Connect an AI',
-  aisSub: 'Each AI gets its own connector link with its own limits. You still approve every share.',
-  grantActive: 'Active',
+  aisHeading: 'Assistants',
+  connectAi: 'Connect an assistant',
+  aisSub:
+    'Each link carries a step cap, categories and an expiry. Sieve shows the link once; the assistant keeps it; you can end it here any time.',
+  grantActive: 'On',
   grantExpiring: 'Expires soon',
   grantExpired: 'Expired',
   grantRevoked: 'Revoked',
@@ -257,14 +294,14 @@ export const SETTINGS = {
   meta: 'Expires {date} · {used} · Link ends in …{hint}',
   lastUsed: 'Last used {when}',
   neverUsed: 'Never used',
-  narrow: 'Narrow',
+  narrow: 'Change limits',
   revoke: 'Revoke',
   past: 'Past connections ({n})',
-  aisEmpty: 'No AI can ask yet. Connect one to get a link you paste into that assistant.',
+  aisEmpty: 'No assistant can ask yet. Connect one to get a link you paste into it.',
   aisLoading: 'Loading connections',
   aisError: "Couldn't load your connections. Check your connection.",
   // 13.8.2
-  connectTitle: 'Connect an AI',
+  connectTitle: 'Connect an assistant',
   stepWhich: 'Which AI is this for?',
   nameError: 'Give this connection a name.',
   nameHelp: 'This name shows on requests and receipts.',
@@ -321,6 +358,10 @@ export const SETTINGS = {
   ruleApprove: 'Share with approval',
   ruleAskFirst: 'Ask first',
   ruleNever: 'Never share',
+  /** The coloured line under each category: what its rule means. */
+  ruleLineApprove: 'approve each request',
+  ruleLineAskFirst: 'asks first, every time',
+  ruleLineNever: 'never leaves, not even an answer',
   allowTitle: 'Allow sharing {category}?',
   allowBody: 'Items labelled {category} could then be shared, always with your approval.',
   allowConfirm: 'Allow with approval',
@@ -403,7 +444,7 @@ export const TEST_REQUEST = {
 export const TRY = {
   /** The page title is not in 40 section 5.1; it follows the same pattern. */
   title: 'Try it on a real computer · Sieve',
-  heading: 'Try it on a real computer',
+  heading: 'A Mac mini with Gemini Nano already set up. Yours for five minutes.',
   button: 'Try it on a real computer',
   line: 'A Mac with Gemini Nano ready to go, streamed to your browser. About 15 minutes per visit.',
   requesting: 'Asking for a seat on the demo computer…',
@@ -422,4 +463,38 @@ export const TRY = {
   openPlayground: 'Open the Playground',
   again: 'Try again',
   ready: 'A demo computer is ready.',
+  // F6 and F6A (docs/design/final-flow.md)
+  eyebrow: 'Try on a real computer',
+  intro:
+    'Sieve runs the model on the computer itself, which needs a Chrome download most people have not done. So take a seat on the demo computer: the whole app, sample data, the extension installed, a receipt at the end.',
+  seatsLabel: 'Seats',
+  seatName: 'Seat {n}',
+  takeSeat: 'Take seat 1',
+  joinQueue: 'Join the queue',
+  /** Every seat is taken: the queue is the way in. */
+  allInUse: 'Every seat is in use right now. Join the queue and this page opens your seat when one frees up.',
+  seatChecking: 'checking…',
+  seatFree: 'free now',
+  seatYours: 'yours',
+  seatInUse: 'in use',
+  seatOffline: 'offline',
+  seatOther: 'two seats in all, five minutes each',
+  footnote:
+    'The seat wipes itself when you leave. Nothing you type is kept. The side panel opens with Control+Shift+S. Two people at a time, five minutes each, one extension of five.',
+  placeholderTitle: 'Your seat appears here',
+  placeholderLine: "the demo computer's screen, live, in this frame",
+  fullScreen: 'Full screen',
+  exitFullScreen: 'Exit full screen',
+  extend: 'Extend 5 min',
+  extendSoon: 'Extending is not available yet.',
+  seatBar: 'Your seat',
+  facts: [
+    { title: 'What you get', body: 'Chrome with Nano, the extension, 46 sample items' },
+    { title: 'What stays', body: 'Nothing. The profile is restored from a golden copy' },
+    { title: 'Where it runs', body: "A Mac mini in Mani's apartment, Cloudflare in front" },
+  ],
+  factsLabel: 'About the demo computer',
+  footer: 'On the demo computer, nothing is yours to begin with.',
+  hosts: 'sieve-view.manideep.info · sieve-seats.manideep.info',
+  fullNote: "the demo computer's screen · nothing you type is kept",
 } as const;

@@ -1,0 +1,61 @@
+/* F2: the headline at 104 px (clamped), the lead, the prompt card, the chips. */
+.home {
+  position: relative;
+  display: grid;
+  gap: 28px;
+  justify-items: center;
+  min-width: 0;
+  padding: clamp(24px, 8vh, 96px) 0 24px;
+}
+
+/* The two locked ribbons cross behind the headline and the card. Each one stays inside this block with its
+   transparent ends at the edges, so the clip never cuts a lit part of the glow (on any screen width). */
+.ribbons { position: absolute; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.ribbonLeft { left: -2%; top: 200px; width: 64%; height: 200px; transform: rotate(-16deg); }
+.ribbonRight { right: -2%; top: 170px; width: 64%; height: 200px; transform: rotate(14deg); }
+.home > :not(.ribbons) { position: relative; z-index: 1; }
+
+.hero { display: grid; gap: 18px; justify-items: center; text-align: center; max-width: 1100px; min-width: 0; }
+.headline {
+  margin: 0;
+  font: 400 clamp(40px, 7.2vw, 104px)/1 var(--font-display);
+  letter-spacing: -0.03em;
+  color: var(--color-text);
+  text-shadow: 0 2px 40px rgba(0, 0, 0, 0.8);
+  overflow-wrap: anywhere;
+}
+.headlineLine { display: block; }
+.lead { margin: 0; max-width: 760px; font-size: clamp(16px, 1.6vw, 21px); line-height: 1.45; color: rgba(255, 255, 255, 0.88); }
+
+.notices { display: grid; gap: var(--space-2); width: 100%; max-width: 850px; min-width: 0; }
+
+.chipsBlock { display: grid; gap: 10px; justify-items: center; width: 100%; min-width: 0; }
+.chipsLabel { margin: 0; font: 400 11px/1.4 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-subtle, rgba(255, 255, 255, 0.5)); }
+.chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; max-width: 100%; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  max-width: 100%;
+  padding: 8px 16px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(11, 11, 15, 0.6);
+  color: var(--color-text);
+  font: 400 14px/1.3 var(--font-sans);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.chip:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.3); }
+.chip[aria-pressed='true'] { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.4); }
+.chipGlyph { flex: none; color: var(--color-accent, #8AB4F8); }
+
+.footer { width: 100%; }
+
+@media (max-width: 767px) {
+  .home { gap: 22px; padding-top: 24px; }
+  .headline { letter-spacing: -0.02em; }
+}

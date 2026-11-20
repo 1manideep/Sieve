@@ -1,21 +1,27 @@
-// RequestDetail (40 section 13.5): the blue request header, then PreparingCard while the home base works, then
-// ApprovalCard variant="relay" with RelayResult after the decision.
+// RequestDetail (40 section 13.5; docs/design/final-flow.md F5): the glass card with the assistant, its step cap and
+// the category, the question, the Searched / Picked / Would leave cells, then PreparingCard while the home base works
+// and ApprovalCard variant="relay" (the ladder, the exact text, Approve and Deny) with RelayResult after the decision.
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { LADDER_LABELS, MAX_PAYLOAD_CHARS, stepPhrase, type LadderStep } from '@sieve/shared';
+import { MAX_PAYLOAD_CHARS, stepPhrase, type LadderStep } from '@sieve/shared';
 import { ApprovalCard } from '@/components/ApprovalCard/ApprovalCard';
 import { composeOptions, startingStep } from '@/components/ApprovalCard/composedOptions';
+import { useDb } from '@/components/dbTables';
 import { ItemViewer } from '@/components/ItemViewer/ItemViewer';
 import { Notice } from '@/components/Notice/Notice';
 import { PreparingCard } from '@/components/PreparingCard/PreparingCard';
 import { RelayResult } from '@/components/RelayResult/RelayResult';
 import { Tag } from '@/components/Tag/Tag';
 import { REQUESTS, fillText } from '@/copy/screens-controls';
+import { formatCount } from '@/copy/format';
 import { composeOutgoingText } from '@/pipeline';
 import { useHomeBase, type HomeBaseState, type PendingEntry } from '@/state/homeBase';
 import { useNetwork } from '@/state/network';
 import { useRecords } from '@/state/records';
 import { Fill, Iso } from '../settings/kit/Fill';
+import kit from '../settings/kit/kit.module.css';
 import { formatClock, isoTime } from '../settings/kit/when';
+import { capLabel } from '../settings/settingsText';
+import { useRecordCount } from '../sources/sourcesDb';
 import { phaseTag } from './PendingList';
 import styles from './requests.module.css';
 
@@ -36,6 +42,8 @@ export function RequestDetail({ entry }: { entry: PendingEntry }) {
   const aiName = request.requester.aiName;
   const online = useNetwork((s) => s.online);
   const meta = useRecords((s) => s.meta);
+  const db = useDb('real');
+  const indexCount = useRecordCount(db);
   const [chosen, setChosen] = useState<LadderStep | undefined>(undefined);
   const [busy, setBusy] = useState<'approve' | 'deny' | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -119,43 +127,68 @@ export function RequestDetail({ entry }: { entry: PendingEntry }) {
 
   const tag = phaseTag(entry);
   const preparing = entry.phase === 'claiming' || entry.phase === 'preparing';
+  const live = entry.phase === 'awaiting-person' || entry.phase === 'deciding';
+  const item = proposal?.item;
+  const cap = capLabel(request.maxStep);
+  const ai = (
+    <Iso>
+      <span className={styles.eyebrowAi}>{aiName}</span>
+    </Iso>
+  );
+  const masked = option?.available ? option.redactions : 0;
 
   return (
-    <section className={styles.detail} aria-label={fillText(REQUESTS.detailLabel, { aiName })}>
+    <section
+      className={live ? `${kit.glass} ${styles.card} ${styles.cardLive}` : `${kit.glass} ${styles.card}`}
+      aria-label={fillText(REQUESTS.detailLabel, { aiName })}
+    >
       <div className={styles.header}>
-        <div className={styles.headerMain}>
-          <p className={styles.eyebrow}>
-            <Fill
-              template={REQUESTS.eyebrow}
-              values={{
-                aiName: <Iso>{aiName}</Iso>,
-                time: <time dateTime={isoTime(request.createdAt)}>{formatClock(request.createdAt)}</time>,
-              }}
-            />
-          </p>
-          <figure className={styles.quote}>
-            <figcaption className={styles.quoteLabel}>
-              <Fill template={REQUESTS.asks} values={{ aiName: <Iso>{aiName}</Iso> }} />
-            </figcaption>
-            <blockquote className={styles.question} dir="auto">
-              <Fill template={REQUESTS.quoted} values={{ question: <Iso>{request.question}</Iso> }} />
-            </blockquote>
-          </figure>
-          <p className={styles.askedFor}>
-            <Fill
-              template={REQUESTS.askedFor}
-              values={{
-                requested: LADDER_LABELS[request.requestedStep],
-                aiName: <Iso>{aiName}</Iso>,
-                max: LADDER_LABELS[request.maxStep],
-              }}
-            />
-          </p>
-        </div>
-        <div className={styles.headerTag}>
+        <p className={styles.eyebrow}>
+          {item ? (
+            <Fill template={REQUESTS.eyebrowCategory} values={{ aiName: ai, cap, category: item.category }} />
+          ) : (
+            <Fill template={REQUESTS.eyebrow} values={{ aiName: ai, cap }} />
+          )}
+        </p>
+        <div className={styles.headRight}>
           <Tag tone={tag.tone}>{tag.label}</Tag>
+          <time className={styles.time} dateTime={isoTime(request.createdAt)}>
+            {formatClock(request.createdAt)}
+          </time>
         </div>
       </div>
+      {/* 70 R-UI-06: the question sits in a quote block, labelled by the line above it, never as a heading. */}
+      <blockquote className={styles.question} dir="auto">
+        <Fill template={REQUESTS.quoted} values={{ question: <Iso>{request.question}</Iso> }} />
+      </blockquote>
+
+      {item && proposal?.outcome === 'ready' ? (
+        <>
+          <dl className={styles.cells}>
+            <div className={`${kit.inner} ${styles.cell}`}>
+              <dt className={styles.cellLabel}>{REQUESTS.cellSearched}</dt>
+              <dd className={styles.cellValue}>
+                {indexCount === undefined ? REQUESTS.searchedHereUnknown : fillText(REQUESTS.searchedHere, { n: formatCount(indexCount) })}
+              </dd>
+            </div>
+            <div className={`${kit.inner} ${styles.cell}`}>
+              <dt className={styles.cellLabel}>{REQUESTS.cellPicked}</dt>
+              <dd className={styles.cellValue} dir="auto">
+                <Iso>{item.title}</Iso>
+              </dd>
+            </div>
+            <div className={`${kit.inner} ${styles.cell}`}>
+              <dt className={styles.cellLabel}>{REQUESTS.cellWouldLeave}</dt>
+              <dd className={styles.cellValue}>
+                {option?.available ? fillText(REQUESTS.wouldLeave, { n: formatCount(option.chars) }) : REQUESTS.wouldLeaveNothing}
+              </dd>
+            </div>
+          </dl>
+          {masked > 0 ? (
+            <p className={kit.note}>{masked === 1 ? REQUESTS.maskedNoteOne : fillText(REQUESTS.maskedNote, { n: formatCount(masked) })}</p>
+          ) : null}
+        </>
+      ) : null}
 
       {error ? (
         <div role="status">

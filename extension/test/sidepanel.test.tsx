@@ -2,11 +2,17 @@
 import '@testing-library/jest-dom/vitest';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import axe from 'axe-core';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProposalPreview } from '@sieve/shared';
-import type { PanelState, WorkerToPanel } from '../src/shared/internal';
-import { approveOnlyIfAsked } from '../src/shared/labels';
+import type { PanelState, Surface, WorkerToPanel } from '../src/shared/internal';
+import { approveOnlyIfAsked, sentHeading } from '../src/shared/labels';
 import { App, CONNECTING_DELAY_MS } from '../src/sidepanel/App';
+import { LIFTING_TEXT_TEST_ID, TRANSITION_TEST_ID } from '../src/sidepanel/components/ApprovedTransition';
+import { shortcutHint } from '../src/sidepanel/shortcut';
+import { detectSurface } from '../src/sidepanel/surface';
 import type { PanelApi } from '../src/sidepanel/usePanelPort';
 import { portPair } from './fakeChrome';
 import type { FakePort } from './fakeChrome';
@@ -29,11 +35,13 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function setup() {
+function setup(opts: { surface?: Surface; openSidePanel?: () => Promise<void> } = {}) {
   const box: { worker: FakePort | null } = { worker: null };
   const sent: unknown[] = [];
   const closePanel = vi.fn();
   const api: PanelApi = {
+    ...(opts.surface ? { surface: opts.surface } : {}),
+    ...(opts.openSidePanel ? { openSidePanel: opts.openSidePanel } : {}),
     runtime: {
       connect: ({ name }) => {
         const { near, far } = portPair(name, {});
@@ -366,6 +374,13 @@ describe('results', () => {
     expect(within(c).getByText(body)).toBeInTheDocument();
     if (tag) expect(within(c).getByText(tag)).toBeInTheDocument();
     expect(within(c).getByRole('button', { name: 'Done' })).toBeInTheDocument();
+    // "Open the receipt" goes with a saved receipt (approved or declined) and asks the worker to open the app for it.
+    const openReceipt = within(c).queryByRole('button', { name: 'Open the receipt' });
+    expect(openReceipt !== null).toBe(tag !== null);
+    if (openReceipt) {
+      fireEvent.click(openReceipt);
+      expect(t.sent).toContainEqual({ type: 'panel/open-app', requestId: DEPOSIT.requestId });
+    }
     await expectNoAxeViolations();
   });
 
@@ -390,12 +405,140 @@ describe('results', () => {
     expect(screen.getByRole('heading', { name: "Sieve isn't open" })).toBeInTheDocument();
   });
 
-  it('other resolved requests show compactly under Recent', () => {
+  it('a resolved request that is not selected does not show (there is no Recent list)', () => {
     const t = setup();
     t.push(panelState({ proposals: [LEASE], resolved: [resolvedEntry({ outcome: 'expired', step: undefined })] }));
     expect(screen.getByRole('heading', { name: 'A request is waiting' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Recent' })).toBeInTheDocument();
-    expect(screen.getByText('Expired')).toBeInTheDocument();
+    expect(screen.queryByText('Recent')).not.toBeInTheDocument();
+    expect(screen.queryByText('Expired')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+  });
+});
+
+describe('approve animation (board F8B)', () => {
+  const approvedState = (step: 'answer' | 'excerpt' = 'answer') =>
+    panelState({ proposals: [], resolved: [resolvedEntry({ outcome: 'approved', step, decidedHere: true })] });
+
+  function approveHere(t: ReturnType<typeof setup>) {
+    t.push(panelState({ proposals: [DEPOSIT] }));
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    t.push(panelState({ proposals: [DEPOSIT], inflight: [{ requestId: DEPOSIT.requestId, approved: true, step: 'answer', sentAt: 1, slow: false }] }));
+    t.push(approvedState());
+  }
+
+  it('plays once for a request approved from this panel, with the exact text lifting out', async () => {
+    const t = setup();
+    approveHere(t);
+    expect(screen.getAllByTestId(TRANSITION_TEST_ID)).toHaveLength(1);
+    expect(screen.getByTestId(LIFTING_TEXT_TEST_ID).textContent).toBe(DEPOSIT_ANSWER);
+    // The heading counts what this panel sent, with the name isolated for bidi text (board F8B).
+    const heading = screen.getByRole('heading', { name: sentHeading(DEPOSIT_ANSWER.length, 'Test assistant') });
+    expect(heading.querySelector('bdi')?.textContent).toBe('Test assistant');
+    expect(screen.queryByRole('heading', { name: 'Shared' })).not.toBeInTheDocument();
+    expect(screen.getByText('Sent: answer only. Nothing else left this device.')).toBeInTheDocument();
+    expect(screen.getByText('Receipt saved in "What has AI seen?"')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open the receipt' }));
+    expect(t.sent).toContainEqual({ type: 'panel/open-app', requestId: DEPOSIT.requestId });
+    // The ghost of the old card is hidden from assistive tech and holds no controls.
+    const ghost = screen.getByTestId(TRANSITION_TEST_ID).querySelector('[aria-hidden="true"]');
+    expect(ghost?.querySelector('button, a, [tabindex]')).toBeNull();
+    await expectNoAxeViolations();
+
+    // A re-render with the same state keeps the one mounted transition; it never starts over.
+    t.push(approvedState());
+    t.push(approvedState());
+    expect(screen.getAllByTestId(TRANSITION_TEST_ID)).toHaveLength(1);
+
+    // Once it has been shown, a remount of the result shows the plain card, not the animation again.
+    t.push(panelState({ connection: 'connecting', resolved: [resolvedEntry({ outcome: 'approved', step: 'answer', decidedHere: true })] }));
+    expect(screen.queryByTestId(TRANSITION_TEST_ID)).not.toBeInTheDocument();
+    t.push(approvedState());
+    expect(screen.queryByTestId(TRANSITION_TEST_ID)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: sentHeading(DEPOSIT_ANSWER.length, 'Test assistant') })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open the receipt' })).toBeInTheDocument();
+  });
+
+  it('Done during or after the animation dismisses the result', () => {
+    const t = setup();
+    approveHere(t);
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(t.sent).toContainEqual({ type: 'panel/dismiss', requestId: DEPOSIT.requestId });
+    expect(screen.queryByTestId(TRANSITION_TEST_ID)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'No requests waiting' })).toBeInTheDocument();
+  });
+
+  it('does not play for a denied request', () => {
+    const t = setup();
+    t.push(panelState({ proposals: [DEPOSIT] }));
+    fireEvent.click(screen.getByRole('button', { name: 'Deny' }));
+    t.push(panelState({ proposals: [], resolved: [resolvedEntry({ outcome: 'declined', decidedHere: true, step: undefined })] }));
+    expect(screen.queryByTestId(TRANSITION_TEST_ID)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Declined' })).toBeInTheDocument();
+  });
+
+  it('does not play for a request approved in the app or elsewhere, which keeps the "Shared" heading', () => {
+    const t = setup();
+    t.push(panelState({ proposals: [DEPOSIT] }));
+    t.push(panelState({ proposals: [], resolved: [resolvedEntry({ outcome: 'approved', decidedHere: false, step: undefined })] }));
+    expect(screen.queryByTestId(TRANSITION_TEST_ID)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Shared' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /^Sent \d/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open the receipt' }));
+    expect(t.sent).toContainEqual({ type: 'panel/open-app', requestId: DEPOSIT.requestId });
+  });
+
+  it('respects prefers-reduced-motion: straight to the result', async () => {
+    const matchMedia = vi.fn((query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    }));
+    vi.stubGlobal('matchMedia', matchMedia);
+    try {
+      const t = setup();
+      approveHere(t);
+      expect(matchMedia).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
+      expect(screen.queryByTestId(TRANSITION_TEST_ID)).not.toBeInTheDocument();
+      expect(screen.queryByTestId(LIFTING_TEXT_TEST_ID)).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: sentHeading(DEPOSIT_ANSWER.length, 'Test assistant') })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
+      await expectNoAxeViolations();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+describe('header and footer', () => {
+  it('the close button closes the panel', () => {
+    const t = setup();
+    t.push(panelState());
+    fireEvent.click(screen.getByRole('button', { name: 'Close the panel' }));
+    expect(t.closePanel).toHaveBeenCalledTimes(1);
+  });
+
+  it('the footer shows the shortcut for the platform next to Open Sieve', () => {
+    const t = setup();
+    t.push(panelState());
+    const footer = screen.getByRole('contentinfo');
+    expect(within(footer).getByText(shortcutHint())).toBeInTheDocument();
+    fireEvent.click(within(footer).getByRole('button', { name: 'Open Sieve' }));
+    expect(t.sent).toContainEqual({ type: 'panel/open-app' });
+  });
+
+  it('shortcutHint: Control+Shift+S on a Mac, Alt+Shift+S elsewhere', () => {
+    expect(shortcutHint({ platform: 'MacIntel' })).toBe('Control+Shift+S');
+    expect(shortcutHint({ userAgentData: { platform: 'macOS' } })).toBe('Control+Shift+S');
+    expect(shortcutHint({ platform: 'Win32' })).toBe('Alt+Shift+S');
+    expect(shortcutHint({ platform: 'Linux x86_64' })).toBe('Alt+Shift+S');
+    expect(shortcutHint({})).toBe('Alt+Shift+S');
   });
 });
 
@@ -432,8 +575,8 @@ describe('also waiting, live region and the shortcut', () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(t.sent).toContainEqual({ type: 'panel/hello', visible: true });
-    expect(t.sent).toContainEqual({ type: 'panel/hello', visible: true, windowId: 7 });
+    expect(t.sent).toContainEqual({ type: 'panel/hello', visible: true, surface: 'panel' });
+    expect(t.sent).toContainEqual({ type: 'panel/hello', visible: true, windowId: 7, surface: 'panel' });
     t.post({ type: 'panel/close' });
     expect(t.closePanel).toHaveBeenCalledTimes(1);
   });
@@ -449,5 +592,175 @@ describe('also waiting, live region and the shortcut', () => {
     expect(t.box.worker).not.toBe(first);
     t.push(panelState({ proposals: [DEPOSIT] }));
     expect(screen.getByRole('heading', { name: 'A request is waiting' })).toBeInTheDocument();
+  });
+});
+
+describe('the popup (toolbar icon) and the side panel', () => {
+  const keepOpen = () => screen.queryByRole('button', { name: 'Keep open on the side' });
+
+  it('the popup says hello as a popup and shows "Keep open on the side" next to Open Sieve', async () => {
+    const t = setup({ surface: 'popup', openSidePanel: vi.fn(() => Promise.resolve()) });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(t.sent).toContainEqual({ type: 'panel/hello', visible: true, windowId: 7, surface: 'popup' });
+    t.push(panelState());
+    expect(t.container.firstElementChild).toHaveAttribute('data-surface', 'popup');
+    const footer = screen.getByRole('contentinfo');
+    const buttons = within(footer).getAllByRole('button').map((b) => b.textContent);
+    expect(buttons).toEqual(['Keep open on the side', 'Open Sieve']);
+    expect(within(footer).getByText(shortcutHint())).toBeInTheDocument();
+    await expectNoAxeViolations();
+  });
+
+  it('"Keep open on the side" opens the side panel from the click, then closes the popup', async () => {
+    const openSidePanel = vi.fn(() => Promise.resolve());
+    const t = setup({ surface: 'popup', openSidePanel });
+    t.push(panelState({ proposals: [], resolved: [] }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Keep open on the side' }));
+      await Promise.resolve();
+    });
+    expect(openSidePanel).toHaveBeenCalledTimes(1);
+    expect(t.closePanel).toHaveBeenCalledTimes(1);
+    expect(t.sent).not.toContainEqual({ type: 'panel/open-side' });
+  });
+
+  it('when Chrome refuses, the popup asks the worker and stays open', async () => {
+    const openSidePanel = vi.fn(() => Promise.reject(new Error('refused')));
+    const t = setup({ surface: 'popup', openSidePanel });
+    t.push(panelState());
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Keep open on the side' }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(t.sent).toContainEqual({ type: 'panel/open-side' });
+    expect(t.closePanel).not.toHaveBeenCalled();
+  });
+
+  it('the side panel never shows the button, and neither does a popup that cannot open the side panel', () => {
+    const t = setup({ surface: 'panel', openSidePanel: vi.fn(() => Promise.resolve()) });
+    t.push(panelState());
+    expect(t.container.firstElementChild).toHaveAttribute('data-surface', 'panel');
+    expect(within(screen.getByRole('contentinfo')).getAllByRole('button').map((b) => b.textContent)).toEqual(['Open Sieve']);
+    expect(keepOpen()).not.toBeInTheDocument();
+    cleanup();
+    setup().push(panelState()); // no surface given: the side panel
+    expect(keepOpen()).not.toBeInTheDocument();
+    cleanup();
+    setup({ surface: 'popup' }).push(panelState());
+    expect(keepOpen()).not.toBeInTheDocument();
+  });
+
+  it('the popup keeps every state and its footer rules: request, empty, disconnected, connecting', () => {
+    const t = setup({ surface: 'popup', openSidePanel: vi.fn(() => Promise.resolve()) });
+    t.push(panelState({ proposals: [DEPOSIT] }));
+    expect(screen.getByRole('heading', { name: 'A request is waiting' })).toBeInTheDocument();
+    expect(keepOpen()).toBeInTheDocument();
+    t.push(panelState({ connection: 'disconnected' }));
+    expect(screen.getByRole('heading', { name: "Sieve isn't open" })).toBeInTheDocument();
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument(); // as in the side panel: no footer here
+    t.push(panelState({ connection: 'connecting' }));
+    expect(screen.getByText('Connecting to your Sieve tab…')).toBeInTheDocument();
+    t.push(panelState());
+    expect(screen.getByRole('heading', { name: 'No requests waiting' })).toBeInTheDocument();
+    expect(keepOpen()).toBeInTheDocument();
+  });
+
+  it('a popup that opens after an approval shows the plain result card, never the animation', async () => {
+    const t = setup({ surface: 'popup', openSidePanel: vi.fn(() => Promise.resolve()) });
+    t.push(panelState({ proposals: [LEASE], resolved: [resolvedEntry({ outcome: 'approved', step: 'answer', decidedHere: true })] }));
+    expect(screen.queryByTestId(TRANSITION_TEST_ID)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Shared' })).toBeInTheDocument();
+    expect(screen.getByText('Sent: answer only. Nothing else left this device.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Also waiting (1)' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(t.sent).toContainEqual({ type: 'panel/dismiss', requestId: DEPOSIT.requestId });
+    expect(outgoing().textContent).toBe(LEASE_EXCERPT);
+    await expectNoAxeViolations();
+  });
+
+  it('a popup that opens while the decision is in flight shows the locked card, then the plain result', () => {
+    const t = setup({ surface: 'popup' });
+    t.push(panelState({ proposals: [DEPOSIT], inflight: [{ requestId: DEPOSIT.requestId, approved: true, step: 'answer', sentAt: 1, slow: false }] }));
+    expect(screen.getByRole('button', { name: 'Sending…' })).toBeDisabled();
+    t.push(panelState({ resolved: [resolvedEntry({ outcome: 'approved', step: 'answer', decidedHere: true })] }));
+    expect(screen.queryByTestId(TRANSITION_TEST_ID)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Shared' })).toBeInTheDocument();
+  });
+
+  it('a page that opens does not pick up results decided elsewhere, or ones already Done', () => {
+    setup({ surface: 'popup' }).push(
+      panelState({
+        resolved: [
+          resolvedEntry({ requestId: 'x1', outcome: 'expired', step: undefined }),
+          resolvedEntry({ requestId: 'x2', outcome: 'approved', decidedHere: false, step: undefined }),
+        ],
+      }),
+    );
+    expect(screen.getByRole('heading', { name: 'No requests waiting' })).toBeInTheDocument();
+    cleanup();
+    // Declined and lost here count too; the newest one wins.
+    setup({ surface: 'popup' }).push(
+      panelState({
+        connection: 'disconnected',
+        resolved: [resolvedEntry({ requestId: 'x3', outcome: 'lost' }), resolvedEntry({ requestId: 'x4', outcome: 'declined', step: undefined })],
+      }),
+    );
+    expect(screen.getByRole('heading', { name: 'Not confirmed' })).toBeInTheDocument();
+  });
+
+  it('detectSurface: a window among the popup views is the popup; anything else is the side panel', () => {
+    const self = {};
+    expect(detectSurface({ search: '', popupViews: () => [self], self })).toBe('popup');
+    expect(detectSurface({ search: '', popupViews: () => [{}], self })).toBe('panel');
+    expect(detectSurface({ search: '', popupViews: () => [], self })).toBe('panel');
+    const missing = () => {
+      throw new TypeError("Cannot read properties of undefined (reading 'getViews')");
+    };
+    expect(detectSurface({ search: '', popupViews: missing, self })).toBe('panel');
+    expect(detectSurface({ search: '?surface=popup', popupViews: () => [], self })).toBe('popup');
+    expect(detectSurface({ search: '?surface=panel', popupViews: () => [self], self })).toBe('panel');
+    expect(detectSurface({ search: '?surface=tab', popupViews: () => [self], self })).toBe('popup');
+  });
+});
+
+describe('sizing: the popup follows its content (Chrome caps it at 800 x 600)', () => {
+  // Read as text from disk (a `new URL(..., import.meta.url)` would go through Vite's asset handling).
+  const css = (name: string) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'sidepanel', name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = (text: string, selector: string) => {
+    const at = text.indexOf(`${selector} {`);
+    expect(at, `${selector} rule`).toBeGreaterThanOrEqual(0);
+    return text.slice(at, text.indexOf('}', at));
+  };
+  const panelCss = css('panel.css');
+  const uiCss = css('ui.module.css');
+
+  it('the root, html, body and #root never use 100vh or any viewport height', () => {
+    for (const text of [panelCss, uiCss]) expect(text).not.toMatch(/100[dsl]?vh/);
+    expect(rule(uiCss, '.panel')).not.toMatch(/vh/);
+    expect(rule(uiCss, '.popup')).not.toMatch(/vh/);
+    expect(panelCss).not.toMatch(/vh/);
+    const t = setup({ surface: 'popup' });
+    t.push(panelState());
+    const root = t.container.firstElementChild as HTMLElement;
+    expect(root.getAttribute('style')).toBeNull();
+  });
+
+  it('the popup is 400 px wide, at most 600 px tall, and scrolls inside the main area', () => {
+    expect(rule(panelCss, "html[data-surface='popup'] body")).toContain('width: 400px');
+    expect(rule(uiCss, '.popup')).toContain('max-height: 600px');
+    const main = rule(uiCss, '.popup .main');
+    expect(main).toContain('overflow-y: auto');
+    expect(main).toContain('overflow-x: hidden');
+    expect(main).toContain('min-height: 0');
+    expect(rule(uiCss, '.popup .outgoingBox')).toContain('max-height: 240px');
+    // Only the side panel fills its height (100%, not viewport units).
+    expect(rule(panelCss, "html[data-surface='panel'] #root")).toContain('height: 100%');
+  });
+
+  it('the new text button has a visible focus ring', () => {
+    expect(uiCss).toMatch(/\.btnText:focus-visible[^{]*\{[^}]*outline: 2px solid/);
   });
 });

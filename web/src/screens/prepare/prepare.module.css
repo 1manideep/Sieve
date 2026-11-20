@@ -1,7 +1,22 @@
-/* Prepare (40 section 13.2): one centred card, max width 640px, padding 32px. */
-.page { max-width: 640px; margin: 0 auto; padding: 24px var(--gutter) 64px; display: grid; gap: var(--space-3); min-width: 0; }
+/* Prepare (40 section 13.2; docs/design/final-flow.md): one centred glass card, max width 640px. */
+.page { max-width: 640px; margin: 0 auto; padding: 22px var(--gutter, 24px) 56px; display: grid; gap: 12px; min-width: 0; }
 .back { margin: 0; }
-.backLink { display: inline-flex; align-items: center; gap: var(--space-1); min-height: var(--target-min); font-size: 15px; font-weight: 600; text-decoration: none; }
+.backLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--target-min, 44px);
+  font: 500 14px/1.4 var(--font-sans, 'Google Sans', system-ui, sans-serif);
+  color: var(--color-accent, #8ab4f8);
+  text-decoration: none;
+}
+.backLink:hover { color: var(--color-text, #ffffff); }
 .backIcon { transform: rotate(180deg); }
-.card { padding: 32px; border: 1px solid var(--color-border); border-radius: var(--radius-2xl); background: var(--color-surface); min-width: 0; }
+.card {
+  padding: 32px;
+  background: var(--color-glass, rgba(11, 11, 15, 0.8));
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-card, 24px);
+  min-width: 0;
+}
 @media (max-width: 767px) { .card { padding: 20px; } }

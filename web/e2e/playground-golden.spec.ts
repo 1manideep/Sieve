@@ -1,7 +1,7 @@
 // The golden path in the Playground (40 sections 12 and 19.2; acceptance AT-1 to AT-4).
 import { expect, test } from '@playwright/test';
 import { DEPOSIT_ANSWER, fakeDraft } from './fixtures/fakeModel';
-import { APPROVE, INSTRUCTION, LANDLORD, LANDLORD_OTHER_SENTENCE, askChip, chip, openPlayground, tabTo, traceRow } from './fixtures/helpers';
+import { APPROVE, DRAFT_HEADING, INSTRUCTION, LANDLORD, LANDLORD_OTHER_SENTENCE, askChip, chip, openPlayground, openTrace, tabTo, traceRow } from './fixtures/helpers';
 import { cloudCalls, prepareStubs } from './fixtures/stubs';
 
 test.describe('Playground golden path', () => {
@@ -20,8 +20,9 @@ test.describe('Playground golden path', () => {
     expect(await cloudCalls(page)).toHaveLength(0);
 
     await page.getByRole('button', { name: APPROVE }).click();
-    await expect(page.getByRole('heading', { name: 'Draft from the cloud model' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: DRAFT_HEADING })).toBeVisible();
     await expect(page.getByTestId('draft-text')).toHaveText(fakeDraft(DEPOSIT_ANSWER));
+    await openTrace(page);
     await expect(traceRow(page, 'select').getByText('This device · Gemini Nano')).toBeVisible();
     await expect(traceRow(page, 'draft').getByText('Cloud · Gemini', { exact: true })).toBeVisible();
     await expect(page.getByTestId('trace-total').first()).toHaveText(`${41 + INSTRUCTION.length} characters left this device`);
@@ -44,6 +45,7 @@ test.describe('Playground golden path', () => {
     await page.getByRole('radio', { name: 'Not available (simulate)' }).click();
     await expect(page.getByText('Simulated: no on-device model')).toBeVisible();
     await askChip(page, LANDLORD);
+    await openTrace(page);
     await expect(traceRow(page, 'select').getByText('Cloud · Gemini (sample data)')).toBeVisible();
     // The banner title; its message repeats the phrase ("...so the sample data ran in the cloud.").
     await expect(page.getByText('Sample data ran in the cloud', { exact: true })).toBeVisible();

@@ -1,4 +1,4 @@
-// The selected waiting request (50 sections 8.3 to 8.5). Which actions show depends on the outcome:
+// The selected waiting request (50 sections 8.3 to 8.5; board F8). Which actions show depends on the outcome:
 // ready: Approve + Deny; no-match: Deny only; every other outcome: Open Sieve only. Related items are never
 // offered here; ticking them is done in the app.
 import { useId } from 'react';
@@ -9,9 +9,9 @@ import { optionFor } from '../steps';
 import s from '../ui.module.css';
 import { DecisionButtons } from './DecisionButtons';
 import { ItemSummary } from './ItemSummary';
-import { OutgoingText } from './OutgoingText';
+import { CleanLine, OutgoingText } from './OutgoingText';
 import { StepPicker } from './StepPicker';
-import { WarningList } from './WarningList';
+import { hasInjectionWarning, WarningList } from './WarningList';
 
 interface RequestCardProps {
   preview: ProposalPreview;
@@ -33,14 +33,27 @@ export function RequesterLine({ aiName, question }: { aiName: string; question: 
   );
 }
 
+/** 70 R-MCP-09: the social-engineering line, the name isolated for bidi text. */
+export function ApproveOnlyIfAsked({ aiName }: { aiName: string }) {
+  return (
+    <p className={s.body}>
+      {APPROVE_ONLY_IF_ASKED.before}
+      <bdi>{aiName}</bdi>
+      {APPROVE_ONLY_IF_ASKED.after}
+    </p>
+  );
+}
+
 export function RequestCard({ preview, step, inflight, rejection, onStepChange, onApprove, onDeny, onOpenApp }: RequestCardProps) {
   const headingId = useId();
   const busy = inflight !== undefined && !inflight.slow;
   const option = step !== null ? optionFor(preview, step) : undefined;
   const { outcome } = preview;
+  const clean = !hasInjectionWarning(preview.warnings);
+  const category = preview.item ? { category: preview.item.category } : {};
 
   return (
-    <article className={s.card} aria-labelledby={headingId}>
+    <article className={`${s.card} ${s.cardRequest}`} aria-labelledby={headingId}>
       <h2 id={headingId} className={s.h2}>
         {COPY.requestHeading}
       </h2>
@@ -50,11 +63,12 @@ export function RequestCard({ preview, step, inflight, rejection, onStepChange, 
       {outcome === 'ready' ? (
         <>
           <StepPicker preview={preview} value={step} locked={busy} onChange={onStepChange} />
-          {option ? <OutgoingText option={option} /> : null}
-          <WarningList warnings={preview.warnings} {...(preview.item ? { category: preview.item.category } : {})} />
+          {option ? <OutgoingText option={option} clean={clean} /> : null}
+          <WarningList warnings={preview.warnings} {...category} />
+          {!option && clean ? <CleanLine /> : null}
         </>
       ) : (
-        <OutcomeBlock outcome={outcome} {...(preview.item ? { category: preview.item.category } : {})} />
+        <OutcomeBlock outcome={outcome} {...category} />
       )}
 
       {rejection ? (
@@ -63,13 +77,7 @@ export function RequestCard({ preview, step, inflight, rejection, onStepChange, 
         </p>
       ) : null}
       {inflight?.slow ? <p className={s.note}>{COPY.slowNote}</p> : null}
-      {outcome === 'ready' ? (
-        <p className={s.body}>
-          {APPROVE_ONLY_IF_ASKED.before}
-          <bdi>{requesterName(preview.requester)}</bdi>
-          {APPROVE_ONLY_IF_ASKED.after}
-        </p>
-      ) : null}
+      {outcome === 'ready' ? <ApproveOnlyIfAsked aiName={requesterName(preview.requester)} /> : null}
 
       {outcome === 'ready' || outcome === 'no-match' ? (
         <DecisionButtons
@@ -83,7 +91,7 @@ export function RequestCard({ preview, step, inflight, rejection, onStepChange, 
         />
       ) : (
         <div className={s.actions}>
-          <button type="button" className={s.primary} onClick={onOpenApp}>
+          <button type="button" className={`${s.btnWhite} ${s.grow}`} onClick={onOpenApp}>
             {COPY.openSieve}
           </button>
         </div>

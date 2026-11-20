@@ -1,16 +1,17 @@
-// SourceCard (40 section 13.6): one source with its status, progress, notices and buttons. Setup step 3 (13.3)
-// reuses it with `compact`. Connect and reauthorize run straight from the click (the Google popup and the
+// SourceCard (40 section 13.6; F5): one glass card per source with its name, a status dot, the count of items on
+// this computer, progress while indexing, notices and the real connect, disconnect and change actions. Setup step
+// 3 (13.3) reuses it with `compact`. Connect and reauthorize run straight from the click (the Google popup and the
 // directory picker need the user gesture).
 import { useId, useRef, useState, type ChangeEvent } from 'react';
 import { Button } from '@/components/Button/Button';
 import { Notice } from '@/components/Notice/Notice';
 import { ProgressBar } from '@/components/ProgressBar/ProgressBar';
-import { Tag } from '@/components/Tag/Tag';
 import { SOURCES, fillText } from '@/copy/screens-controls';
 import { formatCount } from '@/copy/format';
 import { useSources, type SourceRowView } from '@/state/sources';
 import { Confirm } from '../settings/kit/Confirm';
 import { Fill, Iso } from '../settings/kit/Fill';
+import kit from '../settings/kit/kit.module.css';
 import type { RealSource } from './sourcesDb';
 import styles from './sources.module.css';
 
@@ -54,6 +55,7 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
   const paused = connected && Boolean(row?.paused);
   const progress = row?.progress ?? { done: 0, total: 0 };
   const indexing = connected && !paused && progress.total > 0 && progress.done < progress.total;
+  const indexingText = fillText(SOURCES.indexingLabel, { done: formatCount(progress.done), total: formatCount(progress.total) });
 
   const connect = () => {
     if (kind === 'upload') {
@@ -83,9 +85,23 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
     }
   };
 
-  let tag = <Tag tone="muted">{SOURCES.tagNotConnected}</Tag>;
-  if (paused) tag = <Tag tone="warn">{SOURCES.tagPaused}</Tag>;
-  else if (connected) tag = <Tag tone="device">{SOURCES.tagConnected}</Tag>;
+  // The status at the top right: a dot in the state colour, the words carry the meaning.
+  let status = <span className={`${kit.status} ${kit.muted}`}>{SOURCES.tagNotConnected}</span>;
+  if (paused) {
+    status = (
+      <span className={`${kit.status} ${kit.warn}`}>
+        <span className={kit.dot} aria-hidden="true" />
+        {SOURCES.tagPaused}
+      </span>
+    );
+  } else if (connected) {
+    status = (
+      <span className={`${kit.status} ${kit.ok}`}>
+        <span className={kit.dot} aria-hidden="true" />
+        {kind === 'gmail' ? SOURCES.tagLive : SOURCES.tagConnected}
+      </span>
+    );
+  }
 
   const folderMissing = kind === 'folder' && !canPickFolders();
   const disconnectBody = `${fillText(SOURCES.disconnectBody, { n: formatCount(itemCount), name })}${
@@ -93,24 +109,32 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
   }`;
 
   return (
-    <article className={compact ? `${styles.card} ${styles.compact}` : styles.card} aria-labelledby={titleId}>
+    <article className={compact ? `${kit.glassSm} ${styles.card} ${styles.compact}` : `${kit.glass} ${styles.card}`} aria-labelledby={titleId}>
       <div className={styles.cardTop}>
         <h2 id={titleId} className={styles.sourceName}>
           {name}
         </h2>
-        {tag}
+        <span className={styles.statusRow}>
+          {indexing ? (
+            <span className={`${kit.status} ${kit.accent}`}>
+              {fillText(SOURCES.indexingPct, { pct: Math.round((progress.done / progress.total) * 100) })}
+            </span>
+          ) : null}
+          {status}
+        </span>
       </div>
-      {compact ? null : <p className={styles.text}>{SOURCES.details[kind]}</p>}
+
+      {compact ? null : (
+        <div className={styles.count}>
+          <span className={kit.bigNumber}>{formatCount(itemCount)}</span>
+          <span className={styles.countLabel}>{kind === 'upload' ? fillText(SOURCES.fileCount, { n: formatCount(itemCount) }) : SOURCES.countLabel}</span>
+        </div>
+      )}
 
       {indexing ? (
         <>
-          <ProgressBar
-            value={progress.done / progress.total}
-            label={fillText(SOURCES.indexingLabel, { done: formatCount(progress.done), total: formatCount(progress.total) })}
-          />
-          <p className={styles.meta}>
-            {fillText(SOURCES.indexingLabel, { done: formatCount(progress.done), total: formatCount(progress.total) })}
-          </p>
+          <ProgressBar value={progress.done / progress.total} label={indexingText} />
+          <p className={styles.meta}>{indexingText}</p>
         </>
       ) : null}
       {connected && paused ? <p className={styles.meta}>{SOURCES.pausedLabel}</p> : null}
@@ -125,9 +149,11 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
           ) : null}
         </p>
       ) : null}
-      {kind === 'upload' && connected ? (
+      {kind === 'upload' && connected && compact ? (
         <p className={styles.meta}>{fillText(SOURCES.fileCount, { n: formatCount(itemCount) })}</p>
       ) : null}
+
+      {compact ? null : <p className={styles.text}>{SOURCES.details[kind]}</p>}
 
       {row?.needsAuth && kind !== 'upload' ? (
         <Notice
@@ -192,12 +218,12 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
         {folderMissing && !connected ? (
           <p className={styles.text}>{SOURCES.noFolderPicker}</p>
         ) : !connected || kind === 'upload' ? (
-          <Button variant="primary" onClick={connect} busy={busy}>
+          <Button variant="primary" size="sm" onClick={connect} busy={busy}>
             {SOURCES.connect[kind]}
           </Button>
         ) : null}
         {connected ? (
-          <Button variant="secondary" onClick={() => setConfirming(true)}>
+          <Button variant="secondary" size="sm" onClick={() => setConfirming(true)}>
             {SOURCES.disconnect}
           </Button>
         ) : null}

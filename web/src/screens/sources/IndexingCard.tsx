@@ -1,4 +1,4 @@
-// IndexingCard (40 section 13.6): background indexing on this device, from useIndexing.
+// IndexingCard (40 section 13.6; F5): background indexing on this device, from useIndexing, as one glass row.
 import { useShallow } from 'zustand/shallow';
 import { Icon } from '@/components/icons';
 import { ProgressBar } from '@/components/ProgressBar/ProgressBar';
@@ -6,6 +6,7 @@ import { SOURCES, fillText } from '@/copy/screens-controls';
 import { formatCount, formatEta } from '@/copy/format';
 import { useIndexing } from '@/state/indexing';
 import { Fill } from '../settings/kit/Fill';
+import kit from '../settings/kit/kit.module.css';
 import { formatRelative, isoTime } from '../settings/kit/when';
 import styles from './sources.module.css';
 
@@ -16,7 +17,7 @@ export function IndexingCard({ lastSyncAt }: { lastSyncAt?: number }) {
 
   if (state === 'idle') {
     return (
-      <section className={styles.card} aria-label={SOURCES.idleTitle}>
+      <section className={`${kit.glassSm} ${styles.indexing}`} aria-label={SOURCES.idleTitle}>
         <p className={styles.upToDate}>
           <span className={styles.check}>
             <Icon name="check" size={20} />
@@ -45,7 +46,7 @@ export function IndexingCard({ lastSyncAt }: { lastSyncAt?: number }) {
   else text = fillText(SOURCES.runningLeft, { left: formatCount(left) });
 
   return (
-    <section className={styles.card} aria-labelledby="indexing-card-title">
+    <section className={`${kit.glassSm} ${styles.indexing}`} aria-labelledby="indexing-card-title">
       <h2 id="indexing-card-title" className={styles.cardTitle}>
         {title}
       </h2>

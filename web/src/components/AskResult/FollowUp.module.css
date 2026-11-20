@@ -1,0 +1,32 @@
+/* The follow-up pill sticks to the bottom of the viewport while the conversation scrolls. */
+.followUp {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  width: 100%;
+  min-width: 0;
+  margin-top: 8px;
+  padding: 24px 0 14px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0), #000000 45%);
+}
+.followUp > * { width: 100%; }
+.plus { flex: none; color: var(--color-text-secondary, rgba(255, 255, 255, 0.75)); }
+.stepChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill, 999px);
+  font-size: 13px;
+  color: var(--color-text-secondary, rgba(255, 255, 255, 0.75));
+}
+.note { margin: 0; font: 400 11px/1.5 var(--font-mono); color: var(--color-text-muted, rgba(255, 255, 255, 0.6)); text-align: center; }
+
+@media (max-width: 479px) {
+  .stepChip { display: none; }
+}

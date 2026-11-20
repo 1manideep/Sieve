@@ -11,6 +11,8 @@ const source = JSON.parse(readFileSync(new URL('../manifest.json', import.meta.u
   description: string;
   icons: Record<string, string>;
   action: { default_icon: Record<string, string>; default_popup?: string };
+  side_panel: { default_path: string };
+  minimum_chrome_version: string;
   commands: Record<string, { suggested_key: Record<string, string>; description: string }>;
 };
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
@@ -25,8 +27,13 @@ describe('source manifest (50 section 4.1)', () => {
     for (const key of ['host_permissions', 'content_scripts', 'web_accessible_resources', 'optional_permissions', 'optional_host_permissions']) {
       expect(source).not.toHaveProperty(key);
     }
-    expect(source.action.default_popup).toBeUndefined();
     expect(checkManifest(source)).toEqual([]);
+  });
+
+  it('opens the panel page as the toolbar popup and keeps the side panel as a second surface', () => {
+    expect(source.action.default_popup).toBe('sidepanel/index.html');
+    expect(source.side_panel).toEqual({ default_path: 'sidepanel/index.html' });
+    expect(existsSync(new URL('../src/sidepanel/index.html', import.meta.url))).toBe(true);
   });
 
   it('lets only the Sieve origins connect, and no other extension', () => {
@@ -43,8 +50,8 @@ describe('source manifest (50 section 4.1)', () => {
     expect(source.description).not.toMatch(/\u2014/);
   });
 
-  it('requires Chrome 116 and points every icon at a file in public/', () => {
-    expect(source.minimum_chrome_version).toBe('116');
+  it('requires Chrome 127 (chrome.action.openPopup) and points every icon at a file in public/', () => {
+    expect(source.minimum_chrome_version).toBe('127');
     for (const path of [...Object.values(source.icons), ...Object.values(source.action.default_icon)]) {
       expect(existsSync(new URL(`../public/${path}`, import.meta.url))).toBe(true);
     }
@@ -54,7 +61,7 @@ describe('source manifest (50 section 4.1)', () => {
     expect(source.commands).toEqual({
       'open-sieve': {
         suggested_key: { default: 'Alt+Shift+S', mac: 'MacCtrl+Shift+S' },
-        description: "Open or close Sieve's side panel",
+        description: 'Open or close Sieve',
       },
     });
   });
@@ -140,7 +147,13 @@ describe.each([
     const built = JSON.parse(readFileSync(url, 'utf8')) as Record<string, unknown> & {
       permissions: string[];
       externally_connectable: { matches: string[] };
+      action: { default_popup?: string };
+      side_panel: { default_path: string };
     };
+    expect(built.action.default_popup).toBe('sidepanel/index.html');
+    expect(built.side_panel.default_path).toBe('sidepanel/index.html');
+    expect(existsSync(new URL(`../${dir}/sidepanel/index.html`, import.meta.url))).toBe(true);
+    expect(built.minimum_chrome_version).toBe('127');
     expect([...built.permissions].sort()).toEqual(['notifications', 'sidePanel', 'storage']);
     expect(built).not.toHaveProperty('host_permissions');
     expect(built.externally_connectable.matches).toEqual([...matches]);

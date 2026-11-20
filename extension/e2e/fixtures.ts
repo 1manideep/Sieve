@@ -1,6 +1,7 @@
-// Playwright fixtures for the unpacked extension (50 section 14.2; Playwright's extension guide). The side panel
-// cannot be opened from the toolbar in automation, so the panel page is opened in a normal tab; its code does not
-// depend on being inside the side panel.
+// Playwright fixtures for the unpacked extension (50 section 14.2; Playwright's extension guide). Neither the side
+// panel nor the popup can be opened from the toolbar in automation, so the panel page is opened in a normal tab
+// (it counts as the side panel; `?surface=popup` gives it the popup layout). The real popup is opened with
+// chrome.action.openPopup() and read through chrome.extension.getViews from an extension tab.
 import { test as base, chromium, expect as baseExpect } from '@playwright/test';
 import type { BrowserContext, Page, Worker } from '@playwright/test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -34,7 +35,7 @@ interface Fixtures {
   context: BrowserContext;
   sw: Worker;
   extensionId: string;
-  openPanel: () => Promise<Page>;
+  openPanel: (search?: string) => Promise<Page>;
   openStub: (origin?: string) => Promise<StubPage>;
   panelProblems: string[];
 }
@@ -46,7 +47,8 @@ export const test = base.extend<Fixtures>({
     const context = await chromium.launchPersistentContext(userDataDir, {
       channel: 'chromium',
       headless: true,
-      args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
+      // A screen taller than the default 800 x 600, so a popup can reach Chrome's 600 px cap below the toolbar.
+      args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`, '--screen-info={0,0 1600x1200}'],
     });
     await use(context);
     await context.close();
@@ -66,7 +68,7 @@ export const test = base.extend<Fixtures>({
   },
   openPanel: async ({ context, extensionId, panelProblems }, use) => {
     const pages: Page[] = [];
-    await use(async () => {
+    await use(async (search = '') => {
       const page = await context.newPage();
       pages.push(page);
       page.on('console', (m) => {
@@ -80,7 +82,7 @@ export const test = base.extend<Fixtures>({
           w.__csp.push(`${e.violatedDirective} ${e.blockedURI}`);
         });
       });
-      await page.goto(`chrome-extension://${extensionId}/sidepanel/index.html`);
+      await page.goto(`chrome-extension://${extensionId}/sidepanel/index.html${search}`);
       return page;
     });
     // No CSP violations and no console errors on any panel page (50 section 14.2).

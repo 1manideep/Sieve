@@ -1,0 +1,28 @@
+/* A quiet glass row: the dot carries the state, the words stay white. */
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px 10px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
+  background: rgba(11, 11, 15, 0.66);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--color-accent, #8AB4F8); }
+.row[data-tone='warning'] .dot { background: var(--color-warn-text, #FDD663); }
+.row[data-tone='never'] .dot { background: var(--color-never-text, #F28B82); }
+.row[data-tone='success'] .dot { background: var(--color-ok, #6DD58C); }
+.row[data-tone='cloud'] .dot { background: var(--color-cloud, #1B6EF3); }
+
+.text { flex: 1 1 280px; min-width: 0; font-size: 14px; line-height: 1.5; color: var(--color-text-secondary, rgba(255, 255, 255, 0.75)); overflow-wrap: anywhere; }
+.text p { margin: 0; }
+
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-left: auto; }
+.actions > a,
+.actions > button { min-height: 40px; color: var(--color-accent, #8AB4F8); }

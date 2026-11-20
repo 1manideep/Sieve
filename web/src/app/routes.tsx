@@ -1,5 +1,5 @@
 // Route map (40 sections 5.1 and 5.2). Kept apart from router.tsx so tests can mount it in a memory router.
-import type { RouteObject } from 'react-router-dom';
+import { redirect, type RouteObject } from 'react-router-dom';
 import { AppShell } from './AppShell';
 import { requireGoogle, welcomeLoader } from './guards';
 import { MainLayout } from './MainLayout';
@@ -13,6 +13,7 @@ export const routes: RouteObject[] = [
     children: [
       { element: <PublicLayout />, children: [
         { path: '/welcome', loader: welcomeLoader, lazy: () => import('../screens/welcome') },
+        { path: '/how', lazy: () => import('../screens/how') },
         { path: '/prepare', lazy: () => import('../screens/prepare') },
         { path: '/try', lazy: () => import('../screens/try') },
         ...(import.meta.env.DEV
@@ -23,7 +24,7 @@ export const routes: RouteObject[] = [
           : []),
       ]},
       { path: '/playground', lazy: () => import('../screens/playground') },
-      { path: '/landing', lazy: () => import('../screens/landing') },   // opening screen: the Spline scene full screen, then the name
+      { path: '/landing', loader: () => redirect('/welcome') },   // the old opening screen; the landing is /welcome now
       { element: <MainLayout />, loader: requireGoogle, children: [
         { path: '/', lazy: () => import('../screens/ask') },
         { path: '/requests', lazy: () => import('../screens/requests') },

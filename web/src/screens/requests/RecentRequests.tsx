@@ -1,8 +1,11 @@
-// RecentRequests (40 section 13.5): the request docs of the last 24 hours, newest first.
+// RecentRequests (40 section 13.5; F5 "Earlier today"): the request docs of the last 24 hours, newest first, as rows
+// in one small glass card. The table's rows are stacked (assistant and time, the question, the status), so it fits
+// the narrow column and a phone; the explicit table roles keep the semantics when the display changes.
 import type { RequestStatus } from '@sieve/shared';
 import { Tag, type TagProps } from '@/components/Tag/Tag';
 import { REQUESTS, fillText } from '@/copy/screens-controls';
 import type { RelayRequestView } from '@/state/types';
+import kit from '../settings/kit/kit.module.css';
 import { formatDayTime, isoTime } from '../settings/kit/when';
 import styles from './requests.module.css';
 
@@ -30,40 +33,37 @@ export function statusLabel(request: RelayRequestView): string {
 export function RecentRequests({ recent, now }: { recent: RelayRequestView[]; now: number }) {
   const rows = recent.filter((r) => r.createdAt >= now - DAY_MS);
   return (
-    <section className={styles.recent} aria-labelledby="recent-requests-heading">
-      <div>
-        <h2 id="recent-requests-heading" className={styles.recentHeading}>
-          {REQUESTS.recentHeading}
-        </h2>
-        <p className={styles.sub}>{REQUESTS.recentSub}</p>
-      </div>
+    <section className={`${kit.glassSm} ${styles.recent}`} aria-labelledby="recent-requests-heading">
+      <h2 id="recent-requests-heading" className={kit.sectionTitle}>
+        {REQUESTS.recentHeading}
+      </h2>
       {rows.length === 0 ? (
-        <p className={styles.muted}>{REQUESTS.recentEmpty}</p>
+        <p className={kit.small}>{REQUESTS.recentEmpty}</p>
       ) : (
         <div className={styles.tableWrap}>
-          <table className={styles.table}>
+          <table role="table" className={styles.table}>
             <caption className="visually-hidden">{REQUESTS.recentCaption}</caption>
-            <thead>
-              <tr>
-                <th scope="col">{REQUESTS.colWhen}</th>
-                <th scope="col">{REQUESTS.colAi}</th>
-                <th scope="col">{REQUESTS.colQuestion}</th>
-                <th scope="col">{REQUESTS.colStatus}</th>
+            <thead role="rowgroup">
+              <tr role="row">
+                <th role="columnheader" scope="col">{REQUESTS.colWhen}</th>
+                <th role="columnheader" scope="col">{REQUESTS.colAi}</th>
+                <th role="columnheader" scope="col">{REQUESTS.colQuestion}</th>
+                <th role="columnheader" scope="col">{REQUESTS.colStatus}</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {rows.map((r) => (
-                <tr key={r.id}>
-                  <td className={styles.when}>
+                <tr role="row" key={r.id} data-status={r.status}>
+                  <td role="cell" className={styles.when}>
                     <time dateTime={isoTime(r.createdAt)}>{formatDayTime(r.createdAt, now)}</time>
                   </td>
-                  <td>
+                  <td role="cell" className={styles.cellAi}>
                     <bdi>{r.requester.aiName}</bdi>
                   </td>
-                  <td className={styles.cellQuestion} dir="auto">
+                  <td role="cell" className={styles.cellQuestion} dir="auto">
                     {r.question}
                   </td>
-                  <td>
+                  <td role="cell" className={styles.cellStatus}>
                     <Tag tone={TONES[r.status]}>{statusLabel(r)}</Tag>
                   </td>
                 </tr>
@@ -72,6 +72,7 @@ export function RecentRequests({ recent, now }: { recent: RelayRequestView[]; no
           </table>
         </div>
       )}
+      <p className={kit.note}>{REQUESTS.recentSub}</p>
     </section>
   );
 }

@@ -1,10 +1,12 @@
 // Status strip and its popover (40 section 8). Driven by useNetwork, useHomeBase, useAvailability and useIndexing.
+// layout="card" is the Nano meter at the bottom of the rail (docs/design/final-flow.md, F3): the same button and
+// popover, drawn as a card with "Gemini Nano · ready", the index row and a thin progress bar.
 import { useEffect, useId, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
 import { env } from '@/app/env';
 import { defaultDeviceLabel } from '@/app/deviceId';
-import { STATUS_POPOVER } from '@/copy/strings';
+import { RAIL, STATUS_POPOVER } from '@/copy/strings';
 import { useAvailability } from '@/state/availability';
 import { useHomeBase } from '@/state/homeBase';
 import { useIndexing } from '@/state/indexing';
@@ -12,12 +14,14 @@ import { useNetwork } from '@/state/network';
 import { useSources } from '@/state/sources';
 import { Button, LinkButton } from '../Button/Button';
 import { ProgressBar } from '../ProgressBar/ProgressBar';
-import { statusModel, type PopoverRow, type StatusAction, type Tone } from './statusModel';
+import { statusModel, type PopoverRow, type StatusAction, type StatusInput, type Tone } from './statusModel';
 import styles from './StatusStrip.module.css';
 
 export interface StatusStripProps {
   /** Show the extension row; defaults to whether VITE_EXTENSION_ID is set. */
   extensionEnabled?: boolean;
+  /** pill (default) or the rail's meter card. */
+  layout?: 'pill' | 'card';
 }
 
 const TONE_CLASS: Record<Tone, string> = {
@@ -30,7 +34,44 @@ function extensionUrl(): string {
   return env.extensionStoreUrl ?? `${env.repoUrl}#extension`;
 }
 
-export function StatusStrip({ extensionEnabled = Boolean(env.extensionId) }: StatusStripProps) {
+interface CardRow { label: string; word: string; tone: Tone }
+
+function nanoRow(a: StatusInput['availability']): CardRow {
+  const row = (word: string, tone: Tone): CardRow => ({ label: RAIL.nano, word, tone });
+  if (a.setup.state === 'downloading' || a.setup.state === 'installing') return row(RAIL.nanoSettingUp(Math.round((a.setup.fraction ?? 0) * 100)), 'amber');
+  switch (a.text) {
+    case 'available': return row(RAIL.nanoReady, 'teal');
+    case 'downloading': return row(RAIL.nanoDownloading, 'amber');
+    case 'downloadable': return row(RAIL.nanoNotSetUp, 'amber');
+    case 'checking': return row(RAIL.nanoChecking, 'neutral');
+    case 'unavailable':
+    case 'no-api':
+      return row(RAIL.nanoNone, 'amber');
+  }
+}
+
+function secondRow(input: Pick<StatusInput, 'online' | 'homeBase' | 'indexing'>): CardRow {
+  const i = input.indexing;
+  if (i.state === 'running') return { label: RAIL.index, word: RAIL.indexing(i.total > 0 ? Math.round((i.done / i.total) * 100) : 0), tone: 'neutral' };
+  if (i.state === 'yielding') return { label: RAIL.index, word: RAIL.indexingYielding, tone: 'neutral' };
+  if (i.state === 'paused') return { label: RAIL.index, word: RAIL.indexingPaused, tone: 'amber' };
+  const row = (word: string, tone: Tone): CardRow => ({ label: RAIL.homeBase, word, tone });
+  if (!input.online) return row(RAIL.offline, 'amber');
+  const { role, presence, waitingForClick } = input.homeBase;
+  switch (role) {
+    case 'active':
+      if (waitingForClick) return row(RAIL.homeBaseNeedsClick, 'amber');
+      if (presence === 'online') return row(RAIL.homeBaseOnline, 'teal');
+      if (presence === 'offline') return row(RAIL.offline, 'amber');
+      return row(RAIL.homeBaseStarting, 'neutral');
+    case 'standby': return row(RAIL.homeBaseStandby, 'neutral');
+    case 'other-device': return row(RAIL.homeBaseOther, 'neutral');
+    case 'starting': return row(RAIL.homeBaseStarting, 'neutral');
+    default: return row(RAIL.homeBaseOff, 'neutral');
+  }
+}
+
+export function StatusStrip({ extensionEnabled = Boolean(env.extensionId), layout = 'pill' }: StatusStripProps) {
   const online = useNetwork((s) => s.online);
   const homeBase = useHomeBase(
     useShallow((s) => ({
@@ -46,6 +87,7 @@ export function StatusStrip({ extensionEnabled = Boolean(env.extensionId) }: Sta
     useShallow((s) => ({ state: s.state, left: s.left, done: s.done, total: s.total, etaMs: s.etaMs })),
   );
   const model = statusModel({ online, homeBase, availability, indexing, extensionEnabled });
+  const card = layout === 'card';
 
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -128,22 +170,49 @@ export function StatusStrip({ extensionEnabled = Boolean(env.extensionId) }: Sta
     );
   };
 
+  const renderCard = () => {
+    const first = nanoRow(availability);
+    const second = secondRow({ online, homeBase, indexing });
+    const fraction = indexing.state === 'running' && indexing.total > 0 ? indexing.done / indexing.total : undefined;
+    return (
+      <>
+        <span className={styles.cardRow}>
+          <span>{first.label}</span>
+          <span className={`${styles.word} ${TONE_CLASS[first.tone]}`}>{first.word}</span>
+        </span>
+        <span className={styles.cardRow}>
+          <span>{second.label}</span>
+          <span className={`${styles.word} ${TONE_CLASS[second.tone]}`}>{second.word}</span>
+        </span>
+        {fraction !== undefined ? (
+          <span className={styles.bar}>
+            <span className={styles.barFill} style={{ width: `${Math.round(fraction * 100)}%` }} />
+          </span>
+        ) : null}
+      </>
+    );
+  };
+
   return (
-    <div className={styles.wrap} ref={wrapRef}>
+    <div className={card ? styles.wrapCard : styles.wrap} ref={wrapRef}>
       <button
         ref={pillRef}
         type="button"
-        className={`${styles.pill} ${TONE_CLASS[model.tone]}`}
+        className={card ? styles.card : `${styles.pill} ${TONE_CLASS[model.tone]}`}
         aria-label={model.accessibleName}
         aria-expanded={open}
         aria-controls={popoverId}
         onClick={() => setOpen((v) => !v)}
       >
-        <span className={styles.dot} aria-hidden="true" />
-        <span className={styles.text}>{model.text}</span>
+        {card ? renderCard() : (
+          <>
+            <span className={styles.dot} aria-hidden="true" />
+            <span className={styles.text}>{model.text}</span>
+          </>
+        )}
       </button>
       {open ? (
-        <div id={popoverId} className={styles.popover} role="dialog" aria-labelledby={headingId}>
+        <div id={popoverId} className={card ? `${styles.popover} ${styles.popoverUp}` : styles.popover} role="dialog" aria-labelledby={headingId}>
           <h2 id={headingId} ref={headingRef} tabIndex={-1} className={styles.heading}>
             {STATUS_POPOVER.heading}
           </h2>

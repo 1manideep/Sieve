@@ -128,6 +128,16 @@ describe('parsePanelMessage', () => {
       type: 'panel/decide', requestId: 'req-1', approved: true, step: 'excerpt',
     });
     expect(parsePanelMessage({ type: 'panel/open-app' })).toEqual({ type: 'panel/open-app' });
+    expect(parsePanelMessage({ type: 'panel/open-side', windowId: 9 })).toEqual({ type: 'panel/open-side' });
+  });
+
+  it('keeps the surface of a hello only when it is popup or panel', () => {
+    expect(parsePanelMessage({ type: 'panel/hello', visible: true, windowId: 3, surface: 'popup' })).toEqual({
+      type: 'panel/hello', visible: true, windowId: 3, surface: 'popup',
+    });
+    expect(parsePanelMessage({ type: 'panel/hello', visible: false, surface: 'panel' })).toEqual({ type: 'panel/hello', visible: false, surface: 'panel' });
+    expect(parsePanelMessage({ type: 'panel/hello', visible: true, surface: 'tab' })).toEqual({ type: 'panel/hello', visible: true });
+    expect(parsePanelMessage({ type: 'panel/hello', visible: true, surface: 1 })).toEqual({ type: 'panel/hello', visible: true });
   });
 
   it('rejects bad panel messages', () => {
