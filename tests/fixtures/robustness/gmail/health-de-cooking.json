@@ -1,0 +1,37 @@
+{
+  "cases": [
+    {
+      "id": "health-de-cooking",
+      "input": {
+        "id": "18c3a0000000e004",
+        "threadId": "18c3a0000000e004",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "Ein schnelles Rezept",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "0",
+          "filename": "",
+          "headers": [
+            {
+              "name": "Content-Type",
+              "value": "text/plain; charset=\"utf-8\""
+            }
+          ],
+          "mimeType": "text/plain",
+          "body": {
+            "size": 47,
+            "data": "RWluIHNjaG5lbGxlcyBSZXplcHQ6IExpbnNlbnN1cHBlIG1pdCBLYXJvdHRlbi4"
+          }
+        }
+      },
+      "expected": {
+        "fakeLabel": "Newsletters",
+        "category": "Newsletters"
+      },
+      "note": "R-MAIL-08: \"Rezept\" alone stays where Nano put it"
+    }
+  ]
+}

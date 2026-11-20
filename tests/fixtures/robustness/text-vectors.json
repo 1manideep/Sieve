@@ -1,0 +1,293 @@
+{
+  "cases": [
+    {
+      "id": "norm-collapse",
+      "input": {
+        "fn": "normalizeQuestion",
+        "value": "  where\tis \n my  lease "
+      },
+      "expected": {
+        "text": "where is my lease"
+      }
+    },
+    {
+      "id": "norm-nbsp",
+      "input": {
+        "fn": "normalizeQuestion",
+        "value": "rent\u00A0due"
+      },
+      "expected": {
+        "text": "rent due"
+      }
+    },
+    {
+      "id": "norm-soft-hyphen",
+      "input": {
+        "fn": "normalizeQuestion",
+        "value": "renew\u00ADal"
+      },
+      "expected": {
+        "text": "renewal"
+      }
+    },
+    {
+      "id": "norm-zwj-family",
+      "input": {
+        "fn": "normalizeQuestion",
+        "value": "👨\u200D👩\u200D👧 dinner"
+      },
+      "expected": {
+        "text": "👨\u200D👩\u200D👧 dinner"
+      }
+    },
+    {
+      "id": "norm-keycap",
+      "input": {
+        "fn": "normalizeQuestion",
+        "value": "Press 1\uFE0F\u20E3 then 2\uFE0F\u20E3"
+      },
+      "expected": {
+        "text": "Press 1\uFE0F\u20E3 then 2\uFE0F\u20E3"
+      }
+    },
+    {
+      "id": "norm-subdivision-flag",
+      "input": {
+        "fn": "normalizeQuestion",
+        "value": "Go 🏴\uDB40\uDC67\uDB40\uDC62\uDB40\uDC73\uDB40\uDC63\uDB40\uDC74\uDB40\uDC7F tonight"
+      },
+      "expected": {
+        "text": "Go 🏴\uDB40\uDC67\uDB40\uDC62\uDB40\uDC73\uDB40\uDC63\uDB40\uDC74\uDB40\uDC7F tonight"
+      }
+    },
+    {
+      "id": "norm-control",
+      "input": {
+        "fn": "normalizeQuestion",
+        "value": "lease\u0007\u001b renewal"
+      },
+      "expected": {
+        "text": "lease renewal"
+      }
+    },
+    {
+      "id": "norm-nfc",
+      "input": {
+        "fn": "normalizeQuestion",
+        "value": "Jose\u0301"
+      },
+      "expected": {
+        "text": "José"
+      }
+    },
+    {
+      "id": "len-ascii",
+      "input": {
+        "fn": "utf16_len",
+        "value": "deposit"
+      },
+      "expected": {
+        "units": 7,
+        "codePoints": 7
+      }
+    },
+    {
+      "id": "len-accent-nfc",
+      "input": {
+        "fn": "utf16_len",
+        "value": "café"
+      },
+      "expected": {
+        "units": 4,
+        "codePoints": 4
+      }
+    },
+    {
+      "id": "len-accent-nfd",
+      "input": {
+        "fn": "utf16_len",
+        "value": "cafe\u0301"
+      },
+      "expected": {
+        "units": 5,
+        "codePoints": 5
+      }
+    },
+    {
+      "id": "len-emoji",
+      "input": {
+        "fn": "utf16_len",
+        "value": "🎂"
+      },
+      "expected": {
+        "units": 2,
+        "codePoints": 1
+      }
+    },
+    {
+      "id": "len-family",
+      "input": {
+        "fn": "utf16_len",
+        "value": "👨\u200D👩\u200D👧"
+      },
+      "expected": {
+        "units": 8,
+        "codePoints": 5
+      }
+    },
+    {
+      "id": "len-flag",
+      "input": {
+        "fn": "utf16_len",
+        "value": "🇮🇳"
+      },
+      "expected": {
+        "units": 4,
+        "codePoints": 2
+      }
+    },
+    {
+      "id": "len-scotland",
+      "input": {
+        "fn": "utf16_len",
+        "value": "🏴\uDB40\uDC67\uDB40\uDC62\uDB40\uDC73\uDB40\uDC63\uDB40\uDC74\uDB40\uDC7F"
+      },
+      "expected": {
+        "units": 14,
+        "codePoints": 7
+      }
+    },
+    {
+      "id": "len-emoji-300",
+      "input": {
+        "fn": "utf16_len",
+        "value": "🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂"
+      },
+      "expected": {
+        "units": 600,
+        "codePoints": 300
+      }
+    },
+    {
+      "id": "len-emoji-250",
+      "input": {
+        "fn": "utf16_len",
+        "value": "🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂🎂"
+      },
+      "expected": {
+        "units": 500,
+        "codePoints": 250
+      }
+    },
+    {
+      "id": "len-japanese",
+      "input": {
+        "fn": "utf16_len",
+        "value": "検査結果"
+      },
+      "expected": {
+        "units": 4,
+        "codePoints": 4
+      }
+    },
+    {
+      "id": "cut-family-16",
+      "input": {
+        "fn": "truncateGraphemes",
+        "value": "Family dinner 👨\u200D👩\u200D👧",
+        "max": 16
+      },
+      "expected": {
+        "text": "Family dinner "
+      }
+    },
+    {
+      "id": "cut-family-all",
+      "input": {
+        "fn": "truncateGraphemes",
+        "value": "Family dinner 👨\u200D👩\u200D👧",
+        "max": 22
+      },
+      "expected": {
+        "text": "Family dinner 👨\u200D👩\u200D👧"
+      }
+    },
+    {
+      "id": "cut-flag-3",
+      "input": {
+        "fn": "truncateGraphemes",
+        "value": "🇮🇳🇮🇳",
+        "max": 3
+      },
+      "expected": {
+        "text": ""
+      }
+    },
+    {
+      "id": "cut-flag-4",
+      "input": {
+        "fn": "truncateGraphemes",
+        "value": "🇮🇳🇮🇳",
+        "max": 4
+      },
+      "expected": {
+        "text": "🇮🇳"
+      }
+    },
+    {
+      "id": "cut-skin-tone",
+      "input": {
+        "fn": "truncateGraphemes",
+        "value": "ok 👍🏽 thanks",
+        "max": 5
+      },
+      "expected": {
+        "text": "ok "
+      }
+    },
+    {
+      "id": "cut-keycap",
+      "input": {
+        "fn": "truncateGraphemes",
+        "value": "1\uFE0F\u20E32\uFE0F\u20E3",
+        "max": 4
+      },
+      "expected": {
+        "text": "1\uFE0F\u20E3"
+      }
+    },
+    {
+      "id": "cut-surrogate",
+      "input": {
+        "fn": "truncateGraphemes",
+        "value": "a🎂b",
+        "max": 2
+      },
+      "expected": {
+        "text": "a"
+      }
+    },
+    {
+      "id": "cut-zero",
+      "input": {
+        "fn": "truncateGraphemes",
+        "value": "abc",
+        "max": 0
+      },
+      "expected": {
+        "text": ""
+      }
+    },
+    {
+      "id": "cut-short",
+      "input": {
+        "fn": "truncateGraphemes",
+        "value": "abc",
+        "max": 10
+      },
+      "expected": {
+        "text": "abc"
+      }
+    }
+  ]
+}

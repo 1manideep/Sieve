@@ -1,0 +1,17 @@
+.related { display: grid; gap: var(--space-3); min-width: 0; }
+.head { display: grid; gap: var(--space-1); }
+.aside .heading { font: var(--text-h4); }
+.list .heading { font: 600 20px/1.3 var(--font-display); }
+.sub { margin: 0; font-size: 14px; color: var(--color-text-muted); }
+
+.rows { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-2); }
+
+.row { border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-surface); min-width: 0; }
+.ticked { border-color: var(--color-device); background: var(--color-device-tint-2); }
+
+.labelRow { display: flex; align-items: flex-start; gap: var(--space-3); min-height: var(--target-min); padding: 10px 12px; cursor: pointer; }
+.box { flex: none; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--color-device); }
+.text { display: grid; gap: 2px; min-width: 0; }
+.title { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.line { font-size: 13px; color: var(--color-text-muted); overflow-wrap: anywhere; }
+.error { font-size: 13px; font-weight: 600; color: var(--color-never-text); }

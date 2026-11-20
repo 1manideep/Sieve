@@ -1,0 +1,25 @@
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  max-width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: var(--text-ui);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+}
+.chip:hover { background: var(--color-surface-sunken); }
+
+.rounded { border-radius: var(--radius-xl); }
+
+.onDevice,
+.onDevice:hover { background: var(--color-device-tint); border-color: var(--color-device); color: var(--color-device-strong); }
+
+.onInverse,
+.onInverse:hover { background: var(--color-inverse); border-color: var(--color-inverse); color: var(--color-on-inverse); }

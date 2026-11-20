@@ -1,0 +1,46 @@
+{
+  "name": "@sieve/extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sieve Chrome extension: the badge and side panel for approving relay requests from the home base tab.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs --mode release",
+    "build:dev": "node scripts/build.mjs --mode dev",
+    "build:store": "node scripts/build.mjs --mode store",
+    "build:all": "node scripts/build.mjs --mode dev && node scripts/build.mjs --mode release && node scripts/build.mjs --mode store",
+    "watch": "node scripts/build.mjs --mode dev --watch",
+    "zip": "node scripts/build.mjs --mode release && node scripts/build.mjs --mode store && node scripts/zip.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "id": "node scripts/ext-id.mjs",
+    "lint-dist": "node scripts/lint-dist.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.test.json && tsc --noEmit -p tsconfig.node.json",
+    "test": "vitest run",
+    "e2e": "node scripts/build.mjs --mode dev && node scripts/build.mjs --mode release && playwright test -c e2e/playwright.config.ts"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "5.3.0",
+    "@fontsource-variable/space-grotesk": "5.3.0",
+    "@sieve/shared": "*",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.12",
+    "@types/chrome": "0.3.7",
+    "@types/node": "24.19.2",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "5.2.0",
+    "axe-core": "4.14.1",
+    "jsdom": "29.1.1",
+    "typescript": "5.9.3",
+    "vite": "6.4.6",
+    "vitest": "5.1.1"
+  }
+}

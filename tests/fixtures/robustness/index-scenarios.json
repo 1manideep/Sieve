@@ -1,0 +1,635 @@
+{
+  "cases": [
+    {
+      "id": "deleted-email",
+      "input": {
+        "steps": [
+          {
+            "op": "gmailAdd",
+            "messages": [
+              {
+                "id": "18c2f0a9d1e4b001",
+                "subject": "Re: Deposit for the apartment",
+                "from": "Dana Whitfield <dana@thistlewick-pm.example>",
+                "text": "Hi Alex, the deposit of $1,200 will be returned within 21 days of move-out."
+              },
+              {
+                "id": "18c2f0a9d1e4b002",
+                "subject": "Your electricity bill for October is ready",
+                "from": "Brimlow Power <billing@brimlowpower.example>",
+                "text": "Your bill of $84.12 is due Nov 20."
+              },
+              {
+                "id": "18c2f0a9d1e4b003",
+                "subject": "Q4 planning: agenda for Thursday",
+                "from": "Priya Nair <priya.nair@quorrel-labs.example>",
+                "text": "Agenda: roadmap, hiring, offsite."
+              },
+              {
+                "id": "18c2f0a9d1e4b004",
+                "subject": "Your order has shipped",
+                "from": "Crestmarrow Outfitters <orders@crestmarrow.example>",
+                "text": "Order #88231 is on its way."
+              },
+              {
+                "id": "18c2f0a9d1e4b005",
+                "subject": "Hotel reservation: 2 nights",
+                "from": "Gullhaven Hotel Seattle <stay@gullhaven.example>",
+                "text": "Check-in Dec 4, check-out Dec 6."
+              }
+            ]
+          },
+          {
+            "op": "sync"
+          },
+          {
+            "op": "deleteAtSource",
+            "id": "18c2f0a9d1e4b001"
+          },
+          {
+            "op": "sync"
+          },
+          {
+            "op": "ask",
+            "search": "deposit"
+          }
+        ]
+      },
+      "expected": {
+        "recordGone": "gmail:18c2f0a9d1e4b001",
+        "vectors": 0,
+        "consents": 0,
+        "tombstoneReason": "source-deleted",
+        "searchExcludes": "gmail:18c2f0a9d1e4b001"
+      },
+      "note": "R-IDX-01"
+    },
+    {
+      "id": "stale-keyword",
+      "input": {
+        "steps": [
+          {
+            "op": "gmailAdd",
+            "messages": [
+              {
+                "id": "18c2f0a9d1e4b001",
+                "subject": "Re: Deposit for the apartment",
+                "from": "Dana Whitfield <dana@thistlewick-pm.example>",
+                "text": "Hi Alex, the deposit of $1,200 will be returned within 21 days of move-out."
+              },
+              {
+                "id": "18c2f0a9d1e4b002",
+                "subject": "Your electricity bill for October is ready",
+                "from": "Brimlow Power <billing@brimlowpower.example>",
+                "text": "Your bill of $84.12 is due Nov 20."
+              },
+              {
+                "id": "18c2f0a9d1e4b003",
+                "subject": "Q4 planning: agenda for Thursday",
+                "from": "Priya Nair <priya.nair@quorrel-labs.example>",
+                "text": "Agenda: roadmap, hiring, offsite."
+              },
+              {
+                "id": "18c2f0a9d1e4b004",
+                "subject": "Your order has shipped",
+                "from": "Crestmarrow Outfitters <orders@crestmarrow.example>",
+                "text": "Order #88231 is on its way."
+              },
+              {
+                "id": "18c2f0a9d1e4b005",
+                "subject": "Hotel reservation: 2 nights",
+                "from": "Gullhaven Hotel Seattle <stay@gullhaven.example>",
+                "text": "Check-in Dec 4, check-out Dec 6."
+              }
+            ]
+          },
+          {
+            "op": "sync"
+          },
+          {
+            "op": "snapshotKeyword"
+          },
+          {
+            "op": "deleteAtSource",
+            "id": "18c2f0a9d1e4b001"
+          },
+          {
+            "op": "sync"
+          },
+          {
+            "op": "restoreKeywordSnapshot"
+          },
+          {
+            "op": "ask",
+            "search": "deposit"
+          }
+        ]
+      },
+      "expected": {
+        "searchExcludes": "gmail:18c2f0a9d1e4b001",
+        "repaired": true
+      },
+      "note": "R-IDX-01 variant"
+    },
+    {
+      "id": "missed-delete",
+      "input": {
+        "steps": [
+          {
+            "op": "gmailAdd",
+            "messages": [
+              {
+                "id": "18c2f0a9d1e4b001",
+                "subject": "Re: Deposit for the apartment",
+                "from": "Dana Whitfield <dana@thistlewick-pm.example>",
+                "text": "Hi Alex, the deposit of $1,200 will be returned within 21 days of move-out."
+              },
+              {
+                "id": "18c2f0a9d1e4b002",
+                "subject": "Your electricity bill for October is ready",
+                "from": "Brimlow Power <billing@brimlowpower.example>",
+                "text": "Your bill of $84.12 is due Nov 20."
+              },
+              {
+                "id": "18c2f0a9d1e4b003",
+                "subject": "Q4 planning: agenda for Thursday",
+                "from": "Priya Nair <priya.nair@quorrel-labs.example>",
+                "text": "Agenda: roadmap, hiring, offsite."
+              },
+              {
+                "id": "18c2f0a9d1e4b004",
+                "subject": "Your order has shipped",
+                "from": "Crestmarrow Outfitters <orders@crestmarrow.example>",
+                "text": "Order #88231 is on its way."
+              },
+              {
+                "id": "18c2f0a9d1e4b005",
+                "subject": "Hotel reservation: 2 nights",
+                "from": "Gullhaven Hotel Seattle <stay@gullhaven.example>",
+                "text": "Check-in Dec 4, check-out Dec 6."
+              }
+            ]
+          },
+          {
+            "op": "sync"
+          },
+          {
+            "op": "deleteAtSource",
+            "id": "18c2f0a9d1e4b001",
+            "silent": true
+          },
+          {
+            "op": "ask",
+            "prepare": "What did my landlord say about the deposit?"
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "no-match",
+        "recordGone": "gmail:18c2f0a9d1e4b001"
+      },
+      "note": "R-IDX-01 variant: no history entry; verifyFresh catches it"
+    },
+    {
+      "id": "deleted-file",
+      "input": {
+        "steps": [
+          {
+            "op": "folderWrite",
+            "path": "lease/Lease_2026.pdf",
+            "text": "12. Pets. One dog under 40 pounds is allowed with a $300 fee."
+          },
+          {
+            "op": "folderWrite",
+            "path": "notes.md",
+            "text": "Call the landlord about the sink."
+          },
+          {
+            "op": "scan"
+          },
+          {
+            "op": "folderRemove",
+            "path": "lease/Lease_2026.pdf"
+          },
+          {
+            "op": "scan"
+          },
+          {
+            "op": "ask",
+            "search": "dog"
+          }
+        ]
+      },
+      "expected": {
+        "recordGone": "folder:lease/Lease_2026.pdf",
+        "vectors": 0,
+        "searchExcludes": "folder:lease/Lease_2026.pdf"
+      },
+      "note": "R-IDX-02"
+    },
+    {
+      "id": "same-path-new-bytes",
+      "input": {
+        "steps": [
+          {
+            "op": "folderWrite",
+            "path": "notes.md",
+            "text": "deposit $1,200",
+            "lastModified": 1790000000000
+          },
+          {
+            "op": "scan"
+          },
+          {
+            "op": "folderWrite",
+            "path": "notes.md",
+            "text": "deposit $1,400",
+            "lastModified": 1780000000000
+          },
+          {
+            "op": "scan"
+          }
+        ]
+      },
+      "expected": {
+        "searchFinds": "1,400",
+        "searchMisses": "1,200",
+        "version": 2,
+        "vectorVersion": 2
+      },
+      "note": "R-IDX-03: same size, older lastModified"
+    },
+    {
+      "id": "same-size-same-time",
+      "input": {
+        "steps": [
+          {
+            "op": "folderWrite",
+            "path": "notes.md",
+            "text": "deposit $1,200",
+            "lastModified": 1790000000000
+          },
+          {
+            "op": "scan"
+          },
+          {
+            "op": "folderWrite",
+            "path": "notes.md",
+            "text": "deposit $1,400",
+            "lastModified": 1790000000000
+          },
+          {
+            "op": "scan"
+          },
+          {
+            "op": "verifyFresh",
+            "id": "folder:notes.md"
+          }
+        ]
+      },
+      "expected": {
+        "rescanMisses": true,
+        "fresh": "changed",
+        "textIncludes": "1,400"
+      },
+      "note": "R-IDX-03 variant"
+    },
+    {
+      "id": "duplicate-content",
+      "input": {
+        "steps": [
+          {
+            "op": "folderWrite",
+            "path": "W-2.pdf",
+            "text": "Form W-2 wages 2025 for Alex Rivera"
+          },
+          {
+            "op": "folderWrite",
+            "path": "W-2 (1).pdf",
+            "text": "Form W-2 wages 2025 for Alex Rivera"
+          },
+          {
+            "op": "folderWrite",
+            "path": "old/W-2.pdf",
+            "text": "Form W-2 wages 2025 for Alex Rivera"
+          },
+          {
+            "op": "folderWrite",
+            "path": "lease.txt",
+            "text": "Lease renewal for unit 3B"
+          },
+          {
+            "op": "folderWrite",
+            "path": "chili.txt",
+            "text": "Chili recipe with beans"
+          },
+          {
+            "op": "scan"
+          },
+          {
+            "op": "ask",
+            "search": "W-2 wages"
+          }
+        ]
+      },
+      "expected": {
+        "records": 5,
+        "duplicateGroupOnce": true
+      },
+      "note": "R-IDX-04"
+    },
+    {
+      "id": "move-keeps-block",
+      "input": {
+        "steps": [
+          {
+            "op": "folderWrite",
+            "path": "Taxes/W-2.pdf",
+            "text": "Form W-2 wages 2025 for Alex Rivera"
+          },
+          {
+            "op": "scan"
+          },
+          {
+            "op": "block",
+            "id": "folder:Taxes/W-2.pdf",
+            "grantId": "grant-g"
+          },
+          {
+            "op": "folderMove",
+            "from": "Taxes/W-2.pdf",
+            "to": "Taxes/2025/W-2.pdf"
+          },
+          {
+            "op": "scan"
+          }
+        ]
+      },
+      "expected": {
+        "recordAt": "folder:Taxes/2025/W-2.pdf",
+        "modelCalls": 0,
+        "tombstone": {
+          "reason": "moved",
+          "movedTo": "folder:Taxes/2025/W-2.pdf"
+        },
+        "blockFollows": true
+      },
+      "note": "R-IDX-06"
+    },
+    {
+      "id": "trash-restore",
+      "input": {
+        "steps": [
+          {
+            "op": "gmailAdd",
+            "messages": [
+              {
+                "id": "18c2f0a9d1e4b001",
+                "subject": "Re: Deposit for the apartment",
+                "from": "Dana Whitfield <dana@thistlewick-pm.example>",
+                "text": "Hi Alex, the deposit of $1,200 will be returned within 21 days of move-out."
+              }
+            ]
+          },
+          {
+            "op": "sync"
+          },
+          {
+            "op": "trash",
+            "id": "18c2f0a9d1e4b001"
+          },
+          {
+            "op": "sync"
+          },
+          {
+            "op": "restore",
+            "id": "18c2f0a9d1e4b001"
+          },
+          {
+            "op": "sync"
+          },
+          {
+            "op": "ask",
+            "search": "deposit"
+          }
+        ]
+      },
+      "expected": {
+        "recordBack": "gmail:18c2f0a9d1e4b001",
+        "tombstone": null,
+        "searchFinds": "gmail:18c2f0a9d1e4b001"
+      },
+      "note": "R-IDX-07"
+    },
+    {
+      "id": "spam-never-indexed",
+      "input": {
+        "steps": [
+          {
+            "op": "gmailAdd",
+            "messages": [
+              {
+                "id": "18c2f0a9d1e4b0ff",
+                "subject": "Re: Deposit for the apartment",
+                "from": "Dana Whitfield <dana@thistlewick-pm.example>",
+                "text": "Hi Alex, the deposit of $1,200 will be returned within 21 days of move-out.",
+                "labelIds": [
+                  "SPAM"
+                ]
+              }
+            ]
+          },
+          {
+            "op": "sync"
+          }
+        ]
+      },
+      "expected": {
+        "records": 0
+      },
+      "note": "R-IDX-07"
+    },
+    {
+      "id": "history-404",
+      "input": {
+        "steps": [
+          {
+            "op": "gmailAdd",
+            "messages": [
+              {
+                "id": "18c2f0a9d1e4b001",
+                "subject": "Re: Deposit for the apartment",
+                "from": "Dana Whitfield <dana@thistlewick-pm.example>",
+                "text": "Hi Alex, the deposit of $1,200 will be returned within 21 days of move-out."
+              },
+              {
+                "id": "18c2f0a9d1e4b002",
+                "subject": "Your electricity bill for October is ready",
+                "from": "Brimlow Power <billing@brimlowpower.example>",
+                "text": "Your bill of $84.12 is due Nov 20."
+              },
+              {
+                "id": "18c2f0a9d1e4b003",
+                "subject": "Q4 planning: agenda for Thursday",
+                "from": "Priya Nair <priya.nair@quorrel-labs.example>",
+                "text": "Agenda: roadmap, hiring, offsite."
+              },
+              {
+                "id": "18c2f0a9d1e4b004",
+                "subject": "Your order has shipped",
+                "from": "Crestmarrow Outfitters <orders@crestmarrow.example>",
+                "text": "Order #88231 is on its way."
+              },
+              {
+                "id": "18c2f0a9d1e4b005",
+                "subject": "Hotel reservation: 2 nights",
+                "from": "Gullhaven Hotel Seattle <stay@gullhaven.example>",
+                "text": "Check-in Dec 4, check-out Dec 6."
+              }
+            ]
+          },
+          {
+            "op": "sync"
+          },
+          {
+            "op": "deleteAtSource",
+            "id": "18c2f0a9d1e4b002"
+          },
+          {
+            "op": "deleteAtSource",
+            "id": "18c2f0a9d1e4b003"
+          },
+          {
+            "op": "gmailAdd",
+            "messages": [
+              {
+                "id": "18c2f0a9d1e4b006",
+                "subject": "Package room: you have a delivery waiting",
+                "from": "Building Front Desk <frontdesk@thistlewick-pm.example>",
+                "text": "A parcel is waiting."
+              },
+              {
+                "id": "18c2f0a9d1e4b007",
+                "subject": "Direct deposit received",
+                "from": "Kestrelmoor Bank <alerts@kestrelmoor.example>",
+                "text": "A deposit of $2,400 arrived."
+              },
+              {
+                "id": "18c2f0a9d1e4b008",
+                "subject": "Time to book your next cleaning",
+                "from": "Quellbrook Dental <hello@quellbrookdental.example>",
+                "text": "Book your cleaning."
+              }
+            ]
+          },
+          {
+            "op": "historyExpire"
+          },
+          {
+            "op": "sync"
+          }
+        ]
+      },
+      "expected": {
+        "gone": [
+          "gmail:18c2f0a9d1e4b002",
+          "gmail:18c2f0a9d1e4b003"
+        ],
+        "present": [
+          "gmail:18c2f0a9d1e4b006",
+          "gmail:18c2f0a9d1e4b007",
+          "gmail:18c2f0a9d1e4b008"
+        ],
+        "cursorIsProfile": true
+      },
+      "note": "R-IDX-08"
+    },
+    {
+      "id": "delete-during-embed",
+      "input": {
+        "steps": [
+          {
+            "op": "folderWrite",
+            "path": "long.txt",
+            "repeat": {
+              "text": "deposit ",
+              "times": 6400
+            }
+          },
+          {
+            "op": "scan",
+            "deferEmbedder": true
+          },
+          {
+            "op": "removeRecord",
+            "id": "folder:long.txt"
+          },
+          {
+            "op": "releaseEmbedder"
+          }
+        ]
+      },
+      "expected": {
+        "vectors": 0,
+        "tombstone": true
+      },
+      "note": "R-IDX-09"
+    },
+    {
+      "id": "reindex-during-embed",
+      "input": {
+        "steps": [
+          {
+            "op": "folderWrite",
+            "path": "notes.md",
+            "text": "v1 deposit notes"
+          },
+          {
+            "op": "scan",
+            "deferEmbedder": true
+          },
+          {
+            "op": "folderWrite",
+            "path": "notes.md",
+            "text": "v2 deposit notes, longer"
+          },
+          {
+            "op": "scan"
+          },
+          {
+            "op": "releaseEmbedder"
+          }
+        ]
+      },
+      "expected": {
+        "vectorVersions": [
+          2
+        ]
+      },
+      "note": "R-IDX-10"
+    },
+    {
+      "id": "kill-mid-scan",
+      "input": {
+        "steps": [
+          {
+            "op": "generateFiles",
+            "count": 200
+          },
+          {
+            "op": "scan",
+            "crashAfter": 60
+          },
+          {
+            "op": "reopen"
+          }
+        ]
+      },
+      "expected": {
+        "orphans": 0,
+        "everyTextRecordHasVectors": true
+      },
+      "note": "R-IDX-11: e2e only (Playwright, OPFS)"
+    }
+  ]
+}

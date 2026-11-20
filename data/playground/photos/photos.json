@@ -1,0 +1,93 @@
+[
+  {
+    "id": "pg-photo-01",
+    "file": "IMG_4821.jpg",
+    "date": "2026-07-04T15:42:00-05:00",
+    "hadGps": true,
+    "gps": {
+      "lat": 41.903,
+      "lon": -87.701
+    },
+    "description": "One adult at an outdoor Fourth of July cookout in a park, cheeks puffed, five hot dogs sticking out of their mouth, holding a paper plate; red, white and blue bunting on a folding table behind. Only this person in frame."
+  },
+  {
+    "id": "pg-photo-02",
+    "file": "IMG_4822.jpg",
+    "date": "2026-07-04T15:10:00-05:00",
+    "hadGps": true,
+    "gps": {
+      "lat": 41.9031,
+      "lon": -87.7012
+    },
+    "description": "A folding table with trays of hot dogs and buns, mustard and ketchup bottles, and a hand-written sign reading HOT DOG CONTEST. No people."
+  },
+  {
+    "id": "pg-photo-03",
+    "file": "IMG_3310.jpg",
+    "date": "2025-03-02T11:20:00-06:00",
+    "hadGps": false,
+    "description": "An empty apartment living room with stacked moving boxes, a rolled-up rug and bare wood floors. No people."
+  },
+  {
+    "id": "pg-photo-04",
+    "file": "IMG_5007.jpg",
+    "date": "2026-09-19T19:30:00-05:00",
+    "hadGps": false,
+    "description": "A birthday cake with lit candles on a restaurant table, plates and glasses around it, no faces."
+  },
+  {
+    "id": "pg-photo-05",
+    "file": "IMG_5120.jpg",
+    "date": "2026-10-10T18:05:00-05:00",
+    "hadGps": true,
+    "gps": {
+      "lat": 41.9176,
+      "lon": -87.6266
+    },
+    "place": "Chicago",
+    "description": "A city skyline at sunset from a lakefront path, an empty bench in the foreground. No people."
+  },
+  {
+    "id": "pg-photo-06",
+    "file": "IMG_5133.jpg",
+    "date": "2026-09-13T20:15:00-05:00",
+    "hadGps": false,
+    "description": "The cabinet under a kitchen sink: a dripping pipe joint, a small bucket catching water, cleaning bottles pushed aside."
+  },
+  {
+    "id": "pg-photo-07",
+    "file": "IMG_5201.jpg",
+    "date": "2026-11-01T13:40:00-06:00",
+    "hadGps": true,
+    "gps": {
+      "lat": 41.9083,
+      "lon": -87.6773
+    },
+    "description": "A beagle mix puppy on a blanket at an outdoor pet adoption event, a paper tag on its collar. No faces of people."
+  },
+  {
+    "id": "pg-photo-08",
+    "file": "cat-on-windowsill.png",
+    "date": "2026-10-18T10:05:00-05:00",
+    "hadGps": false,
+    "description": "A gray tabby cat asleep on a sunny windowsill next to a potted plant."
+  },
+  {
+    "id": "pg-photo-09",
+    "file": "IMG_5250.jpg",
+    "date": "2026-11-07T19:00:00-06:00",
+    "hadGps": false,
+    "description": "A bowl of turkey chili topped with shredded cheddar and green onions on a wooden table."
+  },
+  {
+    "id": "pg-photo-10",
+    "file": "IMG_5302.jpg",
+    "date": "2026-11-14T16:30:00-06:00",
+    "hadGps": true,
+    "gps": {
+      "lat": 41.9105,
+      "lon": -87.677
+    },
+    "description": "A red bicycle locked to a lamp post on a sidewalk covered in autumn leaves. No people."
+  }
+]

@@ -1,0 +1,1219 @@
+// The home base engine (40 section 11): one tab per account holds a Web Lock, announces presence, claims relay
+// requests, prepares proposals on the device, mirrors them to the extension and writes the decision.
+// All I/O comes in through EngineDeps, so the engine is tested with fakes (40 section 18).
+import {
+  LADDER_STEPS,
+  stepPhrase,
+  type Decision,
+  type IndexRecord,
+  type LadderStep,
+  type Proposal,
+  type Receipt,
+  type Settings,
+  type SourceKind,
+  type StepOption,
+} from '@sieve/shared';
+import type { SieveDb } from '@/index';
+import type { PipelineProgress, buildRelatedOptions, composeOutgoingText, finalizeDecision, prepareProposal } from '@/pipeline';
+import type { BlockedEntry } from '@/app/services/blocked';
+import type { DecideResult, ExtensionStatus, HomeBaseRole, HomeBaseState, PendingEntry } from '@/state/homeBase';
+import type { ToastState } from '@/state/toasts';
+import type { DeviceView, LiveStep, RelayRequestView } from '@/state/types';
+import { DECIDE_ERRORS, HOME_BASE } from '@/copy/strings';
+import { truncateGraphemes } from '@/robust/question';
+import { CLAIM_RETRY_MS, DONE_ENTRY_TTL_MS, PREPARE_TIMEOUT_MS } from './constants';
+import { decisionDeadline, isPlaygroundRequest } from './deadline';
+import { validateDecision, type DecisionInput, type DecideResultReason } from './decision';
+import type { BridgeHandlers, ExtensionBridge } from './extensionBridge';
+import type { FinishInput, InvalidRequest } from './requests';
+import { MSG } from './messagesToAi';
+import { pendingPreviews } from './preview';
+import { resilientSnapshot, type ListenerState } from './resilient';
+import { checkBeforeSend, type SendBlock } from './sendCheck';
+import { expandMoved } from '@/robust/media';
+import { questionWarnings } from '@/robust/questionWarnings';
+
+type RequestsModule = typeof import('./requests');
+type PresenceModule = typeof import('./presence');
+type LockModule = typeof import('./homeBaseLock');
+type DevicesModule = typeof import('@/app/services/devices');
+
+export interface EngineDeps {
+  /**
+   * 'real' (default): the Google home base for the real index; it never serves Playground requests.
+   * 'playground' (00 D1): the Playground page serves only Playground requests (allowedSources ['playground']) from the
+   * Playground database with sample data, for anonymous owners too: no lock, presence, device doc, push, or
+   * Firestore receipt (its receipts stay in the Playground database through saveLocalReceipt).
+   */
+  kind?: 'real' | 'playground';
+  saveLocalReceipt?(receipt: Receipt): Promise<void>;
+  dataClass?: 'own' | 'sample';
+  uid: string;
+  deviceId: string;
+  db: SieveDb;                                         // openDb('real')
+  getSettings(): Settings;
+  getBlocked(): BlockedEntry[];
+  /** Joins stored item refs to local record ids (01 section 11.8), fresh at the moment of use. */
+  resolveItemRefs(refs: string[]): Promise<Record<string, string | null>>;
+  getRecord(id: string): Promise<IndexRecord | undefined>;
+  putConsent(recordId: string, at: number): Promise<void>;
+  requests: Pick<RequestsModule, 'listenRequests' | 'claimRequest' | 'markAwaiting' | 'finishRequest' | 'listOpenRequests'>;
+  presence: Pick<PresenceModule, 'startPresence'>;
+  lock: Pick<LockModule, 'acquireHomeBaseLock' | 'locksSupported'>;
+  devices: Pick<DevicesModule, 'setHomeBase' | 'clearHomeBase'>;
+  makeBridge: (handlers: BridgeHandlers) => ExtensionBridge | null;   // null when VITE_EXTENSION_ID is unset
+  pipeline: {
+    prepareProposal: typeof prepareProposal;
+    finalizeDecision: typeof finalizeDecision;
+    buildRelatedOptions: typeof buildRelatedOptions;
+    composeOutgoingText: typeof composeOutgoingText;
+  };
+  beginForeground(): () => void;                       // useIndexing
+  now(): number;                                       // server time when known (70 section 3.4)
+  set(patch: Partial<HomeBaseState>): void;            // store setState
+  toast: ToastState['push'];
+  announce(text: string, p?: 'polite' | 'assertive'): void;
+  navigate(to: string): void;
+  currentPath?(): string;
+  reauth?(): Promise<boolean>;
+  hasBeenActive?(): boolean | undefined;               // navigator.userActivation?.hasBeenActive
+  isHidden?(): boolean;
+  online?(): boolean;
+  onWake?(fn: () => void): () => void;
+  onFirstInteraction?(fn: () => void): () => void;
+  whenVisible?(fn: () => void): () => void;
+  whenOnline?(fn: () => void): () => void;
+  wasDiscarded?(): boolean;
+  scheduleFrame?(fn: () => void): void;
+}
+
+export interface HomeBaseEngine {
+  start(): void;                                       // begins the requests listener; role is computed from the user doc
+  stop(): Promise<void>;
+  onUserDoc(d: { homeBaseDeviceId?: string } | null): void;
+  onDevices(d: DeviceView[]): void;
+  onSettings(s: Settings): void;                       // 70 R-RLY-10: a rule became 'never'
+  onBlocked(list: BlockedEntry[]): void;               // 70 R-RLY-10: a new block
+  resync(): Promise<void>;                             // 70 R-PLAT-04
+  makeThisHomeBase(label: string): Promise<void>;
+  stopBeingHomeBase(): Promise<void>;
+  useThisTab(): Promise<void>;
+  toggleRelated(requestId: string, recordId: string): Promise<void>;
+  allowCloudFor(requestId: string, recordId: string): Promise<void>;
+  decide(input: DecisionInput): Promise<DecideResult>;
+  dismissDone(requestId: string): void;
+  stopPreparing(requestId: string): Promise<void>;
+  role(): HomeBaseRole;
+}
+
+type AbortReason = 'expired' | 'timeout' | 'stopped' | 'ended' | 'reprepare' | 'person';
+
+interface Runtime {
+  ctl?: AbortController;
+  waiting?: 'click' | 'visible';
+  hiddenRetried?: boolean;
+  doneTimer?: ReturnType<typeof setTimeout>;
+  frameText?: string;
+  frameScheduled?: boolean;
+}
+
+const stepIndex = (s: LadderStep) => LADDER_STEPS.indexOf(s);
+
+function isOfflineLike(error: unknown, online: boolean): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  return code === 'unavailable' || code === 'deadline-exceeded' || !online;
+}
+
+function decisionErrorOf(error: unknown): { code: string; message: string } | null {
+  const e = error as { name?: unknown; code?: unknown; message?: unknown } | null;
+  return e && e.name === 'DecisionError' && typeof e.code === 'string' && typeof e.message === 'string'
+    ? { code: e.code, message: e.message }
+    : null;
+}
+
+function reasonForDecisionCode(code: string): DecideResultReason {
+  if (code === 'expired') return 'expired';
+  if (code === 'too-long') return 'too-long';
+  if (code === 'wrong-request' || code === 'not-ready') return 'not-pending';
+  return 'invalid-step';
+}
+
+function reasonForSendBlock(code: SendBlock): DecideResultReason {
+  if (code === 'too-long' || code === 'empty') return 'too-long';
+  if (code === 'text-mismatch' || code === 'missing-item' || code === 'not-clean' || code === 'unmasked-number') return 'error';
+  return 'invalid-step';
+}
+
+function sourceOf(recordId: string): SourceKind | undefined {
+  const s = recordId.split(':')[0];
+  return s === 'gmail' || s === 'folder' || s === 'upload' || s === 'playground' ? s : undefined;
+}
+
+export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
+  const { uid, deviceId } = deps;
+  const playground = deps.kind === 'playground';
+  const dataClass = deps.dataClass ?? (playground ? 'sample' : 'own');
+  /** This engine serves only its own kind of request. */
+  const mine = (r: { allowedSources: readonly string[] }) => isPlaygroundRequest(r) === playground;
+  const online = () => deps.online?.() ?? (typeof navigator === 'undefined' ? true : navigator.onLine);
+  const scheduleFrame =
+    deps.scheduleFrame ??
+    ((fn: () => void) => (typeof requestAnimationFrame === 'function' ? requestAnimationFrame(() => fn()) : setTimeout(fn, 16)));
+  const compose = (parts: StepOption[]) => deps.pipeline.composeOutgoingText(parts);
+
+  let started = false;
+  let stopped = false;
+  let role: HomeBaseRole = 'signed-out';
+  let errorReason: string | undefined;
+  let homeBaseDeviceId: string | undefined;
+  let userDocSeen = false;
+  let devices: DeviceView[] = [];
+  let presence: 'unknown' | 'online' | 'offline' = 'unknown';
+  let extension: ExtensionStatus = 'off';
+  let listener: ListenerState = 'live';
+  let recent: RelayRequestView[] = [];
+  let waitingForClick = false;
+  let extensionShortcut: string | undefined;
+  let lastSettings: Settings | undefined;
+
+  const entries = new Map<string, PendingEntry>();
+  const runtime = new Map<string, Runtime>();
+  const invalidHandled = new Set<string>();
+  const stoppedByPerson = new Set<string>();   // Stop on a preparing card: never prepared again by this tab
+
+  let unlisten: (() => void) | null = null;
+  let offWake: (() => void) | null = null;
+  let offClick: (() => void) | null = null;
+  let lockHandle: { cancel(): void; steal(): void } | null = null;
+  let presenceHandle: { stop(): Promise<void> } | null = null;
+  let bridge: ExtensionBridge | null = null;
+  let bridgeUnavailable = false;
+  let pumping = false;
+
+  const rt = (id: string): Runtime => {
+    let r = runtime.get(id);
+    if (!r) {
+      r = {};
+      runtime.set(id, r);
+    }
+    return r;
+  };
+
+  // ---------- publishing to the store ----------
+
+  function ordered(): PendingEntry[] {
+    return [...entries.values()].sort((a, b) => a.request.createdAt - b.request.createdAt);
+  }
+
+  function publish(): void {
+    if (stopped) return;   // after stop the Google session resets the store; late callbacks must not refill it
+    const list = ordered();
+    const awaiting = list.filter((e) => e.phase === 'awaiting-person');
+    deps.set({
+      role,
+      homeBaseDeviceId,
+      homeBaseLabel: homeBaseDeviceId ? devices.find((d) => d.id === homeBaseDeviceId)?.label : undefined,
+      presence,
+      extension,
+      entries: Object.fromEntries(list.map((e) => [e.requestId, e])),
+      order: list.map((e) => e.requestId),
+      recent,
+      awaitingCount: awaiting.length,
+      waitingForClick: waitingForClick && list.some((e) => e.phase === 'preparing'),
+      devices,
+      listener,
+      errorReason,
+      extensionShortcut,
+    });
+  }
+
+  function update(id: string, patch: Partial<PendingEntry>): PendingEntry | undefined {
+    const e = entries.get(id);
+    if (!e) return undefined;
+    const next = { ...e, ...patch };
+    entries.set(id, next);
+    return next;
+  }
+
+  function createEntry(request: RelayRequestView, phase: PendingEntry['phase']): PendingEntry {
+    const e: PendingEntry = {
+      requestId: request.id,
+      request,
+      phase,
+      liveSteps: [],
+      answerPreview: '',
+      relatedSelected: [],
+      relatedOptions: {},
+      relatedLoading: [],
+      lastPreviewItemIds: [],
+    };
+    entries.set(request.id, e);
+    return e;
+  }
+
+  function removeEntry(id: string): void {
+    const r = runtime.get(id);
+    if (r?.doneTimer) clearTimeout(r.doneTimer);
+    r?.ctl?.abort('ended' satisfies AbortReason);
+    runtime.delete(id);
+    entries.delete(id);
+  }
+
+  function abortEntry(id: string, reason: AbortReason): void {
+    runtime.get(id)?.ctl?.abort(reason);
+  }
+
+  function finishEntry(id: string, result: NonNullable<PendingEntry['result']>): void {
+    update(id, { phase: 'done', result, error: undefined });
+    const r = rt(id);
+    if (r.doneTimer) clearTimeout(r.doneTimer);
+    r.doneTimer = setTimeout(() => {
+      if (entries.get(id)?.phase === 'done') {
+        removeEntry(id);
+        publish();
+        ensureBridge();
+      }
+    }, DONE_ENTRY_TTL_MS);
+  }
+
+  // ---------- the extension ----------
+
+  const handlers: BridgeHandlers & { isHomeBase(): boolean } = {
+    onDecision: (input) => {
+      void engine.decide(input);
+    },
+    onOpenApp: (requestId) => deps.navigate(requestId ? `/requests?id=${encodeURIComponent(requestId)}` : '/requests'),
+    onStatus: (s) => {
+      extension = s;
+      publish();
+    },
+    getPending: () => {
+      const { previews, ids } = pendingPreviews(ordered());
+      for (const [id, itemIds] of Object.entries(ids)) {
+        const e = entries.get(id);
+        if (e && e.lastPreviewItemIds.join('\n') !== itemIds.join('\n')) update(id, { lastPreviewItemIds: itemIds });
+      }
+      return previews;
+    },
+    isHomeBase: () => role === 'active',
+    onHello: (info) => {
+      extensionShortcut = info.extensionShortcut;
+      publish();
+    },
+  };
+
+  function ensureBridge(): void {
+    if (stopped) return;
+    const want = role === 'active' || entries.size > 0;
+    if (want && !bridge && !bridgeUnavailable) {
+      bridge = deps.makeBridge(handlers);
+      if (!bridge) {
+        bridgeUnavailable = true;
+        extension = 'off';
+        return;
+      }
+      bridge.start();
+    } else if (!want && bridge) {
+      bridge.stop();
+      bridge = null;
+      extension = 'idle';
+    }
+  }
+
+  function sendPending(): void {
+    bridge?.sendPending();
+  }
+
+  // ---------- roles, lock and presence ----------
+
+  function startPresence(): void {
+    if (presenceHandle) return;
+    presenceHandle = deps.presence.startPresence(uid, deviceId, (s) => {
+      presence = s;
+      publish();
+    });
+  }
+
+  async function stopPresence(): Promise<void> {
+    const h = presenceHandle;
+    presenceHandle = null;
+    presence = 'unknown';
+    await h?.stop();
+  }
+
+  /** Stop the work started under the lock: presence, and every entry not waiting for the person. */
+  function stopActiveWork(): void {
+    void stopPresence();
+    for (const e of [...entries.values()]) {
+      if (e.phase === 'claiming' || e.phase === 'preparing') {
+        abortEntry(e.requestId, 'stopped');
+        removeEntry(e.requestId);
+      }
+    }
+  }
+
+  function restartBridge(): void {
+    if (bridge) {
+      bridge.stop();
+      bridge.start();
+    }
+  }
+
+  const lockHandlers = {
+    onAcquired: () => {
+      if (stopped) return;
+      role = 'active';
+      errorReason = undefined;
+      startPresence();
+      ensureBridge();
+      restartBridge();   // hello again, now with homeBase: true
+      processSnapshot(recent);
+      publish();
+    },
+    onLost: () => {
+      if (stopped) return;
+      const wasActive = role === 'active';
+      role = 'standby';
+      stopActiveWork();
+      if (wasActive) deps.toast({ tone: 'info', title: HOME_BASE.anotherTab });
+      ensureBridge();
+      restartBridge();
+      publish();
+    },
+    onWaiting: () => {
+      if (stopped || role === 'active') return;
+      role = 'standby';
+      publish();
+    },
+  };
+
+  function applyRole(): void {
+    if (stopped || !userDocSeen) return;
+    if (homeBaseDeviceId === deviceId) {
+      if (!lockHandle) {
+        if (!deps.lock.locksSupported()) {
+          role = 'error';
+          errorReason = HOME_BASE.errorNoLocks;
+          publish();
+          return;
+        }
+        role = 'starting';
+        publish();
+        lockHandle = deps.lock.acquireHomeBaseLock(uid, lockHandlers);
+      }
+      return;
+    }
+    const next: HomeBaseRole = homeBaseDeviceId ? 'other-device' : 'not-home-base';
+    if (lockHandle) {
+      lockHandle.cancel();
+      lockHandle = null;
+    }
+    const wasHomeBase = role === 'active' || role === 'standby' || role === 'starting';
+    if (wasHomeBase) stopActiveWork();
+    const changed = role !== next;
+    role = next;
+    ensureBridge();
+    if (changed && wasHomeBase) restartBridge();   // hello again with homeBase: false (user doc snapshots repeat often)
+    publish();
+  }
+
+  // ---------- offline retries ----------
+
+  function waitOnline(): Promise<void> {
+    if (online()) return Promise.resolve();
+    return new Promise((resolve) => {
+      if (deps.whenOnline) {
+        deps.whenOnline(resolve);
+        return;
+      }
+      const on = () => {
+        window.removeEventListener('online', on);
+        resolve();
+      };
+      window.addEventListener('online', on);
+    });
+  }
+
+  const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  /** Offline transactions are retried on the online event, then after 2, 5 and 10 s (40 section 11.5). */
+  async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (error) {
+      if (!isOfflineLike(error, online())) throw error;
+    }
+    await waitOnline();
+    for (const ms of [0, ...CLAIM_RETRY_MS]) {
+      if (stopped) throw new Error('stopped');
+      if (ms > 0) await sleep(ms);
+      try {
+        return await fn();
+      } catch (error) {
+        if (!isOfflineLike(error, online())) throw error;
+      }
+    }
+    throw new Error('offline');
+  }
+
+  // ---------- the snapshot ----------
+
+  function processSnapshot(list: RelayRequestView[]): void {
+    const byId = new Map(list.map((r) => [r.id, r]));
+    // An entry whose doc left the snapshot (TTL delete) is removed.
+    for (const e of [...entries.values()]) {
+      if (!byId.has(e.requestId) && e.phase !== 'deciding') removeEntry(e.requestId);
+    }
+    for (const r of [...list].sort((a, b) => a.createdAt - b.createdAt)) handleDoc(r);
+    publish();
+    ensureBridge();
+    void pump();
+  }
+
+  function handleDoc(r: RelayRequestView): void {
+    const e = entries.get(r.id);
+    if (!e) {
+      if (role !== 'active' || !mine(r) || stoppedByPerson.has(r.id)) return;
+      if (r.status === 'queued') {
+        createEntry(r, 'claiming');
+        void claim(r.id);
+      } else if ((r.status === 'claimed' || r.status === 'awaiting-person') && r.claimedBy === deviceId && deps.now() < decisionDeadline(r)) {
+        createEntry(r, 'preparing');   // the tab was reloaded: prepare again
+      }
+      return;
+    }
+    const before = e.request;
+    update(r.id, { request: r });
+    if (r.status === 'queued' || r.status === 'claimed' || r.status === 'awaiting-person') {
+      if (scopeChanged(before, r)) onScopeChanged(r.id);
+      return;
+    }
+    // Terminal while nobody here is writing it.
+    if (e.phase === 'deciding' || e.result) return;
+    abortEntry(r.id, 'ended');
+    bridge?.sendResolved(r.id, 'expired');
+    if (r.status === 'expired' || r.status === 'revoked') {
+      finishEntry(r.id, { kind: 'ended', status: r.status });
+      const aiName = r.requester.aiName;
+      if (r.status === 'expired') deps.toast({ tone: 'warning', title: HOME_BASE.expiredToast(aiName) });
+      else deps.toast({ tone: 'info', title: HOME_BASE.revokedToast(aiName) });
+    } else {
+      removeEntry(r.id);   // finished elsewhere (another tab of this computer)
+    }
+    sendPending();
+  }
+
+  function scopeChanged(a: RelayRequestView, b: RelayRequestView): boolean {
+    return (
+      a.maxStep !== b.maxStep ||
+      a.allowedCategories.join(',') !== b.allowedCategories.join(',') ||
+      a.allowedSources.join(',') !== b.allowedSources.join(',')
+    );
+  }
+
+  /** 70 R-RLY-09: the grant was narrowed while the request waits. */
+  function onScopeChanged(id: string): void {
+    const e = entries.get(id);
+    if (!e) return;
+    if (e.phase === 'preparing') {
+      reprepare(id);
+      return;
+    }
+    const p = e.proposal;
+    if (e.phase !== 'awaiting-person' || !p) return;
+    const r = e.request;
+    const item = p.item;
+    const source = item ? sourceOf(item.recordId) : undefined;
+    if (item && (!r.allowedCategories.includes(item.category) || (source && !r.allowedSources.includes(source)))) {
+      reprepare(id);
+      return;
+    }
+    if (stepIndex(r.maxStep) < stepIndex(p.maxStep)) {
+      const reason = HOME_BASE.mayOnlyReceive(r.requester.aiName, r.maxStep);
+      const options = p.options.map((o) =>
+        stepIndex(o.step) > stepIndex(r.maxStep) ? { ...o, available: false, unavailableReason: reason } : o,
+      );
+      update(id, { proposal: { ...p, maxStep: r.maxStep, options } });
+      sendPending();
+    }
+  }
+
+  function onInvalid(bad: InvalidRequest[]): void {
+    if (role !== 'active' || playground) return;
+    for (const b of bad) {
+      if (b.status !== 'queued' || invalidHandled.has(b.id)) continue;
+      invalidHandled.add(b.id);
+      void (async () => {
+        try {
+          const c = await withRetry(() => deps.requests.claimRequest(uid, b.id, deviceId));
+          if (c === 'claimed') await withRetry(() => deps.requests.finishRequest(uid, b.id, deviceId, { status: 'error', message: b.reason === 'no-readable-words' ? MSG.noReadableWords : MSG.badRequest }));
+        } catch (error) {
+          console.error('malformed request', b.id, (error as { code?: string }).code ?? '');
+        }
+      })();
+    }
+  }
+
+  // ---------- claiming and preparing ----------
+
+  async function claim(id: string): Promise<void> {
+    let result: 'claimed' | 'taken' | 'gone';
+    try {
+      result = await withRetry(() => deps.requests.claimRequest(uid, id, deviceId));
+    } catch (error) {
+      console.error('claim', id, (error as { code?: string }).code ?? '');
+      removeEntry(id);
+      publish();
+      return;
+    }
+    if (stopped || !entries.has(id)) return;
+    if (result !== 'claimed') {
+      removeEntry(id);
+      publish();
+      ensureBridge();
+      return;
+    }
+    update(id, { phase: 'preparing' });
+    publish();
+    void pump();
+  }
+
+  function clickStep(id: string): LiveStep {
+    return { id: `${id}:wait-click`, kind: 'select', label: HOME_BASE.waitingForClick, where: 'device', status: 'running', startedAt: deps.now() };
+  }
+
+  function nextToPrepare(): PendingEntry | undefined {
+    return ordered().find((e) => e.phase === 'preparing' && !runtime.get(e.requestId)?.ctl && !runtime.get(e.requestId)?.waiting);
+  }
+
+  /** Entries are prepared one at a time, oldest first (40 section 11.6). */
+  async function pump(): Promise<void> {
+    if (pumping || stopped) return;
+    pumping = true;
+    try {
+      for (let e = nextToPrepare(); e && !stopped; e = nextToPrepare()) {
+        // Activation gate: Chrome lets the on-device model start only after a click in this tab.
+        if (deps.hasBeenActive?.() === false) {
+          waitingForClick = true;
+          for (const w of ordered().filter((x) => x.phase === 'preparing' && !runtime.get(x.requestId)?.ctl)) {
+            rt(w.requestId).waiting = 'click';
+            update(w.requestId, { liveSteps: [clickStep(w.requestId)] });
+          }
+          publish();
+          if (!offClick) {
+            const subscribe = deps.onFirstInteraction ?? ((fn: () => void) => {
+              const h = () => fn();
+              window.addEventListener('pointerdown', h, { capture: true, once: true });
+              window.addEventListener('keydown', h, { capture: true, once: true });
+              return () => {
+                window.removeEventListener('pointerdown', h, true);
+                window.removeEventListener('keydown', h, true);
+              };
+            });
+            offClick = subscribe(() => {
+              offClick = null;
+              waitingForClick = false;
+              for (const [id, r] of runtime) {
+                if (r.waiting === 'click') {
+                  r.waiting = undefined;
+                  update(id, { liveSteps: [] });
+                }
+              }
+              publish();
+              void pump();
+            });
+          }
+          return;
+        }
+        await prepare(e.requestId);
+      }
+    } finally {
+      pumping = false;
+    }
+  }
+
+  async function blockedIds(grantId: string): Promise<string[]> {
+    const list = deps.getBlocked().filter((b) => b.grantId === grantId || b.grantId === '*');
+    if (list.length === 0) return [];
+    try {
+      const map = await deps.resolveItemRefs(list.map((b) => b.recordRef));
+      const ids = new Set<string>();
+      for (const b of list) {
+        const id = map[b.recordRef] ?? b.recordId;
+        if (id) ids.add(id);
+      }
+      return await expandMoved(deps.db, [...ids]);   // 70 R-IDX-06: a block follows the file when it moves
+    } catch {
+      return [...new Set(list.map((b) => b.recordId))];
+    }
+  }
+
+  function applyProgress(id: string, ev: PipelineProgress): void {
+    const e = entries.get(id);
+    if (!e || e.phase !== 'preparing') return;
+    if (ev.type === 'step-start') {
+      const step: LiveStep = { id: ev.id, kind: ev.kind, label: ev.label, where: ev.where, status: 'running', startedAt: deps.now() };
+      update(id, { liveSteps: [...e.liveSteps.filter((s) => s.id !== ev.id), step] });
+      publish();
+    } else if (ev.type === 'step-end') {
+      const found = e.liveSteps.some((s) => s.id === ev.id);
+      const liveSteps = found
+        ? e.liveSteps.map((s) => (s.id === ev.id ? { ...s, status: 'done' as const, label: ev.step.label, where: ev.step.where, step: ev.step } : s))
+        : [...e.liveSteps, { id: ev.id, kind: ev.step.kind, label: ev.step.label, where: ev.step.where, status: 'done' as const, startedAt: ev.step.at, step: ev.step }];
+      update(id, { liveSteps });
+      publish();
+    } else {
+      const r = rt(id);
+      r.frameText = ev.text;
+      if (!r.frameScheduled) {
+        r.frameScheduled = true;
+        scheduleFrame(() => {
+          r.frameScheduled = false;
+          if (entries.get(id)?.phase === 'preparing' && r.frameText !== undefined) {
+            update(id, { answerPreview: r.frameText });
+            publish();
+          }
+        });
+      }
+    }
+  }
+
+  async function prepare(id: string): Promise<void> {
+    const entry = entries.get(id);
+    if (!entry) return;
+    const req = entry.request;
+    const aiName = req.requester.aiName;
+    const r = rt(id);
+    const ctl = new AbortController();
+    r.ctl = ctl;
+    update(id, { phase: 'preparing', liveSteps: [], answerPreview: '', proposal: undefined, error: undefined });
+    publish();
+    const end = deps.beginForeground();
+    const expiry = setTimeout(() => ctl.abort('expired' satisfies AbortReason), Math.max(0, decisionDeadline(req) - deps.now()));
+    const timeout = setTimeout(() => ctl.abort('timeout' satisfies AbortReason), PREPARE_TIMEOUT_MS);
+    let proposal: Proposal | undefined;
+    let failed = false;
+    try {
+      const blockedRecordIds = await blockedIds(req.requester.grantId);
+      proposal = await deps.pipeline.prepareProposal({
+        db: deps.db,
+        requestId: req.id,
+        question: req.question,
+        requester: req.requester,
+        requestedStep: req.requestedStep,
+        maxStep: req.maxStep,
+        allowedCategories: req.allowedCategories,
+        allowedSources: req.allowedSources,
+        ...(req.hints ? { hints: req.hints } : {}),
+        settings: deps.getSettings(),
+        dataClass,
+        signal: ctl.signal,
+        onProgress: (ev) => applyProgress(id, ev),
+        blockedRecordIds,
+        now: deps.now(),
+      });
+    } catch {
+      failed = true;
+    } finally {
+      end();
+      clearTimeout(expiry);
+      clearTimeout(timeout);
+      if (r.ctl === ctl) r.ctl = undefined;
+    }
+    if (stopped || !entries.has(id)) return;
+    const reason = ctl.signal.aborted ? (ctl.signal.reason as AbortReason) : undefined;
+    if (reason === 'expired') {
+      removeEntry(id);   // functions mark it expired
+      publish();
+      return;
+    }
+    if (reason === 'stopped' || reason === 'ended' || reason === 'person') return;
+    if (reason === 'reprepare') {
+      update(id, { phase: 'preparing', liveSteps: [], answerPreview: '', proposal: undefined });
+      publish();
+      return;
+    }
+    if (reason === 'timeout' && deps.isHidden?.() && !r.hiddenRetried) {
+      // 70 R-PLAT-01: Chrome may slow the on-device model in a background tab. Retry once when visible.
+      r.hiddenRetried = true;
+      r.waiting = 'visible';
+      update(id, {
+        liveSteps: [{ id: `${id}:hidden`, kind: 'select', label: HOME_BASE.waitingHidden, where: 'device', status: 'running', startedAt: deps.now() }],
+      });
+      publish();
+      const resume = () => {
+        r.waiting = undefined;
+        if (entries.has(id) && deps.now() < decisionDeadline(entries.get(id)!.request)) void pump();
+      };
+      if (deps.whenVisible) deps.whenVisible(resume);
+      else setTimeout(resume, 0);
+      return;
+    }
+    if (failed || reason === 'timeout' || !proposal) {
+      deps.toast({ tone: 'error', title: HOME_BASE.prepareFailed(aiName) });
+      await finishAuto(id, { status: 'error', message: MSG.error }, 'error');
+      return;
+    }
+    if (req.questionRemoved) {
+      // 70 R-IN-03, R-IN-04: what was hidden in the question is shown on the card, before every other warning
+      const extra = questionWarnings(req.questionRemoved);
+      if (extra.length > 0) proposal = { ...proposal, warnings: [...extra, ...proposal.warnings] };
+    }
+    switch (proposal.outcome) {
+      case 'ready':
+      case 'needs-cloud-consent':
+        await presentProposal(id, proposal);
+        return;
+      case 'blocked-never': {
+        let receipt: Receipt | undefined;
+        try {
+          const decision: Decision = {
+            requestId: req.id,
+            approved: false,
+            itemIds: proposal.item ? [proposal.item.recordId] : [],
+            decidedBy: 'app',
+            decidedAt: deps.now(),
+          };
+          receipt = (await deps.pipeline.finalizeDecision(proposal, decision, { db: deps.db })).receipt;
+        } catch {
+          receipt = undefined;
+        }
+        if (!receipt) {
+          await finishAuto(id, { status: 'error', message: MSG.error }, 'error');
+          return;
+        }
+        deps.toast({ tone: 'info', title: HOME_BASE.blockedToast(aiName) });
+        await finishAuto(
+          id,
+          { status: 'blocked', message: MSG.blocked, ...(playground ? {} : { receipt: { ...receipt, id: req.id } }) },
+          'blocked',
+          proposal,
+          playground ? { ...receipt, id: req.id } : undefined,
+        );
+        return;
+      }
+      case 'no-match':
+        await finishAuto(id, { status: 'no-match', message: MSG.noMatch }, 'no-match', proposal);
+        return;
+      case 'model-unavailable':
+        deps.toast({ tone: 'warning', title: HOME_BASE.modelUnavailableToast(aiName) });
+        await finishAuto(id, { status: 'error', message: MSG.modelUnavailable }, 'error', proposal);
+        return;
+      default:
+        deps.toast({ tone: 'error', title: HOME_BASE.prepareFailed(aiName) });
+        await finishAuto(id, { status: 'error', message: MSG.error }, 'error', proposal);
+    }
+  }
+
+  async function presentProposal(id: string, proposal: Proposal): Promise<void> {
+    let marked: 'ok' | 'gone';
+    try {
+      marked = await withRetry(() => deps.requests.markAwaiting(uid, id, deviceId));
+    } catch {
+      marked = 'ok';   // still offline: show it; decide() moves the doc to awaiting-person before sending
+    }
+    if (stopped || !entries.has(id)) return;
+    if (marked === 'gone') {
+      removeEntry(id);
+      publish();
+      ensureBridge();
+      return;
+    }
+    const e = update(id, { phase: 'awaiting-person', proposal, answerPreview: '', relatedSelected: [], relatedOptions: {}, relatedLoading: [] });
+    publish();
+    ensureBridge();
+    sendPending();
+    if (!e) return;
+    const aiName = e.request.requester.aiName;
+    // 70 R-UI-08: the question in announcements is cut at 120 units on a grapheme boundary, with an ellipsis
+    const q = e.request.question.replace(/\s+/g, ' ');
+    const shown = truncateGraphemes(q, 120);
+    deps.announce(HOME_BASE.newRequestAnnounce(aiName, shown.length < q.length ? `${shown}…` : shown), 'polite');
+    if (!playground && (deps.currentPath?.() ?? '') !== '/requests') {
+      deps.toast({
+        tone: 'info',
+        title: HOME_BASE.newRequestToast(aiName),
+        body: e.request.question,
+        action: { label: HOME_BASE.review, run: () => deps.navigate(`/requests?id=${encodeURIComponent(id)}`) },
+      });
+    }
+  }
+
+  async function finishAuto(
+    id: string,
+    f: FinishInput,
+    status: 'blocked' | 'no-match' | 'error',
+    proposal?: Proposal,
+    localReceipt?: Receipt,
+  ): Promise<void> {
+    update(id, { phase: 'deciding', ...(proposal ? { proposal } : {}) });
+    publish();
+    let r: 'ok' | 'gone';
+    try {
+      r = await withRetry(() => deps.requests.finishRequest(uid, id, deviceId, f));
+    } catch (error) {
+      console.error('finish', id, (error as { code?: string }).code ?? '');
+      removeEntry(id);   // the doc stays claimed; a resync or reload prepares it again
+      publish();
+      ensureBridge();
+      return;
+    }
+    if (r === 'ok' && localReceipt) await saveLocal(localReceipt);
+    if (!entries.has(id)) return;
+    if (r === 'gone') removeEntry(id);
+    else finishEntry(id, { kind: 'auto', status });
+    publish();
+    ensureBridge();
+  }
+
+  async function saveLocal(receipt: Receipt): Promise<void> {
+    try {
+      await deps.saveLocalReceipt?.(receipt);
+    } catch (error) {
+      console.error('local receipt', (error as { name?: string }).name ?? '');
+    }
+  }
+
+  function reprepare(id: string): void {
+    const e = entries.get(id);
+    if (!e || e.phase === 'deciding' || e.phase === 'done' || e.phase === 'claiming') return;
+    const r = rt(id);
+    if (r.ctl) {
+      r.ctl.abort('reprepare' satisfies AbortReason);
+    } else {
+      r.waiting = undefined;
+      update(id, { phase: 'preparing', liveSteps: [], answerPreview: '', proposal: undefined, relatedSelected: [], relatedOptions: {}, relatedLoading: [] });
+    }
+    publish();
+    sendPending();
+    void pump();
+  }
+
+  /** Ends an entry because its request can no longer be answered. */
+  function endExpired(id: string): void {
+    finishEntry(id, { kind: 'ended', status: 'expired' });
+    bridge?.sendResolved(id, 'expired');
+    sendPending();
+    publish();
+  }
+
+  async function onBlockedChanged(list: BlockedEntry[]): Promise<void> {
+    for (const e of ordered()) {
+      const item = e.proposal?.item;
+      if (e.phase !== 'awaiting-person' || !item) continue;
+      const grantId = e.request.requester.grantId;
+      if (!list.some((b) => b.grantId === grantId || b.grantId === '*')) continue;
+      const ids = await blockedIds(grantId);
+      if (ids.includes(item.recordId)) reprepare(e.requestId);
+    }
+  }
+
+  // ---------- the engine ----------
+
+  const engine: HomeBaseEngine = {
+    start() {
+      if (started) return;
+      started = true;
+      if (playground) {
+        role = 'active';
+        userDocSeen = true;
+      } else if (!userDocSeen) {
+        role = 'starting';
+      }
+      publish();
+      unlisten = resilientSnapshot(
+        'requests',
+        (next, onError) =>
+          deps.requests.listenRequests(
+            uid,
+            (list) => {
+              next();
+              const own = list.filter(mine);
+              recent = own;
+              processSnapshot(own);
+            },
+            onError,
+            onInvalid,
+          ),
+        {
+          onState: (s) => {
+            listener = s;
+            publish();
+          },
+          ...(deps.reauth ? { reauth: deps.reauth } : {}),
+        },
+      );
+      offWake = deps.onWake?.(() => void engine.resync()) ?? null;
+      if (deps.wasDiscarded?.()) deps.toast({ tone: 'info', title: HOME_BASE.discardedToast, timeoutMs: 15_000 });
+    },
+
+    async stop() {
+      if (stopped) return;
+      stopped = true;
+      unlisten?.();
+      unlisten = null;
+      offWake?.();
+      offClick?.();
+      lockHandle?.cancel();
+      lockHandle = null;
+      for (const id of [...entries.keys()]) {
+        abortEntry(id, 'stopped');
+        removeEntry(id);
+      }
+      bridge?.stop();
+      bridge = null;
+      await stopPresence();
+    },
+
+    onUserDoc(d) {
+      if (playground) return;
+      userDocSeen = true;
+      homeBaseDeviceId = d?.homeBaseDeviceId;
+      applyRole();
+      publish();
+    },
+
+    onDevices(list) {
+      devices = list;
+      publish();
+    },
+
+    onSettings(s) {
+      const before = lastSettings;
+      lastSettings = s;
+      if (!before) return;
+      for (const e of ordered()) {
+        const item = e.proposal?.item;
+        if (e.phase !== 'awaiting-person' || !item) continue;
+        if (s.categoryRules[item.category] === 'never' && before.categoryRules[item.category] !== 'never') reprepare(e.requestId);
+      }
+    },
+
+    onBlocked(list) {
+      void onBlockedChanged(list);
+    },
+
+    async resync() {
+      if (stopped || role !== 'active') return;
+      try {
+        const { ok, bad } = await deps.requests.listOpenRequests(uid);
+        onInvalid(bad);
+        for (const r of ok.sort((a, b) => a.createdAt - b.createdAt)) handleDoc(r);
+      } catch (error) {
+        console.error('resync', (error as { code?: string }).code ?? '');
+      }
+      const now = deps.now();
+      for (const e of ordered()) {
+        if (e.phase === 'awaiting-person' && !(now < decisionDeadline(e.request))) {
+          deps.toast({ tone: 'warning', title: HOME_BASE.expiredToast(e.request.requester.aiName) });
+          endExpired(e.requestId);
+        }
+      }
+      sendPending();
+      publish();
+      ensureBridge();
+      void pump();
+    },
+
+    async makeThisHomeBase(label) {
+      try {
+        await deps.devices.setHomeBase(uid, deviceId, label.trim().slice(0, 40));
+      } catch (error) {
+        console.error('set home base', (error as { code?: string }).code ?? '');
+        deps.toast({ tone: 'error', title: HOME_BASE.makeFailed });
+      }
+    },
+
+    async stopBeingHomeBase() {
+      if (lockHandle) {
+        lockHandle.cancel();
+        lockHandle = null;
+      }
+      stopActiveWork();
+      role = 'not-home-base';
+      ensureBridge();
+      publish();
+      try {
+        await deps.devices.clearHomeBase(uid, deviceId);
+      } catch (error) {
+        console.error('clear home base', (error as { code?: string }).code ?? '');
+        deps.toast({ tone: 'error', title: HOME_BASE.stopFailed });
+      }
+    },
+
+    async useThisTab() {
+      lockHandle?.steal();
+    },
+
+    async toggleRelated(requestId, recordId) {
+      const e = entries.get(requestId);
+      if (!e || e.phase !== 'awaiting-person' || !e.proposal) return;
+      if (e.relatedSelected.includes(recordId)) {
+        update(requestId, { relatedSelected: e.relatedSelected.filter((x) => x !== recordId) });
+        publish();
+        sendPending();
+        return;
+      }
+      update(requestId, { relatedSelected: [...e.relatedSelected, recordId], error: undefined });
+      if (!e.relatedOptions[recordId]) {
+        update(requestId, { relatedLoading: [...e.relatedLoading, recordId] });
+        publish();
+        try {
+          const options = await deps.pipeline.buildRelatedOptions({ db: deps.db, proposal: e.proposal, recordId, dataClass });
+          const cur = entries.get(requestId);
+          if (cur) update(requestId, { relatedOptions: { ...cur.relatedOptions, [recordId]: options } });
+        } catch {
+          const cur = entries.get(requestId);
+          if (cur) update(requestId, { relatedSelected: cur.relatedSelected.filter((x) => x !== recordId), error: HOME_BASE.relatedFailed });
+        } finally {
+          const cur = entries.get(requestId);
+          if (cur) update(requestId, { relatedLoading: cur.relatedLoading.filter((x) => x !== recordId) });
+        }
+      }
+      publish();
+      sendPending();
+    },
+
+    async allowCloudFor(requestId, recordId) {
+      const e = entries.get(requestId);
+      if (!e) return;
+      await deps.putConsent(recordId, deps.now());
+      reprepare(requestId);
+    },
+
+    async decide(input) {
+      const id = input.requestId;
+      const e = entries.get(id);
+      const v = validateDecision(e, input, deps.now(), compose);
+      const fromExtension = input.decidedBy === 'extension';
+      if (!v.ok) {
+        if (fromExtension) {
+          if (v.reason !== 'not-pending') bridge?.sendResolved(id, 'error');
+          sendPending();
+        }
+        return v;
+      }
+      // 70 R-RLY-03: 'deciding' is set before the first await, so a second decision gets 'not-pending'.
+      update(id, { phase: 'deciding', error: undefined });
+      publish();
+      const entry = e as PendingEntry;
+      const proposal = entry.proposal as Proposal;
+      const aiName = entry.request.requester.aiName;
+
+      const back = (message: string, reason: DecideResultReason): DecideResult => {
+        if (entries.has(id)) update(id, { phase: 'awaiting-person', error: message });
+        publish();
+        if (fromExtension) bridge?.sendResolved(id, 'error');
+        sendPending();
+        return { ok: false, reason, message };
+      };
+      const ended = (message: string, reason: DecideResultReason): DecideResult => {
+        if (entries.has(id)) endExpired(id);
+        return { ok: false, reason, message };
+      };
+
+      try {
+        const relatedOptions: Record<string, StepOption[]> = {};
+        for (const rid of v.decision.itemIds.slice(1)) {
+          const opts = entry.relatedOptions[rid];
+          if (opts) relatedOptions[rid] = opts;
+        }
+        const { payload, receipt } = await deps.pipeline.finalizeDecision(proposal, v.decision, { relatedOptions, db: deps.db });
+        if (input.approved) {
+          if (!payload || payload.text !== v.text) {
+            console.error('payload mismatch', id);
+            deps.toast({ tone: 'error', title: DECIDE_ERRORS.mismatch });
+            return back(DECIDE_ERRORS.mismatch, 'error');
+          }
+          const latest = entries.get(id)?.request ?? entry.request;
+          const guard = await checkBeforeSend({
+            step: v.decision.step as LadderStep,
+            approvedText: v.text,
+            payloadText: payload.text,
+            itemIds: v.decision.itemIds,
+            question: entry.request.question,
+            requester: entry.request.requester,
+            settings: deps.getSettings(),
+            blockedRecordIds: await blockedIds(entry.request.requester.grantId),
+            request: {
+              status: latest.status,
+              maxStep: latest.maxStep,
+              allowedCategories: latest.allowedCategories,
+              allowedSources: latest.allowedSources,
+              deadline: decisionDeadline(latest),
+            },
+            now: deps.now(),
+            getRecord: deps.getRecord,
+          });
+          if (!guard.ok) {
+            if (guard.code === 'request-closed') return ended(guard.message, 'not-pending');
+            if (guard.code === 'expired') return ended(guard.message, 'expired');
+            return back(guard.message, reasonForSendBlock(guard.code));
+          }
+        }
+        // markAwaiting may have failed while offline; the rules answer only from awaiting-person.
+        if ((entries.get(id)?.request.status ?? entry.request.status) === 'claimed') {
+          const m = await deps.requests.markAwaiting(uid, id, deviceId);
+          if (m === 'gone') return ended(DECIDE_ERRORS.expired, 'expired');
+        }
+        const withId = { ...receipt, id };
+        const firestoreReceipt = playground ? {} : { receipt: withId };
+        const finish: FinishInput = input.approved
+          ? { status: 'answered', response: payload!, ...firestoreReceipt }
+          : { status: 'declined', message: MSG.declined, ...firestoreReceipt };
+        const r = await deps.requests.finishRequest(uid, id, deviceId, finish);
+        if (r === 'gone') return ended(DECIDE_ERRORS.expired, 'expired');
+        if (playground) await saveLocal(withId);
+
+        const step = v.decision.step;
+        const itemCount = v.decision.itemIds.length;
+        finishEntry(id, input.approved && step
+          ? { kind: 'sent', step, itemCount, by: input.decidedBy }
+          : { kind: 'declined', by: input.decidedBy });
+        bridge?.sendResolved(id, input.approved ? 'approved' : 'declined');
+        sendPending();
+        publish();
+        if (input.approved && step) {
+          const phrase = stepPhrase(step, proposal.item?.kind, itemCount);
+          deps.announce(HOME_BASE.sentAnnounce(phrase, aiName), 'polite');
+          if (fromExtension) deps.toast({ tone: 'success', title: HOME_BASE.approvedInExtension(phrase, aiName) });
+        } else {
+          deps.announce(HOME_BASE.deniedAnnounce(aiName), 'polite');
+          if (fromExtension) deps.toast({ tone: 'info', title: HOME_BASE.deniedInExtension });
+        }
+        return { ok: true };
+      } catch (error) {
+        const de = decisionErrorOf(error);
+        if (de) {
+          if (de.code === 'expired') return ended(de.message, 'expired');
+          return back(de.message, reasonForDecisionCode(de.code));
+        }
+        console.error('decide', id, (error as { code?: string }).code ?? '');
+        return back(DECIDE_ERRORS.offline, 'offline');
+      }
+    },
+
+    async stopPreparing(requestId) {
+      const e = entries.get(requestId);
+      if (!e || (e.phase !== 'preparing' && e.phase !== 'claiming')) return;
+      // The request stays claimed; this tab does not prepare it again (functions expire it, or another tab after 120 s).
+      stoppedByPerson.add(requestId);
+      abortEntry(requestId, 'person');
+      removeEntry(requestId);
+      publish();
+      ensureBridge();
+      deps.announce(HOME_BASE.stoppedPreparing, 'polite');
+    },
+
+    dismissDone(requestId) {
+      if (entries.get(requestId)?.phase !== 'done') return;
+      removeEntry(requestId);
+      publish();
+      ensureBridge();
+    },
+
+    role: () => role,
+  };
+
+  return engine;
+}

@@ -1,0 +1,58 @@
+{
+  "cases": [
+    {
+      "id": "rgb16.png",
+      "input": "photos/rgb16.png",
+      "expected": {
+        "dims": {
+          "width": 2,
+          "height": 2
+        },
+        "decodeOrSkip": "unreadable"
+      }
+    },
+    {
+      "id": "apng.png",
+      "input": "photos/apng.png",
+      "expected": {
+        "dims": {
+          "width": 1,
+          "height": 1
+        },
+        "decodeOrSkip": "unreadable"
+      }
+    },
+    {
+      "id": "orient-6.jpg",
+      "input": "photos/orient-6.jpg",
+      "expected": {
+        "thumbnail": "portrait"
+      },
+      "note": "needs a real camera JPEG; not generated here"
+    },
+    {
+      "id": "cmyk.jpg",
+      "input": "photos/cmyk.jpg",
+      "expected": {
+        "decodeOrSkip": "unreadable"
+      },
+      "note": "not generated here"
+    },
+    {
+      "id": "progressive.jpg",
+      "input": "photos/progressive.jpg",
+      "expected": {
+        "decodeOrSkip": "unreadable"
+      },
+      "note": "not generated here"
+    },
+    {
+      "id": "sample.heic",
+      "input": "photos/sample.heic",
+      "expected": {
+        "skip": "heic"
+      },
+      "note": "made with macOS sips -s format heic; the test is skipped when absent"
+    }
+  ]
+}

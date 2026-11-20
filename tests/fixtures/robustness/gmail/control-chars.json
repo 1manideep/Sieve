@@ -1,0 +1,46 @@
+{
+  "cases": [
+    {
+      "id": "control-chars",
+      "input": {
+        "id": "18c3a0000000d006",
+        "threadId": "18c3a0000000d006",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "Deposit",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "0",
+          "filename": "",
+          "headers": [
+            {
+              "name": "Content-Type",
+              "value": "text/plain"
+            }
+          ],
+          "mimeType": "text/plain",
+          "body": {
+            "size": 33,
+            "data": "RGVwb3NpdAAgYW1vdW50GyBpc-2ggCAkMSwyMDDvv74u"
+          }
+        }
+      },
+      "expected": {
+        "wellFormed": true,
+        "excludesCodePoints": [
+          0,
+          27,
+          55296,
+          65534
+        ],
+        "includes": [
+          "Deposit",
+          "$1,200"
+        ]
+      },
+      "note": "R-MAIL-09: NUL, ESC, an encoded lone surrogate and U+FFFE"
+    }
+  ]
+}

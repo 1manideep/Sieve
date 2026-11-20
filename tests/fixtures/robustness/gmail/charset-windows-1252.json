@@ -1,0 +1,62 @@
+{
+  "cases": [
+    {
+      "id": "charset-windows-1252",
+      "input": {
+        "id": "18c3a0000000c003",
+        "threadId": "18c3a0000000c003",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Kestrelmoor Bank <alerts@kestrelmoor.example>"
+            },
+            {
+              "name": "To",
+              "value": "Alex Rivera <alex.rivera@inbox.example>"
+            },
+            {
+              "name": "Subject",
+              "value": "Charset windows-1252"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 10 Nov 2026 15:00:00 GMT"
+            }
+          ],
+          "mimeType": "multipart/alternative",
+          "parts": [
+            {
+              "partId": "0",
+              "mimeType": "text/plain",
+              "filename": "",
+              "headers": [
+                {
+                  "name": "Content-Type",
+                  "value": "text/plain; charset=\"windows-1252\""
+                }
+              ],
+              "body": {
+                "size": 10,
+                "data": "k0hlbGxvlCCANQ"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "“Hello” €5",
+        "throws": false
+      },
+      "note": "curly quotes 0x93 0x94 and the euro sign 0x80"
+    }
+  ]
+}

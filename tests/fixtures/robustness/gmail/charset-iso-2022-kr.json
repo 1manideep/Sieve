@@ -1,0 +1,62 @@
+{
+  "cases": [
+    {
+      "id": "charset-iso-2022-kr",
+      "input": {
+        "id": "18c3a0000000c00c",
+        "threadId": "18c3a0000000c00c",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Kestrelmoor Bank <alerts@kestrelmoor.example>"
+            },
+            {
+              "name": "To",
+              "value": "Alex Rivera <alex.rivera@inbox.example>"
+            },
+            {
+              "name": "Subject",
+              "value": "Charset iso-2022-kr"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 10 Nov 2026 15:00:00 GMT"
+            }
+          ],
+          "mimeType": "multipart/alternative",
+          "parts": [
+            {
+              "partId": "0",
+              "mimeType": "text/plain",
+              "filename": "",
+              "headers": [
+                {
+                  "name": "Content-Type",
+                  "value": "text/plain; charset=\"iso-2022-kr\""
+                }
+              ],
+              "body": {
+                "size": 6,
+                "data": "7JWI64WV"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "안녕",
+        "throws": false
+      },
+      "note": "a replacement label makes TextDecoder throw; it must not"
+    }
+  ]
+}

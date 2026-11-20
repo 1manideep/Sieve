@@ -1,0 +1,293 @@
+rules_version = '2';
+
+// Sieve Firestore rules (docs/spec/30-relay-server.md section 15.1, with 01-contracts section 11:
+// 11.6 adds `answered -> revoked` by the home base; 11.7 adds the shared image; 11.8 stores item
+// references, never record ids or file paths; 00 D1 lets an anonymous Playground owner serve its own
+// Playground requests). Functions use the Admin SDK and bypass these rules; every client write is checked here.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+    function signedIn() {
+      return request.auth != null;
+    }
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+    function isAnonymous() {
+      return request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+    function isRealOwner(uid) {
+      return isOwner(uid) && !isAnonymous();
+    }
+    function isStep(s) {
+      return s in ['answer', 'excerpt', 'full'];
+    }
+    function stepRank(s) {
+      return s == 'answer' ? 0 : (s == 'excerpt' ? 1 : 2);
+    }
+    function isShortString(s, max) {
+      return s is string && s.size() <= max;
+    }
+    function isNonEmptyString(s, max) {
+      return s is string && s.size() > 0 && s.size() <= max;
+    }
+    function categoryList() {
+      return ['Home', 'Work', 'Money', 'Health', 'Travel', 'Shopping', 'Personal', 'Newsletters', 'Photos'];
+    }
+    // 01 section 11.8: HMAC-SHA256(localSalt, recordId) as 64 lowercase hex characters.
+    function isItemRef(s) {
+      return s is string && s.matches('^[0-9a-f]{64}$');
+    }
+    function isItemRefList(l) {
+      return l is list && l.size() <= 20
+        && (l.size() == 0 || l.join(',').matches('^[0-9a-f]{64}(,[0-9a-f]{64})*$'));
+    }
+    function devicePath(uid, deviceId) {
+      return /databases/$(database)/documents/users/$(uid)/devices/$(deviceId);
+    }
+    function requestPath(uid, requestId) {
+      return /databases/$(database)/documents/users/$(uid)/requests/$(requestId);
+    }
+
+    // ---------- users/{uid} ----------
+    function validSettings(s) {
+      return s is map
+        && s.keys().hasAll(['categoryRules', 'defaultStep', 'cloudFallbackForOwnData', 'pushEnabled'])
+        && s.keys().hasOnly(['categoryRules', 'defaultStep', 'cloudFallbackForOwnData', 'pushEnabled'])
+        && s.categoryRules is map
+        && s.categoryRules.keys().hasAll(categoryList())
+        && s.categoryRules.keys().hasOnly(categoryList())
+        && s.categoryRules.values().hasOnly(['approve', 'ask-first', 'never'])
+        && isStep(s.defaultStep)
+        && s.cloudFallbackForOwnData is bool
+        && s.pushEnabled is bool;
+    }
+    function validUserDoc(d) {
+      return d.keys().hasOnly(['settings', 'createdAt', 'homeBaseDeviceId'])
+        && (!('settings' in d) || validSettings(d.settings))
+        && (!('createdAt' in d) || d.createdAt is timestamp)
+        && (!('homeBaseDeviceId' in d) || isNonEmptyString(d.homeBaseDeviceId, 64));
+    }
+
+    // ---------- devices ----------
+    function isDeviceId(deviceId) {
+      return deviceId is string && deviceId.matches('^[A-Za-z0-9_-]{8,64}$');
+    }
+    function validDevice(deviceId, d) {
+      return isDeviceId(deviceId)
+        && d.keys().hasAll(['label', 'isHomeBase', 'updatedAt'])
+        && d.keys().hasOnly(['label', 'fcmToken', 'isHomeBase', 'updatedAt'])
+        && isNonEmptyString(d.label, 60)
+        && (!('fcmToken' in d) || isNonEmptyString(d.fcmToken, 4096))
+        && d.isHomeBase is bool
+        && d.updatedAt == request.time;
+    }
+
+    // ---------- requests: home-base transitions ----------
+    // A Playground request (00 D1) comes from a grant whose only source is the Playground sample data.
+    function isPlaygroundRequest(r) {
+      return r.allowedSources == ['playground'];
+    }
+    function mayServe(uid, before) {
+      return isRealOwner(uid) || (isOwner(uid) && isPlaygroundRequest(before));
+    }
+    function decisionWindowOpen(before) {
+      return request.time < before.createdAt + duration.value(120, 'm');
+    }
+    function validMessage(after) {
+      return !('message' in after) || isShortString(after.message, 300);
+    }
+    function validClaimer(uid, before, deviceId) {
+      return isDeviceId(deviceId)
+        && (isPlaygroundRequest(before) || exists(devicePath(uid, deviceId)));
+    }
+    function validImage(i) {
+      return i is map
+        && i.keys().hasAll(['mime', 'base64', 'width', 'height', 'bytes'])
+        && i.keys().hasOnly(['mime', 'base64', 'width', 'height', 'bytes'])
+        && i.mime == 'image/jpeg'
+        && isNonEmptyString(i.base64, 819200)
+        && i.width is int && i.width >= 1 && i.width <= 10000
+        && i.height is int && i.height >= 1 && i.height <= 10000
+        && i.bytes is int && i.bytes >= 1 && i.bytes <= 614400;
+    }
+    function validPayload(p, maxStep) {
+      return p is map
+        && p.keys().hasAll(['step', 'text', 'chars', 'itemCount'])
+        && p.keys().hasOnly(['step', 'text', 'chars', 'itemCount', 'image'])
+        && isStep(p.step)
+        && stepRank(p.step) <= stepRank(maxStep)
+        && isNonEmptyString(p.text, 8000)
+        && p.chars is int && p.chars >= 1 && p.chars <= 8000
+        && p.itemCount is int && p.itemCount >= 1 && p.itemCount <= 20
+        && (!('image' in p) || (p.step == 'full' && validImage(p.image)));
+    }
+    function isClaim(uid, before, after, keys) {
+      return before.status == 'queued'
+        && after.status == 'claimed'
+        && keys.hasOnly(['status', 'claimedAt', 'claimedBy'])
+        && after.claimedAt == request.time
+        && validClaimer(uid, before, after.claimedBy);
+    }
+    function isReclaim(uid, before, after, keys) {
+      return before.status in ['claimed', 'awaiting-person']
+        && after.status == 'claimed'
+        && keys.hasOnly(['status', 'claimedAt', 'claimedBy'])
+        && after.claimedAt == request.time
+        && validClaimer(uid, before, after.claimedBy)
+        && (after.claimedBy == before.claimedBy
+            || request.time > before.claimedAt + duration.value(120, 's'));
+    }
+    function isPresent(before, after, keys) {
+      return before.status == 'claimed'
+        && after.status == 'awaiting-person'
+        && keys.hasOnly(['status']);
+    }
+    function isClaimedOutcome(before, after, keys) {
+      return before.status == 'claimed'
+        && after.status in ['no-match', 'blocked', 'error']
+        && keys.hasOnly(['status', 'message'])
+        && validMessage(after);
+    }
+    function isAnswer(before, after, keys) {
+      return before.status == 'awaiting-person'
+        && after.status == 'answered'
+        && keys.hasOnly(['status', 'answeredAt', 'response'])
+        && after.answeredAt == request.time
+        && validPayload(after.response, before.maxStep);
+    }
+    function isDecline(before, after, keys) {
+      return before.status == 'awaiting-person'
+        && after.status in ['declined', 'error']
+        && keys.hasOnly(['status', 'message'])
+        && validMessage(after);
+    }
+    // 01 section 11.6: revoking a receipt before collection also stops the uncollected payload.
+    function isRevokeAnswer(before, after, keys) {
+      return before.status == 'answered'
+        && after.status == 'revoked'
+        && keys.hasOnly(['status', 'response', 'message'])
+        && !('response' in after)
+        && validMessage(after);
+    }
+    function validHomeBaseUpdate(uid) {
+      let before = resource.data;
+      let after = request.resource.data;
+      let keys = after.diff(before).affectedKeys();
+      return isRevokeAnswer(before, after, keys)
+        || (decisionWindowOpen(before)
+            && (isClaim(uid, before, after, keys)
+                || isReclaim(uid, before, after, keys)
+                || isPresent(before, after, keys)
+                || isClaimedOutcome(before, after, keys)
+                || isAnswer(before, after, keys)
+                || isDecline(before, after, keys)));
+    }
+
+    // ---------- receipts ----------
+    function validRequester(q) {
+      return q is map
+        && ((q.kind == 'in-app'
+              && q.keys().hasOnly(['kind', 'aiName'])
+              && q.aiName == 'Gemini (in Sieve)')
+          || (q.kind == 'outside'
+              && q.keys().hasOnly(['kind', 'grantId', 'aiName'])
+              && isNonEmptyString(q.grantId, 64)
+              && isNonEmptyString(q.aiName, 40)));
+    }
+    function validReceipt(receiptId, r) {
+      return r.keys().hasAll(['id', 'requestId', 'requester', 'question', 'itemRefs', 'status', 'chars', 'createdAt'])
+        && r.keys().hasOnly(['id', 'requestId', 'requester', 'question', 'step', 'itemRefs', 'status',
+                             'decidedBy', 'chars', 'createdAt'])
+        && r.id == receiptId
+        && isNonEmptyString(r.requestId, 64)
+        && validRequester(r.requester)
+        && isShortString(r.question, 500)
+        && (!('step' in r) || isStep(r.step))
+        && isItemRefList(r.itemRefs)
+        && r.status in ['pending-collection', 'delivered', 'declined', 'blocked']
+        // Only functions deliver relay answers; only relay answers wait for collection.
+        && (r.status != 'pending-collection' || r.requester.kind == 'outside')
+        && (r.status != 'delivered' || r.requester.kind == 'in-app')
+        // 01 section 3: for relay requests receiptId = requestId.
+        && (r.requester.kind != 'outside' || r.requestId == receiptId)
+        && (!('decidedBy' in r) || r.decidedBy in ['app', 'extension', 'rule'])
+        && r.chars is int && r.chars >= 0 && r.chars <= 8000
+        && r.createdAt == request.time;
+    }
+    // The home base revokes an uncollected answer: request answered -> revoked and receipt
+    // pending-collection -> revoked in one batch (01 section 11.6).
+    function isReceiptRevoke(uid, receiptId) {
+      return resource.data.status == 'pending-collection'
+        && request.resource.data.status == 'revoked'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && getAfter(requestPath(uid, receiptId)).data.status == 'revoked';
+    }
+
+    // ---------- blocked ----------
+    function validBlock(b) {
+      return b.keys().hasAll(['recordRef', 'grantId', 'createdAt'])
+        && b.keys().hasOnly(['recordRef', 'grantId', 'createdAt'])
+        && isItemRef(b.recordRef)
+        && isNonEmptyString(b.grantId, 64)
+        && b.createdAt == request.time;
+    }
+
+    // ---------- paths ----------
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid) && validUserDoc(request.resource.data);
+      allow delete: if false;
+
+      match /devices/{deviceId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isRealOwner(uid) && validDevice(deviceId, request.resource.data);
+        allow delete: if isOwner(uid);
+      }
+
+      match /requests/{requestId} {
+        allow read: if isOwner(uid);
+        allow update: if mayServe(uid, resource.data) && validHomeBaseUpdate(uid);
+        allow create, delete: if false;
+      }
+
+      match /receipts/{receiptId} {
+        allow read: if isOwner(uid);
+        allow create: if isRealOwner(uid) && validReceipt(receiptId, request.resource.data);
+        allow update: if isRealOwner(uid) && isReceiptRevoke(uid, receiptId);
+        allow delete: if false;
+      }
+
+      match /grants/{grantId} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+
+      match /blocked/{blockId} {
+        allow read: if isOwner(uid);
+        allow create: if isRealOwner(uid) && validBlock(request.resource.data);
+        allow delete: if isOwner(uid);
+        allow update: if false;
+      }
+    }
+
+    match /connectors/{linkHash} {
+      allow read, write: if false;          // functions only (admin SDK)
+    }
+
+    match /audit/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+      match /entries/{seq} {
+        allow read: if isOwner(uid);
+        allow write: if false;
+      }
+    }
+
+    match /debug_pushes/{id} {
+      allow read, write: if false;          // emulator-only test records
+    }
+  }
+}

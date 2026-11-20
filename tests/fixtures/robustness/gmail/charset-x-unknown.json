@@ -1,0 +1,62 @@
+{
+  "cases": [
+    {
+      "id": "charset-x-unknown",
+      "input": {
+        "id": "18c3a0000000c00b",
+        "threadId": "18c3a0000000c00b",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Kestrelmoor Bank <alerts@kestrelmoor.example>"
+            },
+            {
+              "name": "To",
+              "value": "Alex Rivera <alex.rivera@inbox.example>"
+            },
+            {
+              "name": "Subject",
+              "value": "Charset x-unknown"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 10 Nov 2026 15:00:00 GMT"
+            }
+          ],
+          "mimeType": "multipart/alternative",
+          "parts": [
+            {
+              "partId": "0",
+              "mimeType": "text/plain",
+              "filename": "",
+              "headers": [
+                {
+                  "name": "Content-Type",
+                  "value": "text/plain; charset=\"x-unknown\""
+                }
+              ],
+              "body": {
+                "size": 15,
+                "data": "UGxhaW4gdGV4dCBib2R5"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Plain text body",
+        "throws": false
+      },
+      "note": "an unknown label is dropped"
+    }
+  ]
+}

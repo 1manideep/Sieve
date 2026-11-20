@@ -1,0 +1,403 @@
+{
+  "_about": "Scripted turns for the baseline arm on the test fixture (and the real dataset ids). A rehearsal, never a measurement.",
+  "T01": [
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "search_mail",
+          "args": {
+            "query": "landlord deposit"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "read_mail",
+          "args": {
+            "id": "pg-mail-02"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": "Dana at Thistlewick Property Management confirmed your $1,200 security deposit, received on March 3, comes back within 30 days of move-out.",
+      "calls": [],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    }
+  ],
+  "T02": [
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "search_files",
+          "args": {
+            "query": "lease pets dog"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "read_file",
+          "args": {
+            "id": "pg-doc-01"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": "Yes, one dog under 40 pounds with written approval, and there is a non-refundable $300 pet fee.",
+      "calls": [],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    }
+  ],
+  "T03": [
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "search_mail",
+          "args": {
+            "query": "flight Seattle"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "read_mail",
+          "args": {
+            "id": "pg-mail-19"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": "Your flight leaves Chicago at 7:45 AM on Friday, December 4.",
+      "calls": [],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    }
+  ],
+  "T04": [
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "search_mail",
+          "args": {
+            "query": "loan payment due"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "read_mail",
+          "args": {
+            "id": "pg-mail-13"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": "Your auto loan payment of $312.40 is due on November 28.",
+      "calls": [],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    }
+  ],
+  "T05": [
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "search_mail",
+          "args": {
+            "query": "test results"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "read_mail",
+          "args": {
+            "id": "pg-mail-15"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": "Your results are ready; Dr. Patel notes your cholesterol is a little high and wants to discuss it on November 24.",
+      "calls": [],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    }
+  ],
+  "T06": [
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "search_mail",
+          "args": {
+            "query": "parcel delivery"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "read_mail",
+          "args": {
+            "id": "pg-mail-30"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": "It asks you to pay a $2 redelivery fee to schedule a new delivery.",
+      "calls": [],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    }
+  ],
+  "T07": [
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "search_files",
+          "args": {
+            "query": "photo five hot dogs mouth"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "search_mail",
+          "args": {
+            "query": "hot dog photo"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "read_mail",
+          "args": {
+            "id": "pg-mail-23"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": "The pictures are from the Fourth of July hot dog contest, so it was taken on July 4.",
+      "calls": [],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    }
+  ],
+  "T08": [
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "search_mail",
+          "args": {
+            "query": "pull request review"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": "Pull request #212, Cache embeddings for the ranking service, needs your review.",
+      "calls": [],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    }
+  ],
+  "T09": [
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "search_mail",
+          "args": {
+            "query": "order shipped"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "read_mail",
+          "args": {
+            "id": "pg-mail-21"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": "Order #88231 from Crestmarrow Outfitters has shipped.",
+      "calls": [],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    }
+  ],
+  "T10": [
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "search_mail",
+          "args": {
+            "query": "wifi password"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": null,
+      "calls": [
+        {
+          "name": "search_files",
+          "args": {
+            "query": "wifi password"
+          }
+        }
+      ],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    },
+    {
+      "text": "I could not find your wifi password in your email or files.",
+      "calls": [],
+      "usage": {
+        "input": 800,
+        "output": 30
+      }
+    }
+  ]
+}

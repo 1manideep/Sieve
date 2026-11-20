@@ -1,0 +1,6 @@
+/* The test-request control: a button, its note and the last outcome line (the measurements of Settings' groups). */
+.group { display: grid; gap: var(--space-2); }
+.inline { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+.note { margin: 0; font: var(--text-meta); color: var(--color-text-subtle); }
+.text { margin: 0; font: var(--text-row); color: var(--color-text-body); overflow-wrap: anywhere; }
+.warnText { margin: 0; font: 400 14px/1.45 var(--font-sans); color: var(--color-warn-text); }

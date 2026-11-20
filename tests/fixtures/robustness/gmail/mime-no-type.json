@@ -1,0 +1,67 @@
+{
+  "cases": [
+    {
+      "id": "mime-no-type",
+      "input": {
+        "id": "18c3a0000000d001",
+        "threadId": "18c3a0000000d001",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "Snippet only",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Kestrelmoor Bank <alerts@kestrelmoor.example>"
+            },
+            {
+              "name": "To",
+              "value": "Alex Rivera <alex.rivera@inbox.example>"
+            },
+            {
+              "name": "Subject",
+              "value": "No mime types"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 10 Nov 2026 15:00:00 GMT"
+            }
+          ],
+          "mimeType": "multipart/mixed",
+          "parts": [
+            {
+              "partId": "0",
+              "filename": "",
+              "headers": [],
+              "body": {
+                "size": 5,
+                "data": "Ynl0ZXM"
+              }
+            },
+            {
+              "partId": "1",
+              "mimeType": "multipart/alternative",
+              "filename": "",
+              "headers": [],
+              "body": {
+                "size": 0
+              },
+              "parts": []
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": null,
+        "throws": false,
+        "indexesWithSnippet": true
+      },
+      "note": "R-MAIL-01: a missing mimeType is application/octet-stream; multipart with no children"
+    }
+  ]
+}

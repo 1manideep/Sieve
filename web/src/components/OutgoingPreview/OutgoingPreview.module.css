@@ -1,0 +1,27 @@
+.preview {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-sunken);
+}
+
+.label {
+  margin: 0;
+  font: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--color-text-subtle);
+}
+
+.scroll { max-height: 320px; overflow: auto; min-width: 0; }
+.text { margin: 0; font-size: 16px; line-height: 1.6; color: var(--color-text); overflow-wrap: anywhere; }
+.image { display: block; max-width: 100%; max-height: 280px; margin-top: var(--space-2); border-radius: var(--radius-sm); }
+
+.instruction { display: grid; gap: var(--space-1); padding-top: var(--space-2); border-top: 1px solid var(--color-border); }
+.instructionText { margin: 0; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+
+.footer { margin: 0; font-size: 13px; color: var(--color-text-subtle); }
+.over { margin: 0; font-size: 14px; font-weight: 600; color: var(--color-never-text); }

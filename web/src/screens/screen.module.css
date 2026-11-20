@@ -1,0 +1,57 @@
+/* Main content (40 section 13): max width 1240px, padding 36px 24px 64px (Ask: 40px 24px 64px). */
+.page {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 36px var(--gutter) 64px;
+  display: grid;
+  gap: var(--space-6);
+}
+
+.askPage {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 40px var(--gutter) 64px;
+  display: grid;
+  gap: var(--space-6);
+}
+
+.setupPage {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 36px var(--gutter) 64px;
+  display: grid;
+  gap: var(--space-6);
+}
+
+.welcome {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 40px var(--gutter) 64px;
+  display: grid;
+  gap: var(--space-5);
+}
+
+.display {
+  font: 700 44px/1.05 var(--font-display);
+  letter-spacing: var(--tracking-tight);
+  max-width: 18ch;
+}
+
+@media (min-width: 1280px) {
+  .display { font: var(--text-display); letter-spacing: var(--tracking-tight); }
+}
+
+.lead { margin: 0; font: var(--text-lead); color: var(--color-text-muted); max-width: 60ch; }
+
+.playgroundScreen { min-height: 100vh; background: var(--color-bg-playground); }
+
+.playgroundMain {
+  max-width: var(--playground-max);
+  margin: 0 auto;
+  padding: var(--space-6);
+  display: grid;
+  gap: var(--space-6);
+}
+.playgroundMain:focus { outline: none; }
+
+.actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }

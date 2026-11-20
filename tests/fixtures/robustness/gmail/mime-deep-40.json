@@ -1,0 +1,566 @@
+{
+  "cases": [
+    {
+      "id": "mime-deep-40",
+      "input": {
+        "id": "18c3a0000000d040",
+        "threadId": "18c3a0000000d040",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "Deeply nested message",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Kestrelmoor Bank <alerts@kestrelmoor.example>"
+            },
+            {
+              "name": "To",
+              "value": "Alex Rivera <alex.rivera@inbox.example>"
+            },
+            {
+              "name": "Subject",
+              "value": "Deeply nested"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 10 Nov 2026 15:00:00 GMT"
+            }
+          ],
+          "mimeType": "multipart/mixed",
+          "parts": [
+            {
+              "partId": "4",
+              "mimeType": "multipart/mixed",
+              "filename": "",
+              "headers": [],
+              "body": {
+                "size": 0
+              },
+              "parts": [
+                {
+                  "partId": "3",
+                  "mimeType": "multipart/mixed",
+                  "filename": "",
+                  "headers": [],
+                  "body": {
+                    "size": 0
+                  },
+                  "parts": [
+                    {
+                      "partId": "2",
+                      "mimeType": "multipart/mixed",
+                      "filename": "",
+                      "headers": [],
+                      "body": {
+                        "size": 0
+                      },
+                      "parts": [
+                        {
+                          "partId": "1",
+                          "mimeType": "multipart/mixed",
+                          "filename": "",
+                          "headers": [],
+                          "body": {
+                            "size": 0
+                          },
+                          "parts": [
+                            {
+                              "partId": "0",
+                              "mimeType": "multipart/mixed",
+                              "filename": "",
+                              "headers": [],
+                              "body": {
+                                "size": 0
+                              },
+                              "parts": [
+                                {
+                                  "partId": "0",
+                                  "mimeType": "text/plain",
+                                  "filename": "",
+                                  "headers": [
+                                    {
+                                      "name": "Content-Type",
+                                      "value": "text/plain"
+                                    }
+                                  ],
+                                  "body": {
+                                    "size": 29,
+                                    "data": "UmVhY2hhYmxlIHRleHQgYXQgZGVwdGggZml2ZS4"
+                                  }
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "partId": "38",
+              "mimeType": "multipart/mixed",
+              "filename": "",
+              "headers": [],
+              "body": {
+                "size": 0
+              },
+              "parts": [
+                {
+                  "partId": "37",
+                  "mimeType": "multipart/mixed",
+                  "filename": "",
+                  "headers": [],
+                  "body": {
+                    "size": 0
+                  },
+                  "parts": [
+                    {
+                      "partId": "36",
+                      "mimeType": "multipart/mixed",
+                      "filename": "",
+                      "headers": [],
+                      "body": {
+                        "size": 0
+                      },
+                      "parts": [
+                        {
+                          "partId": "35",
+                          "mimeType": "multipart/mixed",
+                          "filename": "",
+                          "headers": [],
+                          "body": {
+                            "size": 0
+                          },
+                          "parts": [
+                            {
+                              "partId": "34",
+                              "mimeType": "multipart/mixed",
+                              "filename": "",
+                              "headers": [],
+                              "body": {
+                                "size": 0
+                              },
+                              "parts": [
+                                {
+                                  "partId": "33",
+                                  "mimeType": "multipart/mixed",
+                                  "filename": "",
+                                  "headers": [],
+                                  "body": {
+                                    "size": 0
+                                  },
+                                  "parts": [
+                                    {
+                                      "partId": "32",
+                                      "mimeType": "multipart/mixed",
+                                      "filename": "",
+                                      "headers": [],
+                                      "body": {
+                                        "size": 0
+                                      },
+                                      "parts": [
+                                        {
+                                          "partId": "31",
+                                          "mimeType": "multipart/mixed",
+                                          "filename": "",
+                                          "headers": [],
+                                          "body": {
+                                            "size": 0
+                                          },
+                                          "parts": [
+                                            {
+                                              "partId": "30",
+                                              "mimeType": "multipart/mixed",
+                                              "filename": "",
+                                              "headers": [],
+                                              "body": {
+                                                "size": 0
+                                              },
+                                              "parts": [
+                                                {
+                                                  "partId": "29",
+                                                  "mimeType": "multipart/mixed",
+                                                  "filename": "",
+                                                  "headers": [],
+                                                  "body": {
+                                                    "size": 0
+                                                  },
+                                                  "parts": [
+                                                    {
+                                                      "partId": "28",
+                                                      "mimeType": "multipart/mixed",
+                                                      "filename": "",
+                                                      "headers": [],
+                                                      "body": {
+                                                        "size": 0
+                                                      },
+                                                      "parts": [
+                                                        {
+                                                          "partId": "27",
+                                                          "mimeType": "multipart/mixed",
+                                                          "filename": "",
+                                                          "headers": [],
+                                                          "body": {
+                                                            "size": 0
+                                                          },
+                                                          "parts": [
+                                                            {
+                                                              "partId": "26",
+                                                              "mimeType": "multipart/mixed",
+                                                              "filename": "",
+                                                              "headers": [],
+                                                              "body": {
+                                                                "size": 0
+                                                              },
+                                                              "parts": [
+                                                                {
+                                                                  "partId": "25",
+                                                                  "mimeType": "multipart/mixed",
+                                                                  "filename": "",
+                                                                  "headers": [],
+                                                                  "body": {
+                                                                    "size": 0
+                                                                  },
+                                                                  "parts": [
+                                                                    {
+                                                                      "partId": "24",
+                                                                      "mimeType": "multipart/mixed",
+                                                                      "filename": "",
+                                                                      "headers": [],
+                                                                      "body": {
+                                                                        "size": 0
+                                                                      },
+                                                                      "parts": [
+                                                                        {
+                                                                          "partId": "23",
+                                                                          "mimeType": "multipart/mixed",
+                                                                          "filename": "",
+                                                                          "headers": [],
+                                                                          "body": {
+                                                                            "size": 0
+                                                                          },
+                                                                          "parts": [
+                                                                            {
+                                                                              "partId": "22",
+                                                                              "mimeType": "multipart/mixed",
+                                                                              "filename": "",
+                                                                              "headers": [],
+                                                                              "body": {
+                                                                                "size": 0
+                                                                              },
+                                                                              "parts": [
+                                                                                {
+                                                                                  "partId": "21",
+                                                                                  "mimeType": "multipart/mixed",
+                                                                                  "filename": "",
+                                                                                  "headers": [],
+                                                                                  "body": {
+                                                                                    "size": 0
+                                                                                  },
+                                                                                  "parts": [
+                                                                                    {
+                                                                                      "partId": "20",
+                                                                                      "mimeType": "multipart/mixed",
+                                                                                      "filename": "",
+                                                                                      "headers": [],
+                                                                                      "body": {
+                                                                                        "size": 0
+                                                                                      },
+                                                                                      "parts": [
+                                                                                        {
+                                                                                          "partId": "19",
+                                                                                          "mimeType": "multipart/mixed",
+                                                                                          "filename": "",
+                                                                                          "headers": [],
+                                                                                          "body": {
+                                                                                            "size": 0
+                                                                                          },
+                                                                                          "parts": [
+                                                                                            {
+                                                                                              "partId": "18",
+                                                                                              "mimeType": "multipart/mixed",
+                                                                                              "filename": "",
+                                                                                              "headers": [],
+                                                                                              "body": {
+                                                                                                "size": 0
+                                                                                              },
+                                                                                              "parts": [
+                                                                                                {
+                                                                                                  "partId": "17",
+                                                                                                  "mimeType": "multipart/mixed",
+                                                                                                  "filename": "",
+                                                                                                  "headers": [],
+                                                                                                  "body": {
+                                                                                                    "size": 0
+                                                                                                  },
+                                                                                                  "parts": [
+                                                                                                    {
+                                                                                                      "partId": "16",
+                                                                                                      "mimeType": "multipart/mixed",
+                                                                                                      "filename": "",
+                                                                                                      "headers": [],
+                                                                                                      "body": {
+                                                                                                        "size": 0
+                                                                                                      },
+                                                                                                      "parts": [
+                                                                                                        {
+                                                                                                          "partId": "15",
+                                                                                                          "mimeType": "multipart/mixed",
+                                                                                                          "filename": "",
+                                                                                                          "headers": [],
+                                                                                                          "body": {
+                                                                                                            "size": 0
+                                                                                                          },
+                                                                                                          "parts": [
+                                                                                                            {
+                                                                                                              "partId": "14",
+                                                                                                              "mimeType": "multipart/mixed",
+                                                                                                              "filename": "",
+                                                                                                              "headers": [],
+                                                                                                              "body": {
+                                                                                                                "size": 0
+                                                                                                              },
+                                                                                                              "parts": [
+                                                                                                                {
+                                                                                                                  "partId": "13",
+                                                                                                                  "mimeType": "multipart/mixed",
+                                                                                                                  "filename": "",
+                                                                                                                  "headers": [],
+                                                                                                                  "body": {
+                                                                                                                    "size": 0
+                                                                                                                  },
+                                                                                                                  "parts": [
+                                                                                                                    {
+                                                                                                                      "partId": "12",
+                                                                                                                      "mimeType": "multipart/mixed",
+                                                                                                                      "filename": "",
+                                                                                                                      "headers": [],
+                                                                                                                      "body": {
+                                                                                                                        "size": 0
+                                                                                                                      },
+                                                                                                                      "parts": [
+                                                                                                                        {
+                                                                                                                          "partId": "11",
+                                                                                                                          "mimeType": "multipart/mixed",
+                                                                                                                          "filename": "",
+                                                                                                                          "headers": [],
+                                                                                                                          "body": {
+                                                                                                                            "size": 0
+                                                                                                                          },
+                                                                                                                          "parts": [
+                                                                                                                            {
+                                                                                                                              "partId": "10",
+                                                                                                                              "mimeType": "multipart/mixed",
+                                                                                                                              "filename": "",
+                                                                                                                              "headers": [],
+                                                                                                                              "body": {
+                                                                                                                                "size": 0
+                                                                                                                              },
+                                                                                                                              "parts": [
+                                                                                                                                {
+                                                                                                                                  "partId": "9",
+                                                                                                                                  "mimeType": "multipart/mixed",
+                                                                                                                                  "filename": "",
+                                                                                                                                  "headers": [],
+                                                                                                                                  "body": {
+                                                                                                                                    "size": 0
+                                                                                                                                  },
+                                                                                                                                  "parts": [
+                                                                                                                                    {
+                                                                                                                                      "partId": "8",
+                                                                                                                                      "mimeType": "multipart/mixed",
+                                                                                                                                      "filename": "",
+                                                                                                                                      "headers": [],
+                                                                                                                                      "body": {
+                                                                                                                                        "size": 0
+                                                                                                                                      },
+                                                                                                                                      "parts": [
+                                                                                                                                        {
+                                                                                                                                          "partId": "7",
+                                                                                                                                          "mimeType": "multipart/mixed",
+                                                                                                                                          "filename": "",
+                                                                                                                                          "headers": [],
+                                                                                                                                          "body": {
+                                                                                                                                            "size": 0
+                                                                                                                                          },
+                                                                                                                                          "parts": [
+                                                                                                                                            {
+                                                                                                                                              "partId": "6",
+                                                                                                                                              "mimeType": "multipart/mixed",
+                                                                                                                                              "filename": "",
+                                                                                                                                              "headers": [],
+                                                                                                                                              "body": {
+                                                                                                                                                "size": 0
+                                                                                                                                              },
+                                                                                                                                              "parts": [
+                                                                                                                                                {
+                                                                                                                                                  "partId": "5",
+                                                                                                                                                  "mimeType": "multipart/mixed",
+                                                                                                                                                  "filename": "",
+                                                                                                                                                  "headers": [],
+                                                                                                                                                  "body": {
+                                                                                                                                                    "size": 0
+                                                                                                                                                  },
+                                                                                                                                                  "parts": [
+                                                                                                                                                    {
+                                                                                                                                                      "partId": "4",
+                                                                                                                                                      "mimeType": "multipart/mixed",
+                                                                                                                                                      "filename": "",
+                                                                                                                                                      "headers": [],
+                                                                                                                                                      "body": {
+                                                                                                                                                        "size": 0
+                                                                                                                                                      },
+                                                                                                                                                      "parts": [
+                                                                                                                                                        {
+                                                                                                                                                          "partId": "3",
+                                                                                                                                                          "mimeType": "multipart/mixed",
+                                                                                                                                                          "filename": "",
+                                                                                                                                                          "headers": [],
+                                                                                                                                                          "body": {
+                                                                                                                                                            "size": 0
+                                                                                                                                                          },
+                                                                                                                                                          "parts": [
+                                                                                                                                                            {
+                                                                                                                                                              "partId": "2",
+                                                                                                                                                              "mimeType": "multipart/mixed",
+                                                                                                                                                              "filename": "",
+                                                                                                                                                              "headers": [],
+                                                                                                                                                              "body": {
+                                                                                                                                                                "size": 0
+                                                                                                                                                              },
+                                                                                                                                                              "parts": [
+                                                                                                                                                                {
+                                                                                                                                                                  "partId": "1",
+                                                                                                                                                                  "mimeType": "multipart/mixed",
+                                                                                                                                                                  "filename": "",
+                                                                                                                                                                  "headers": [],
+                                                                                                                                                                  "body": {
+                                                                                                                                                                    "size": 0
+                                                                                                                                                                  },
+                                                                                                                                                                  "parts": [
+                                                                                                                                                                    {
+                                                                                                                                                                      "partId": "0",
+                                                                                                                                                                      "mimeType": "multipart/mixed",
+                                                                                                                                                                      "filename": "",
+                                                                                                                                                                      "headers": [],
+                                                                                                                                                                      "body": {
+                                                                                                                                                                        "size": 0
+                                                                                                                                                                      },
+                                                                                                                                                                      "parts": [
+                                                                                                                                                                        {
+                                                                                                                                                                          "partId": "0",
+                                                                                                                                                                          "mimeType": "text/plain",
+                                                                                                                                                                          "filename": "",
+                                                                                                                                                                          "headers": [
+                                                                                                                                                                            {
+                                                                                                                                                                              "name": "Content-Type",
+                                                                                                                                                                              "value": "text/plain"
+                                                                                                                                                                            }
+                                                                                                                                                                          ],
+                                                                                                                                                                          "body": {
+                                                                                                                                                                            "size": 32,
+                                                                                                                                                                            "data": "VW5yZWFjaGFibGUgdGV4dCBhdCBkZXB0aCBmb3J0eS4"
+                                                                                                                                                                          }
+                                                                                                                                                                        }
+                                                                                                                                                                      ]
+                                                                                                                                                                    }
+                                                                                                                                                                  ]
+                                                                                                                                                                }
+                                                                                                                                                              ]
+                                                                                                                                                            }
+                                                                                                                                                          ]
+                                                                                                                                                        }
+                                                                                                                                                      ]
+                                                                                                                                                    }
+                                                                                                                                                  ]
+                                                                                                                                                }
+                                                                                                                                              ]
+                                                                                                                                            }
+                                                                                                                                          ]
+                                                                                                                                        }
+                                                                                                                                      ]
+                                                                                                                                    }
+                                                                                                                                  ]
+                                                                                                                                }
+                                                                                                                              ]
+                                                                                                                            }
+                                                                                                                          ]
+                                                                                                                        }
+                                                                                                                      ]
+                                                                                                                    }
+                                                                                                                  ]
+                                                                                                                }
+                                                                                                              ]
+                                                                                                            }
+                                                                                                          ]
+                                                                                                        }
+                                                                                                      ]
+                                                                                                    }
+                                                                                                  ]
+                                                                                                }
+                                                                                              ]
+                                                                                            }
+                                                                                          ]
+                                                                                        }
+                                                                                      ]
+                                                                                    }
+                                                                                  ]
+                                                                                }
+                                                                              ]
+                                                                            }
+                                                                          ]
+                                                                        }
+                                                                      ]
+                                                                    }
+                                                                  ]
+                                                                }
+                                                              ]
+                                                            }
+                                                          ]
+                                                        }
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "expected": {
+        "includes": [
+          "Reachable text at depth five."
+        ],
+        "excludes": [
+          "Unreachable text at depth forty."
+        ],
+        "throws": false
+      },
+      "note": "R-MAIL-01: MIME_MAX_DEPTH 20"
+    }
+  ]
+}

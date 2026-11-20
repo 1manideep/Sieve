@@ -1,0 +1,16 @@
+[
+  {
+    "id": "pg-photo-01",
+    "file": "IMG_4821.jpg",
+    "date": "2026-07-04T15:42:00-05:00",
+    "hadGps": true,
+    "description": "One adult at an outdoor Fourth of July cookout with five hot dogs in their mouth."
+  },
+  {
+    "id": "pg-photo-02",
+    "file": "IMG_4822.jpg",
+    "date": "2026-07-04T15:10:00-05:00",
+    "hadGps": true,
+    "description": "A folding table with trays of hot dogs and buns."
+  }
+]

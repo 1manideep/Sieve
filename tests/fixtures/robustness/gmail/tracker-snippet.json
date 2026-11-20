@@ -1,0 +1,37 @@
+{
+  "cases": [
+    {
+      "id": "tracker-snippet",
+      "input": {
+        "id": "18c3a0000000d007",
+        "threadId": "18c3a0000000d007",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "Hello &lt;img src=&quot;https://tracker.example/p.gif&quot;&gt; neighbors &amp; friends",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "0",
+          "filename": "",
+          "headers": [
+            {
+              "name": "Content-Type",
+              "value": "text/html; charset=\"utf-8\""
+            }
+          ],
+          "mimeType": "text/html",
+          "body": {
+            "size": 84,
+            "data": "PHA-SGVsbG8gbmVpZ2hib3JzPC9wPjxpbWcgc3JjPSJodHRwczovL3RyYWNrZXIuZXhhbXBsZS9wLmdpZiIgd2lkdGg9IjEiIGhlaWdodD0iMSI-"
+          }
+        }
+      },
+      "expected": {
+        "snippet": "Hello <img src=\"https://tracker.example/p.gif\"> neighbors & friends",
+        "network": []
+      },
+      "note": "R-MAIL-05: decoded with no parser; nothing is fetched"
+    }
+  ]
+}

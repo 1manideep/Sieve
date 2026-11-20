@@ -1,0 +1,61 @@
+{
+  "cases": [
+    {
+      "id": "charset-utf-16le-bom",
+      "input": {
+        "id": "18c3a0000000c009",
+        "threadId": "18c3a0000000c009",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Kestrelmoor Bank <alerts@kestrelmoor.example>"
+            },
+            {
+              "name": "To",
+              "value": "Alex Rivera <alex.rivera@inbox.example>"
+            },
+            {
+              "name": "Subject",
+              "value": "Charset utf-16le-bom"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 10 Nov 2026 15:00:00 GMT"
+            }
+          ],
+          "mimeType": "multipart/alternative",
+          "parts": [
+            {
+              "partId": "0",
+              "mimeType": "text/plain",
+              "filename": "",
+              "headers": [
+                {
+                  "name": "Content-Type",
+                  "value": "text/plain; charset=\"utf-16le\""
+                }
+              ],
+              "body": {
+                "size": 12,
+                "data": "__5IAGkAIAA82ILf"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Hi 🎂",
+        "throws": false
+      }
+    }
+  ]
+}

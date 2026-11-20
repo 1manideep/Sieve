@@ -53,7 +53,7 @@ flowchart LR
 
 Rules: lease 15 minutes, extendable once by 5 minutes if nobody is queued; 2 minutes with no input ends the lease ("Ended because the session was idle."); at most 30 seat grants per hour overall and 3 per browser per day; a queue of at most 10. State lives in memory with a small JSON snapshot on disk, so a broker restart keeps leases.
 
-**Reset at lease end** (per seat, about 20 s; the seat shows "Getting ready for the next visitor"):
+**Reset at lease end** (per seat, about 20 s for the reset plus a 90 s settle before the seat is marked free; the seat shows "Getting ready for the next visitor"). As built on Nov 17 to 18: a background seat's session is ended after the profile restore and the supervisor logs it back in (a kiosk Chrome relaunched inside a background session draws black on a headless Mac); the console session is never ended.
 1. Quit Chrome for that user.
 2. Restore the user's Chrome profile from a golden copy (`rsync --delete`), **excluding the `OptGuideOnDeviceModel` folder**, so the Nano model is kept and Sieve's IndexedDB, cookies and history are wiped.
 3. Relaunch Chrome in kiosk mode (the LaunchAgent in section 5 does this automatically).
@@ -123,7 +123,7 @@ The machine is a stranger-controlled computer on Mani's home internet for a week
 
 ## 10. Acceptance tests
 
-1. With both seats busy, a third visitor is queued with a position, and gets a seat within 30 s of one ending.
+1. With both seats busy, a third visitor is queued with a position, and gets a seat within 2 minutes of one ending (was 30 s; measured Nov 18: about 20 s for the session recreate plus a 90 s settle, `resetSettleSeconds = 90`, because the Playground reports Nano as not set up for about 90 s after a profile restore; a shorter settle hands a judge a seat that looks broken).
 2. A viewer URL works for exactly one lease; reusing it after the lease ends shows "This session has ended."
 3. After a lease ends, the next visitor's seat shows a fresh Playground (no previous questions, receipts or uploads), and Nano answers without a new download.
 4. In a seat: typing another address, opening DevTools, downloading a file or quitting Chrome does not escape the kiosk (Chrome relaunches on quit).

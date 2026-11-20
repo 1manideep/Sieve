@@ -1,0 +1,38 @@
+{
+  "cases": [
+    {
+      "id": "health-fr",
+      "input": {
+        "id": "18c3a0000000e002",
+        "threadId": "18c3a0000000e002",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "Bonjour, vos résultats d'analyse sont disponibles. Votre ordonnance est prête.",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "0",
+          "filename": "",
+          "headers": [
+            {
+              "name": "Content-Type",
+              "value": "text/plain; charset=\"utf-8\""
+            }
+          ],
+          "mimeType": "text/plain",
+          "body": {
+            "size": 80,
+            "data": "Qm9uam91ciwgdm9zIHLDqXN1bHRhdHMgZCdhbmFseXNlIHNvbnQgZGlzcG9uaWJsZXMuIFZvdHJlIG9yZG9ubmFuY2UgZXN0IHByw6p0ZS4"
+          }
+        }
+      },
+      "expected": {
+        "fakeLabel": "Personal",
+        "category": "Health",
+        "categoryBy": "rule"
+      },
+      "note": "R-MAIL-08"
+    }
+  ]
+}

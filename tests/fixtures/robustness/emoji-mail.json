@@ -1,0 +1,77 @@
+{
+  "note": "spikes/search/emoji_only_check.mjs: 1 of 6 found plain, 6 of 6 with emoji names",
+  "cases": [
+    {
+      "id": "emoji-1",
+      "input": {
+        "subject": "🎂🎉",
+        "from": "Maria Rivera <maria.rivera@inbox.example>",
+        "query": "birthday party"
+      },
+      "expected": {
+        "rankFirst": true,
+        "titleUnchanged": "🎂🎉"
+      }
+    },
+    {
+      "id": "emoji-2",
+      "input": {
+        "subject": "✈\uFE0F🧳",
+        "from": "Albatrine Air <bookings@albatrine.example>",
+        "query": "travel luggage"
+      },
+      "expected": {
+        "rankFirst": true,
+        "titleUnchanged": "✈\uFE0F🧳"
+      }
+    },
+    {
+      "id": "emoji-3",
+      "input": {
+        "subject": "🏠🔑",
+        "from": "Dana Whitfield <dana@thistlewick-pm.example>",
+        "query": "house keys"
+      },
+      "expected": {
+        "rankFirst": true,
+        "titleUnchanged": "🏠🔑"
+      }
+    },
+    {
+      "id": "emoji-4",
+      "input": {
+        "subject": "💊🩺",
+        "from": "Fernquill Pharmacy <rx@fernquill.example>",
+        "query": "medicine doctor"
+      },
+      "expected": {
+        "rankFirst": true,
+        "titleUnchanged": "💊🩺"
+      }
+    },
+    {
+      "id": "emoji-5",
+      "input": {
+        "subject": "🐶🐾",
+        "from": "Jordan Ellis <jordan.ellis@inbox.example>",
+        "query": "dog paws"
+      },
+      "expected": {
+        "rankFirst": true,
+        "titleUnchanged": "🐶🐾"
+      }
+    },
+    {
+      "id": "emoji-6",
+      "input": {
+        "subject": "🍕🍺",
+        "from": "Chris Moreno <chris.moreno@inbox.example>",
+        "query": "pizza beer"
+      },
+      "expected": {
+        "rankFirst": true,
+        "titleUnchanged": "🍕🍺"
+      }
+    }
+  ]
+}

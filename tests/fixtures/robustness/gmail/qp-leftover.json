@@ -1,0 +1,41 @@
+{
+  "cases": [
+    {
+      "id": "qp-leftover",
+      "input": {
+        "id": "18c3a0000000d005",
+        "threadId": "18c3a0000000d005",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "Content-Type",
+              "value": "text/plain; charset=\"utf-8\""
+            },
+            {
+              "name": "Content-Transfer-Encoding",
+              "value": "quoted-printable"
+            }
+          ],
+          "mimeType": "text/plain",
+          "body": {
+            "size": 60,
+            "data": "SXQ9RTI9ODA9OTlzIHRoZSBkZXBvc2l0PQ0KIHJldHVybiBmb3IgdW5pdCAzQj0yRQ"
+          }
+        }
+      },
+      "expected": {
+        "text": "It’s the deposit return for unit 3B.",
+        "later": true
+      },
+      "note": "R-MAIL-03 (later)"
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "cases": [
+    {
+      "id": "zwj-family",
+      "input": "👨\u200D👩\u200D👧",
+      "expected": {
+        "graphemes": 1,
+        "units": 8
+      }
+    },
+    {
+      "id": "zwj-couple-heart",
+      "input": "👩\u200D❤\uFE0F\u200D👨",
+      "expected": {
+        "graphemes": 1,
+        "units": 8
+      }
+    },
+    {
+      "id": "flag-india",
+      "input": "🇮🇳",
+      "expected": {
+        "graphemes": 1,
+        "units": 4
+      }
+    },
+    {
+      "id": "flag-japan",
+      "input": "🇯🇵",
+      "expected": {
+        "graphemes": 1,
+        "units": 4
+      }
+    },
+    {
+      "id": "subdivision-scotland",
+      "input": "🏴\uDB40\uDC67\uDB40\uDC62\uDB40\uDC73\uDB40\uDC63\uDB40\uDC74\uDB40\uDC7F",
+      "expected": {
+        "graphemes": 1,
+        "units": 14
+      }
+    },
+    {
+      "id": "subdivision-england",
+      "input": "🏴\uDB40\uDC67\uDB40\uDC62\uDB40\uDC65\uDB40\uDC6E\uDB40\uDC67\uDB40\uDC7F",
+      "expected": {
+        "graphemes": 1,
+        "units": 14
+      }
+    },
+    {
+      "id": "keycap-1",
+      "input": "1\uFE0F\u20E3",
+      "expected": {
+        "graphemes": 1,
+        "units": 3
+      }
+    },
+    {
+      "id": "keycap-hash",
+      "input": "#\uFE0F\u20E3",
+      "expected": {
+        "graphemes": 1,
+        "units": 3
+      }
+    },
+    {
+      "id": "skin-tone",
+      "input": "👍🏽",
+      "expected": {
+        "graphemes": 1,
+        "units": 4
+      }
+    },
+    {
+      "id": "skin-tone-zwj",
+      "input": "🧑🏽\u200D💻",
+      "expected": {
+        "graphemes": 1,
+        "units": 7
+      }
+    },
+    {
+      "id": "vs16-heart",
+      "input": "❤\uFE0F",
+      "expected": {
+        "graphemes": 1,
+        "units": 2
+      }
+    },
+    {
+      "id": "vs16-airplane",
+      "input": "✈\uFE0F",
+      "expected": {
+        "graphemes": 1,
+        "units": 2
+      }
+    },
+    {
+      "id": "text-heart",
+      "input": "❤",
+      "expected": {
+        "graphemes": 1,
+        "units": 1
+      }
+    },
+    {
+      "id": "cake",
+      "input": "🎂",
+      "expected": {
+        "graphemes": 1,
+        "units": 2
+      }
+    },
+    {
+      "id": "combining-accent",
+      "input": "e\u0301",
+      "expected": {
+        "graphemes": 1,
+        "units": 2
+      }
+    },
+    {
+      "id": "hangul-jamo",
+      "input": "각",
+      "expected": {
+        "graphemes": 1,
+        "units": 3
+      }
+    },
+    {
+      "id": "devanagari",
+      "input": "कि",
+      "expected": {
+        "graphemes": 1,
+        "units": 2
+      }
+    }
+  ]
+}

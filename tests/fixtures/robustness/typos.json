@@ -1,0 +1,122 @@
+{
+  "guards": [
+    {
+      "id": "guard-pics",
+      "input": "hotdog contest pics",
+      "expected": {
+        "unchanged": true
+      },
+      "note": "vocabulary-only correction turned \"pics\" into \"pick\""
+    },
+    {
+      "id": "guard-name",
+      "input": "dex photo",
+      "expected": {
+        "corrected": "dec photo"
+      },
+      "note": "built behaviour: 20 section 9 also takes candidates from the English word list, so a lowercase name outside the index becomes a word-list word; 70 R-IN-10 expects it unchanged (owner decision in the audit)"
+    },
+    {
+      "id": "guard-capitalized",
+      "input": "Thistlewick lease",
+      "expected": {
+        "unchanged": true
+      },
+      "note": "capitalized, likely a name"
+    },
+    {
+      "id": "guard-quoted",
+      "input": "the \"Priya\" email",
+      "expected": {
+        "unchanged": true
+      },
+      "note": "inside quotes"
+    }
+  ],
+  "cases": [
+    {
+      "id": "row-01",
+      "input": "waht did my landlrod say abot the deposti",
+      "expected": {
+        "corrected": "what did my landlord say about the deposit",
+        "expectId": "pg-mail-02",
+        "expectTitle": "Re: Deposit for the apartment"
+      }
+    },
+    {
+      "id": "row-02",
+      "input": "when does my flihgt to seatle leave",
+      "expected": {
+        "expectId": "pg-mail-19",
+        "expectTitle": "Your booking is confirmed: Chicago to Seattle"
+      }
+    },
+    {
+      "id": "row-03",
+      "input": "is my precription redy",
+      "expected": {
+        "expectId": "pg-mail-17",
+        "expectTitle": "Your prescription is ready for pickup"
+      }
+    },
+    {
+      "id": "row-04",
+      "input": "can i hav a dgo in my apartmnet",
+      "expected": {
+        "expectId": "pg-doc-01",
+        "expectTitle": "Lease_2026.pdf"
+      }
+    },
+    {
+      "id": "row-05",
+      "input": "my bnak statment",
+      "expected": {
+        "expectId": "pg-mail-11",
+        "expectTitle": "Your November statement is ready"
+      },
+      "note": "replaces the spike row about a credit card alert, which is not in the Playground data"
+    },
+    {
+      "id": "row-06",
+      "input": "hotdog contest pics",
+      "expected": {
+        "expectId": "pg-mail-23",
+        "expectTitle": "Fourth of July hot dog contest pictures"
+      }
+    },
+    {
+      "id": "row-07",
+      "input": "loan paymnet due",
+      "expected": {
+        "expectId": "pg-mail-13",
+        "expectTitle": "Loan payment due on Nov 28"
+      },
+      "note": "replaces the spike row \"w2 2025\""
+    },
+    {
+      "id": "row-08",
+      "input": "tst results",
+      "expected": {
+        "expectId": "pg-mail-15",
+        "expectTitle": "Your test results are ready to view"
+      }
+    },
+    {
+      "id": "row-09",
+      "input": "whos geting maried",
+      "expected": {
+        "expectId": "pg-mail-26",
+        "expectTitle": "Wedding invitation: Sam & Noor"
+      }
+    },
+    {
+      "id": "row-10",
+      "input": "hotel resevation in seatle",
+      "expected": {
+        "expectId": "pg-mail-20",
+        "expectTitle": "Hotel reservation: 2 nights"
+      },
+      "note": "replaces the spike row \"rentl car pikup\""
+    }
+  ]
+}

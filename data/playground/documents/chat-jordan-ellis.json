@@ -1,0 +1,11 @@
+{
+  "name": "Jordan Ellis",
+  "type": "personal_chat",
+  "messages": [
+    { "id": 1, "type": "message", "date": "2026-11-12T18:02:00", "from": "Jordan Ellis", "text": "Did you ask your landlord about getting a dog?" },
+    { "id": 2, "type": "message", "date": "2026-11-12T18:05:00", "from": "Alex Rivera", "text": "Not yet. I think the lease allows small dogs, I need to check the exact rule." },
+    { "id": 3, "type": "message", "date": "2026-11-12T18:06:00", "from": "Jordan Ellis", "text": "The shelter near the park has a beagle mix named Pepper. So cute." },
+    { "id": 4, "type": "message", "date": "2026-11-12T18:09:00", "from": "Alex Rivera", "text": "Stop, I will cry. Saturday at 10 still works for the market?" },
+    { "id": 5, "type": "message", "date": "2026-11-12T19:10:00", "from": "Jordan Ellis", "text": "Yes! See you there." }
+  ]
+}

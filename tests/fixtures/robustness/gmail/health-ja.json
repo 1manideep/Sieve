@@ -1,0 +1,38 @@
+{
+  "cases": [
+    {
+      "id": "health-ja",
+      "input": {
+        "id": "18c3a0000000e003",
+        "threadId": "18c3a0000000e003",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "検査結果が出ました。処方箋は薬局でお受け取りください。",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "0",
+          "filename": "",
+          "headers": [
+            {
+              "name": "Content-Type",
+              "value": "text/plain; charset=\"utf-8\""
+            }
+          ],
+          "mimeType": "text/plain",
+          "body": {
+            "size": 81,
+            "data": "5qSc5p-757WQ5p6c44GM5Ye644G-44GX44Gf44CC5Yem5pa5566L44Gv6Jas5bGA44Gn44GK5Y-X44GR5Y-W44KK44GP44Gg44GV44GE44CC"
+          }
+        }
+      },
+      "expected": {
+        "fakeLabel": "Personal",
+        "category": "Health",
+        "categoryBy": "rule"
+      },
+      "note": "R-MAIL-08"
+    }
+  ]
+}

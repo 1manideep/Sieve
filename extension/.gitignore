@@ -1,0 +1,5 @@
+# Build outputs (50 section 3) and the temporary local signing key (50 section 5.2).
+dist/
+dist-dev/
+dist-store/
+.dev-key.pem

@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["chrome", "vite/client", "node", "@testing-library/jest-dom/vitest"],
+    "allowJs": true,
+    "checkJs": true
+  },
+  "include": ["src", "test", "scripts/ext-id.mjs", "scripts/modes.mjs", "scripts/lint-dist.mjs"]
+}

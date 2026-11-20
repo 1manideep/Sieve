@@ -1,0 +1,18 @@
+Label these 3 items. Reply as {"labels":[{"i":1,"c":"Home"}]} with exactly one entry per item.
+
+Item 1
+Kind: email
+From: Oakview Property Management <dana@oakview.example>
+Subject: Re: Deposit for the apartment
+Preview: Hi Alex, thanks for your email. We received your security deposit of $1,200 on March 3. It will be returned within 30 days of move-out, minus any repair...
+
+Item 2
+Kind: email
+From: Lakeside Medical Group
+Subject: Your test results are ready to view
+Preview: Your recent lab results are now available in the patient portal.
+
+Item 3
+Kind: photo
+File: IMG_4821.jpg
+Description: A man with five hot dogs in his mouth at a backyard party.

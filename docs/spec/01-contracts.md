@@ -261,7 +261,7 @@ export interface GrantMeta {
 | `users/{uid}` | owner | owner | `{ settings: Settings, createdAt, homeBaseDeviceId?: string }` |
 | `users/{uid}/devices/{deviceId}` | owner | owner, functions | `{ label, fcmToken?, isHomeBase, updatedAt }` |
 | `users/{uid}/requests/{requestId}` | functions (create, collect), owner (claim, answer, decline) | owner, functions | `RelayRequest`; TTL on `expireAt` |
-| `users/{uid}/receipts/{receiptId}` | owner, functions (status updates) | owner | `Receipt`. For relay requests `receiptId = requestId`, created by the home base in the same batched write as the request update |
+| `users/{uid}/receipts/{receiptId}` | owner (create; `pending-collection -> revoked` only in the batch that moves the request `answered -> revoked`), functions (status updates) | owner | `Receipt`. For relay requests `receiptId = requestId`, created by the home base in the same batched write as the request update |
 | `users/{uid}/grants/{grantId}` | functions only | owner | `GrantMeta` |
 | `users/{uid}/blocked/{blockId}` | owner | owner | `{ recordId, grantId: string /* or '*' */, createdAt }`: items revoked for an AI; the home base refuses them |
 | `connectors/{linkHash}` | functions only | functions only | `{ uid, grantId, token, identity: { agentId, fingerprint }, createdAt, expiresAt, revokedAt?, revokedRootIds: string[], revokedTokenIds: string[], rateWindowStart?, rateCount }` (serialized Ratchet token; no private key stored; never readable by clients) |
@@ -466,7 +466,7 @@ Where a component spec disagrees with this section, **this section wins**; the o
 - 11's optional `opts` parameters are accepted; 10's `allowNano?: boolean` is a field inside those option objects (default true; the pipeline passes false at question time).
 
 ### 11.5 Callables and push (conflict: 40 vs 30)
-- Callable names are 30's: `issueGrant`, `narrowGrant`, `revokeGrant`, `getAuditStatus`, `deleteAccount` (40 renames `createGrant` and `verifyAudit`). `issueGrant` input `{ aiName, maxStep, allowedCategories, allowedSources, days? }` (days 1 to 90, the UI offers 7, 30, 90); output `{ grantId, link, linkHint, maxStep, allowedCategories, allowedSources, expiresAt }` (40 reads `link`, not `connectorUrl`). The link is returned only here.
+- Callable names are 30's: `issueGrant`, `narrowGrant`, `revokeGrant`, `getAuditStatus`, `deleteAccount` (40 renames `createGrant` and `verifyAudit`). `issueGrant` input `{ aiName, maxStep, allowedCategories, allowedSources, days? }` (days 1 to 90, the UI offers 7, 30, 90); output `{ grantId, link, linkHint, maxStep, allowedCategories, allowedSources, expiresAt }` (40 reads `link`, not `connectorUrl`). The link is returned only here. Added at implementation (WP6, Nov 18): `issuePlaygroundGrant` (anonymous users allowed; input `{ aiName?, maxStep?, allowedCategories? }`; 1 day; sources `['playground']`) for decision D1, and `revokeGrant` accepts anonymous users so Playground grants can be turned off.
 - **Push target: open.** 40 says the web `getToken` is obsolete and uses `onRegistered` (a Firebase Installation ID); 30 sends to registration tokens in `fcmToken`. Verify at implementation (WP6/WP5): which target the current Admin SDK `messaging().send` accepts for web, then both specs use that; the device field stays `fcmToken` holding whatever that target is. Payload as 40 CR-5: title "Sieve", body "A request is waiting", link `/requests`, `data: { kind: 'request-waiting' }`, nothing else.
 
 ### 11.6 Request transitions the home base may write (30's table wins, plus one row)

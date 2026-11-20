@@ -1,0 +1,55 @@
+{
+  "name": "sieve",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Give AI the answer, not your inbox.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": [
+    "web",
+    "extension",
+    "shared"
+  ],
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "scripts": {
+    "dev": "npm run dev -w web",
+    "build": "npm run build -w web && npm run build -w extension",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "eslint .",
+    "test": "vitest run --project '!rules'",
+    "test:watch": "vitest --project '!rules'",
+    "test:rules": "firebase emulators:exec --project demo-sieve --only firestore,database \"vitest run --project rules\"",
+    "test:functions": "firebase emulators:exec --project demo-sieve --only auth,firestore,database,functions \"cd functions && venv/bin/python -m pytest -q tests\"",
+    "e2e": "playwright test -c web/playwright.config.ts",
+    "e2e:ext": "npm run e2e -w extension",
+    "functions:setup": "cd functions && python3.13 -m venv venv && venv/bin/pip install -r requirements.txt -r requirements-dev.txt",
+    "bench:setup": "cd bench && python3.13 -m venv .venv && .venv/bin/pip install -r requirements.txt",
+    "bench:test": "cd bench && .venv/bin/python -m pytest -q tests",
+    "bench:baseline": "cd bench && .venv/bin/python -m sieve_bench serve-baseline",
+    "bench:stack": "node scripts/bench-stack.mjs",
+    "bench:run": "cd bench && .venv/bin/python -m sieve_bench run",
+    "bench:report": "cd bench && .venv/bin/python -m sieve_bench report",
+    "bench:demo-client": "cd bench && .venv/bin/python -m sieve_bench demo-client",
+    "check:repo": "node scripts/check-repo.mjs",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run check:repo",
+    "check:all": "npm run check && npm run test:rules && npm run test:functions && npm run e2e && npm run e2e:ext && npm run bench:test",
+    "hooks:install": "git config core.hooksPath .githooks"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@eslint/js": "10.0.1",
+    "@firebase/rules-unit-testing": "6.0.0",
+    "@playwright/test": "^1.65.1",
+    "eslint": "10.15.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "firebase": "13.3.0",
+    "firebase-tools": "15.36.0",
+    "globals": "17.14.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.73.0",
+    "vite": "6.4.6",
+    "vitest": "5.1.1"
+  }
+}

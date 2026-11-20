@@ -1,0 +1,7 @@
+venv/
+.secret.local
+__pycache__/
+.pytest_cache/
+# The repo root ignores .env files; these two hold no secrets and are part of the function config.
+!.env
+!.env.demo-sieve

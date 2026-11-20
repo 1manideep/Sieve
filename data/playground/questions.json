@@ -1,0 +1,171 @@
+{
+  "version": 1,
+  "note": "Ids are seed ids; the IndexRecord id is 'playground:' + seed id. See README.md.",
+  "suggestions": [
+    {
+      "id": "landlord",
+      "chip": true,
+      "text": "What did my landlord say about the deposit? Draft a reply.",
+      "expectTop": "pg-mail-02",
+      "expectInTopK": [
+        "pg-mail-02"
+      ],
+      "expectInTopKAnyOf": [
+        "pg-mail-01",
+        "pg-mail-03"
+      ],
+      "chunkMustCover": "We received your security deposit of $1,200 on March 3.",
+      "distractors": [
+        "pg-mail-12",
+        "pg-mail-29",
+        "pg-doc-01"
+      ],
+      "category": "Home",
+      "rule": "approve",
+      "expectedAnswer": "Your deposit was $1,200, paid on March 3."
+    },
+    {
+      "id": "hotdog",
+      "chip": true,
+      "text": "Find the photo where I had five hot dogs in my mouth",
+      "expectTop": "pg-photo-01",
+      "matchedBy": "caption",
+      "expectInTopK": [
+        "pg-photo-01",
+        "pg-photo-02"
+      ],
+      "chunkMustCover": null,
+      "distractors": [
+        "pg-mail-23"
+      ],
+      "category": "Photos",
+      "rule": "approve"
+    },
+    {
+      "id": "bank",
+      "chip": true,
+      "text": "What's my latest bank balance?",
+      "expectTop": "pg-mail-11",
+      "expectInTopK": [
+        "pg-mail-11",
+        "pg-mail-12"
+      ],
+      "chunkMustCover": "Ending balance: $3,482.17",
+      "distractors": [
+        "pg-mail-14"
+      ],
+      "category": "Money",
+      "rule": "ask-first"
+    },
+    {
+      "id": "health",
+      "chip": true,
+      "text": "What do my test results say?",
+      "expectTop": "pg-mail-15",
+      "expectInTopK": [
+        "pg-mail-15"
+      ],
+      "chunkMustCover": null,
+      "distractors": [
+        "pg-mail-16"
+      ],
+      "category": "Health",
+      "rule": "never",
+      "note": "never: title and sender only, no chunk"
+    },
+    {
+      "id": "parcel",
+      "chip": true,
+      "text": "What does the parcel delivery email want?",
+      "expectTop": "pg-mail-30",
+      "expectInTopK": [
+        "pg-mail-30"
+      ],
+      "chunkMustCover": "Pay the $2 redelivery fee",
+      "distractors": [
+        "pg-mail-07",
+        "pg-mail-21"
+      ],
+      "category": "Shopping",
+      "rule": "approve"
+    },
+    {
+      "id": "mytest",
+      "chip": true,
+      "text": "What does my test email want?",
+      "expectTop": null,
+      "dynamic": "the newest test-email-* upload",
+      "expectInTopK": [],
+      "chunkMustCover": null,
+      "distractors": [
+        "pg-mail-15"
+      ],
+      "category": null,
+      "rule": "as labelled",
+      "note": "\"test\" also matches pg-mail-15, so the expectation is top 5, with top 1 checked and reported"
+    },
+    {
+      "id": "upload",
+      "chip": true,
+      "text": "What does {file name} say?",
+      "expectTop": null,
+      "dynamic": "the newest file upload",
+      "expectInTopK": [],
+      "chunkMustCover": null,
+      "distractors": [],
+      "category": null,
+      "rule": "as labelled"
+    },
+    {
+      "id": "dog",
+      "chip": false,
+      "text": "Can I have a dog, and is there a fee?",
+      "expectTop": "pg-doc-01",
+      "expectInTopK": [
+        "pg-doc-01"
+      ],
+      "chunkMustCover": "12. Pets.",
+      "distractors": [
+        "pg-doc-05",
+        "pg-mail-25",
+        "pg-photo-07",
+        "pg-doc-02"
+      ],
+      "category": "Home",
+      "rule": "approve"
+    },
+    {
+      "id": "flight",
+      "chip": false,
+      "text": "When does my flight to Seattle leave?",
+      "expectTop": "pg-mail-19",
+      "expectInTopK": [
+        "pg-mail-19",
+        "pg-mail-20"
+      ],
+      "chunkMustCover": "departs Chicago (ORD) on Friday, December 4 at 7:45 AM",
+      "distractors": [
+        "pg-doc-03"
+      ],
+      "category": "Travel",
+      "rule": "approve"
+    },
+    {
+      "id": "order",
+      "chip": false,
+      "text": "Where is order #88231?",
+      "expectTop": "pg-mail-21",
+      "matchedBy": "keyword",
+      "expectInTopK": [
+        "pg-mail-21"
+      ],
+      "chunkMustCover": "order #88231 has shipped",
+      "distractors": [
+        "pg-mail-22"
+      ],
+      "category": "Shopping",
+      "rule": "approve",
+      "note": "keyword safety net with hints.terms [\"88231\"]"
+    }
+  ]
+}

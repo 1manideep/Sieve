@@ -1,0 +1,125 @@
+// Playwright fixtures for the unpacked extension (50 section 14.2; Playwright's extension guide). The side panel
+// cannot be opened from the toolbar in automation, so the panel page is opened in a normal tab; its code does not
+// depend on being inside the side panel.
+import { test as base, chromium, expect as baseExpect } from '@playwright/test';
+import type { BrowserContext, Page, Worker } from '@playwright/test';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { ExtensionToPage, ProposalPreview } from '@sieve/shared';
+
+const EXT = fileURLToPath(new URL('../dist-dev', import.meta.url)); // ESM: no __dirname
+export const STUB_URL = 'http://localhost:5173/';
+
+/** The EXTENSION_ID constant from shared/src/constants.ts, read as text (the e2e run imports types only). */
+export function sharedExtensionId(): string {
+  const text = readFileSync(new URL('../../shared/src/constants.ts', import.meta.url), 'utf8');
+  return /export const EXTENSION_ID = '([^']+)'/.exec(text)?.[1] ?? '';
+}
+
+export interface StubPage {
+  page: Page;
+  connect(opts?: { homeBase?: boolean; name?: string; hello?: boolean }): Promise<string>;
+  pending(list: ProposalPreview[]): Promise<void>;
+  resolved(requestId: string, outcome: 'approved' | 'declined' | 'expired' | 'error'): Promise<void>;
+  raw(message: unknown): Promise<void>;
+  disconnect(): Promise<void>;
+  received(): Promise<ExtensionToPage[]>;
+  status(): Promise<string>;
+  waitForStatus(status: string): Promise<void>;
+}
+
+interface Fixtures {
+  context: BrowserContext;
+  sw: Worker;
+  extensionId: string;
+  openPanel: () => Promise<Page>;
+  openStub: (origin?: string) => Promise<StubPage>;
+  panelProblems: string[];
+}
+
+export const test = base.extend<Fixtures>({
+  // eslint-disable-next-line no-empty-pattern -- Playwright fixtures must destructure their dependencies
+  context: async ({}, use) => {
+    const userDataDir = mkdtempSync(join(tmpdir(), 'sieve-ext-'));
+    const context = await chromium.launchPersistentContext(userDataDir, {
+      channel: 'chromium',
+      headless: true,
+      args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
+    });
+    await use(context);
+    await context.close();
+    rmSync(userDataDir, { recursive: true, force: true });
+  },
+  sw: async ({ context }, use) => {
+    let [sw] = context.serviceWorkers();
+    if (!sw) sw = await context.waitForEvent('serviceworker');
+    await use(sw);
+  },
+  extensionId: async ({ sw }, use) => {
+    await use(sw.url().split('/')[2] ?? '');
+  },
+  panelProblems: async ({}, use) => { // eslint-disable-line no-empty-pattern
+    const problems: string[] = [];
+    await use(problems);
+  },
+  openPanel: async ({ context, extensionId, panelProblems }, use) => {
+    const pages: Page[] = [];
+    await use(async () => {
+      const page = await context.newPage();
+      pages.push(page);
+      page.on('console', (m) => {
+        if (m.type() === 'error') panelProblems.push(`console: ${m.text()}`);
+      });
+      page.on('pageerror', (e) => panelProblems.push(`pageerror: ${e.message}`));
+      await page.addInitScript(() => {
+        const w = window as unknown as { __csp: string[] };
+        w.__csp = [];
+        document.addEventListener('securitypolicyviolation', (e) => {
+          w.__csp.push(`${e.violatedDirective} ${e.blockedURI}`);
+        });
+      });
+      await page.goto(`chrome-extension://${extensionId}/sidepanel/index.html`);
+      return page;
+    });
+    // No CSP violations and no console errors on any panel page (50 section 14.2).
+    for (const page of pages) {
+      if (page.isClosed()) continue;
+      const csp = await page.evaluate(() => (window as unknown as { __csp?: string[] }).__csp ?? ['init script did not run']);
+      panelProblems.push(...csp.map((c) => `csp: ${c}`));
+    }
+    baseExpect(panelProblems).toEqual([]);
+  },
+  openStub: async ({ context, extensionId }, use) => {
+    await use(async (origin = STUB_URL) => {
+      const page = await context.newPage();
+      await page.goto(`${origin}?ext=${extensionId}`);
+      type W = { __stub: { connect(o?: object): string; pending(l: unknown): void; resolved(id: string, o: string): void; raw(m: unknown): void; disconnect(): void; received: ExtensionToPage[]; status: string } };
+      const stub: StubPage = {
+        page,
+        connect: (opts = {}) => page.evaluate((o) => (window as unknown as W).__stub.connect(o), opts),
+        pending: (list) => page.evaluate((l) => (window as unknown as W).__stub.pending(l), list),
+        resolved: (id, outcome) => page.evaluate(([i, o]) => (window as unknown as W).__stub.resolved(i, o), [id, outcome] as const),
+        raw: (m) => page.evaluate((x) => (window as unknown as W).__stub.raw(x), m),
+        disconnect: () => page.evaluate(() => (window as unknown as W).__stub.disconnect()),
+        received: () => page.evaluate(() => (window as unknown as W).__stub.received),
+        status: () => page.evaluate(() => (window as unknown as W).__stub.status),
+        waitForStatus: async (status) => {
+          await baseExpect.poll(() => page.evaluate(() => (window as unknown as W).__stub.status)).toBe(status);
+        },
+      };
+      return stub;
+    });
+  },
+});
+
+export const expect = test.expect;
+
+export function badgeText(sw: Worker): Promise<string> {
+  return sw.evaluate(() => chrome.action.getBadgeText({}));
+}
+
+export function notificationIds(sw: Worker): Promise<string[]> {
+  return sw.evaluate(() => chrome.notifications.getAll().then((all) => Object.keys(all)));
+}

@@ -1,0 +1,2 @@
+#!/bin/sh
+npm run check || { echo "npm run check failed; push stopped."; exit 1; }

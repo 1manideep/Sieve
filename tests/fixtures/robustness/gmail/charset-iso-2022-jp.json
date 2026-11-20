@@ -1,0 +1,62 @@
+{
+  "cases": [
+    {
+      "id": "charset-iso-2022-jp",
+      "input": {
+        "id": "18c3a0000000c005",
+        "threadId": "18c3a0000000c005",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Kestrelmoor Bank <alerts@kestrelmoor.example>"
+            },
+            {
+              "name": "To",
+              "value": "Alex Rivera <alex.rivera@inbox.example>"
+            },
+            {
+              "name": "Subject",
+              "value": "Charset iso-2022-jp"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 10 Nov 2026 15:00:00 GMT"
+            }
+          ],
+          "mimeType": "multipart/alternative",
+          "parts": [
+            {
+              "partId": "0",
+              "mimeType": "text/plain",
+              "filename": "",
+              "headers": [
+                {
+                  "name": "Content-Type",
+                  "value": "text/plain; charset=\"iso-2022-jp\""
+                }
+              ],
+              "body": {
+                "size": 16,
+                "data": "GyRCJDMkcyRLJEEkTxsoQg"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "こんにちは",
+        "throws": false
+      },
+      "note": "ESC bytes; a 7-bit encoding that is also valid ASCII"
+    }
+  ]
+}

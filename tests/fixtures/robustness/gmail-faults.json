@@ -1,0 +1,174 @@
+{
+  "cases": [
+    {
+      "id": "401-sign-in",
+      "input": {
+        "faults": [
+          {
+            "match": "GET /messages",
+            "status": 401,
+            "body": {
+              "error": {
+                "code": 401,
+                "message": "Invalid Credentials",
+                "errors": [
+                  {
+                    "reason": "authError"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "needsAuth": true,
+        "stopsAtRequestBoundary": true
+      }
+    },
+    {
+      "id": "403-insufficient",
+      "input": {
+        "faults": [
+          {
+            "match": "GET /messages",
+            "status": 403,
+            "body": {
+              "error": {
+                "code": 403,
+                "message": "Request had insufficient authentication scopes.",
+                "errors": [
+                  {
+                    "reason": "insufficientPermissions"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "errorCode": "gmail-forbidden",
+        "message": "Gmail refused access: insufficientPermissions."
+      }
+    },
+    {
+      "id": "403-domain-policy",
+      "input": {
+        "faults": [
+          {
+            "match": "GET /messages",
+            "status": 403,
+            "body": {
+              "error": {
+                "code": 403,
+                "message": "Access denied by the domain administrator.",
+                "errors": [
+                  {
+                    "reason": "domainPolicy"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "errorCode": "gmail-forbidden",
+        "message": "Gmail refused access: domainPolicy."
+      }
+    },
+    {
+      "id": "429-retry-after",
+      "input": {
+        "faults": [
+          {
+            "match": "GET /messages/*",
+            "status": 429,
+            "headers": {
+              "Retry-After": "3"
+            },
+            "body": {
+              "error": {
+                "code": 429,
+                "message": "Too many concurrent requests for user"
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "waitedMs": 3000,
+        "succeeds": true
+      }
+    },
+    {
+      "id": "503-six-times",
+      "input": {
+        "faults": [
+          {
+            "match": "GET /messages",
+            "status": 503,
+            "times": 6,
+            "body": {
+              "error": {
+                "code": 503,
+                "message": "Backend Error",
+                "errors": [
+                  {
+                    "reason": "backendError"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "errorCode": "quota",
+        "progressKept": true
+      }
+    },
+    {
+      "id": "404-get",
+      "input": {
+        "faults": [
+          {
+            "match": "GET /messages/*",
+            "status": 404,
+            "body": {
+              "error": {
+                "code": 404,
+                "message": "Requested entity was not found."
+              }
+            }
+          }
+        ]
+      },
+      "expected": {
+        "skipsId": true
+      }
+    },
+    {
+      "id": "history-expired",
+      "input": {
+        "historyFloorAfterCursor": true
+      },
+      "expected": {
+        "fullReconcile": true
+      }
+    },
+    {
+      "id": "big-mailbox",
+      "input": {
+        "messages": 20000,
+        "windowMonths": 6
+      },
+      "expected": {
+        "listPages": 40,
+        "listUnits": 200,
+        "etaMinutesAbout": 83
+      }
+    }
+  ]
+}

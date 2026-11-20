@@ -1,0 +1,16 @@
+[
+  {
+    "id": "pg-doc-01",
+    "file": "Lease_2026.pdf",
+    "kind": "document",
+    "category": "Home",
+    "date": "2025-12-10T16:00:00-06:00"
+  },
+  {
+    "id": "pg-doc-03",
+    "file": "packing-list-seattle.md",
+    "kind": "note",
+    "category": "Travel",
+    "date": "2026-11-15T20:00:00-06:00"
+  }
+]

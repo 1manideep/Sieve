@@ -152,7 +152,7 @@ icons/icon-16.png  icon-32.png  icon-48.png  icon-128.png
   },
   "permissions": ["sidePanel", "notifications", "storage"],
   "externally_connectable": {
-    "matches": ["https://sieve.manideep.info/*", "http://localhost:5173/*"]
+    "matches": ["https://sieve.manideep.info/*", "https://sieve-manideep.web.app/*", "http://localhost:5173/*"]
   },
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; connect-src 'none'; img-src 'self'; font-src 'self'; style-src 'self'"
@@ -172,11 +172,11 @@ Notes:
 
 | Mode | Output | `externally_connectable.matches` | `key` | Used for |
 |---|---|---|---|---|
-| `dev` | `extension/dist-dev/` | both entries | kept | Local development against `npm run dev` (Vite on 5173), Playwright e2e, the bench and video stack (60) |
-| `release` | `extension/dist/` | `["https://sieve.manideep.info/*"]` only | kept | The zip judges load unpacked; same ID as the store item |
-| `store` | `extension/dist-store/` | `["https://sieve.manideep.info/*"]` only | removed | Upload to the Chrome Web Store (the store signs with its own key, which is the same key) |
+| `dev` | `extension/dist-dev/` | all three entries | kept | Local development against `npm run dev` (Vite on 5173), Playwright e2e, the bench and video stack (60) |
+| `release` | `extension/dist/` | `["https://sieve.manideep.info/*", "https://sieve-manideep.web.app/*"]` only | kept | The zip judges load unpacked; same ID as the store item |
+| `store` | `extension/dist-store/` | `["https://sieve.manideep.info/*", "https://sieve-manideep.web.app/*"]` only | removed | Upload to the Chrome Web Store (the store signs with its own key, which is the same key) |
 
-Why localhost is dropped outside dev: any local program serving `http://localhost:5173` could otherwise connect and show the person fake requests. The released extension should only ever trust the hosted app.
+Why localhost is dropped outside dev: any local program serving `http://localhost:5173` could otherwise connect and show the person fake requests. The released extension should only ever trust the hosted app. `https://sieve-manideep.web.app` is Hosting's default domain for the same app, kept until the custom domain is live (added Nov 18; `extension/scripts/modes.mjs`).
 
 ### 4.3 Build-time constants (`src/shared/env.ts`)
 
@@ -947,10 +947,10 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));   // the package is "type": "module"
 
-const MODES = {
-  dev:     { appUrl: 'http://localhost:5173',       origins: ['https://sieve.manideep.info', 'http://localhost:5173'], out: 'dist-dev' },
-  release: { appUrl: 'https://sieve.manideep.info', origins: ['https://sieve.manideep.info'],                         out: 'dist' },
-  store:   { appUrl: 'https://sieve.manideep.info', origins: ['https://sieve.manideep.info'],                         out: 'dist-store' },
+const MODES = {   // every mode also lists 'https://sieve-manideep.web.app', Hosting's default domain (section 4.2)
+  dev:     { appUrl: 'http://localhost:5173',       origins: ['https://sieve.manideep.info', 'https://sieve-manideep.web.app', 'http://localhost:5173'], out: 'dist-dev' },
+  release: { appUrl: 'https://sieve.manideep.info', origins: ['https://sieve.manideep.info', 'https://sieve-manideep.web.app'],                         out: 'dist' },
+  store:   { appUrl: 'https://sieve.manideep.info', origins: ['https://sieve.manideep.info', 'https://sieve-manideep.web.app'],                         out: 'dist-store' },
 } as const;
 
 export default defineConfig(({ mode }) => {
@@ -998,7 +998,7 @@ export default defineConfig(({ mode }) => {
 usage: node scripts/build.mjs --mode dev|release|store [--watch]
 1. Run Vite (programmatic `build({ configFile, mode, build: { watch } })`).
 2. Read extension/manifest.json. Set "version" from package.json.
-   release: matches = ["https://sieve.manideep.info/*"].
+   release: matches = ["https://sieve.manideep.info/*", "https://sieve-manideep.web.app/*"].
    store:   same, and delete "key".
    Fail if "key" still holds the REPLACE_WITH placeholder.
 3. Write <out>/manifest.json (2-space JSON).

@@ -1,0 +1,29 @@
+.bezel {
+  min-width: 0;
+  padding: 12px;
+  border-radius: var(--radius-device);
+  background: var(--color-frame-bezel);
+  box-shadow: var(--shadow-device);
+}
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  background: var(--color-frame-screen);
+}
+
+@media (min-width: 1024px) {
+  .screen { min-height: 740px; }
+}
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2) var(--space-4); }
+.label { margin: 0; font-size: 13px; font-weight: 600; color: var(--color-text-secondary); }
+.tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+
+.strip { min-width: 0; }
+
+.windows { display: flex; flex-wrap: wrap; align-items: stretch; gap: 14px; flex: 1 1 auto; min-width: 0; }

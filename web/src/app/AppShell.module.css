@@ -1,0 +1,18 @@
+/* Skip link: the first focusable element, hidden until focused (40 section 7.1). */
+.skip {
+  position: absolute;
+  left: var(--space-4);
+  top: -100px;
+  z-index: var(--z-toast);
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  padding: 0 var(--space-4);
+  background: var(--color-surface);
+  color: var(--color-link);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  font-weight: 600;
+}
+
+.skip:focus { top: var(--space-4); }

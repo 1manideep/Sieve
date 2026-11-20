@@ -1,0 +1,278 @@
+{
+  "cases": [
+    {
+      "id": "iso",
+      "question": "the email on 2026-03-03",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "expected": {
+        "after": "2026-03-03",
+        "before": "2026-03-03",
+        "hard": true,
+        "ambiguous": false
+      }
+    },
+    {
+      "id": "us-1-2-2026",
+      "question": "emails from 1-2-2026",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "note": "chrono read this as today",
+      "expected": {
+        "after": "2026-01-02",
+        "before": "2026-01-02",
+        "hard": false,
+        "ambiguous": true
+      }
+    },
+    {
+      "id": "gb-1-2-2026",
+      "question": "emails from 1-2-2026",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-GB",
+      "expected": {
+        "after": "2026-02-01",
+        "before": "2026-02-01",
+        "hard": false,
+        "ambiguous": true
+      }
+    },
+    {
+      "id": "13-04-2026",
+      "question": "the receipt from 13-04-2026",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "note": "a number above 12 decides the order",
+      "expected": {
+        "after": "2026-04-13",
+        "before": "2026-04-13",
+        "hard": true,
+        "ambiguous": false
+      }
+    },
+    {
+      "id": "dots-03.04.2026",
+      "question": "the invoice from 03.04.2026",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "note": "dots are always day first",
+      "expected": {
+        "after": "2026-04-03",
+        "before": "2026-04-03",
+        "hard": true,
+        "ambiguous": false
+      }
+    },
+    {
+      "id": "bare-1-2",
+      "question": "page 1-2 of the lease",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "note": "a bare 1-2 is not a date",
+      "expected": {
+        "hard": false,
+        "ambiguous": false
+      }
+    },
+    {
+      "id": "between-march",
+      "question": "between march 1 and march 15",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "note": "chrono picked 2027",
+      "expected": {
+        "after": "2026-03-01",
+        "before": "2026-03-15",
+        "hard": true,
+        "ambiguous": false
+      }
+    },
+    {
+      "id": "range-between",
+      "question": "between March 1 and March 15",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "expected": {
+        "after": "2026-03-01",
+        "before": "2026-03-15",
+        "hard": true,
+        "ambiguous": false
+      }
+    },
+    {
+      "id": "range-from-to",
+      "question": "from March 1 to 15",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "expected": {
+        "after": "2026-03-01",
+        "before": "2026-03-15",
+        "hard": true,
+        "ambiguous": false
+      }
+    },
+    {
+      "id": "range-hyphen",
+      "question": "March 1-15",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "expected": {
+        "after": "2026-03-01",
+        "before": "2026-03-15",
+        "hard": true,
+        "ambiguous": false
+      }
+    },
+    {
+      "id": "range-day-first",
+      "question": "1 to 15 March",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "expected": {
+        "after": "2026-03-01",
+        "before": "2026-03-15",
+        "hard": true,
+        "ambiguous": false
+      }
+    },
+    {
+      "id": "range-to",
+      "question": "Mar 1 to Mar 15",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "expected": {
+        "after": "2026-03-01",
+        "before": "2026-03-15",
+        "hard": true,
+        "ambiguous": false
+      }
+    },
+    {
+      "id": "range-en-dash",
+      "question": "Mar 1\u2013Mar 15",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "note": "U+2013 between the dates",
+      "expected": {
+        "after": "2026-03-01",
+        "before": "2026-03-15",
+        "hard": true,
+        "ambiguous": false
+      }
+    },
+    {
+      "id": "last-month",
+      "question": "what did the doctor send last month",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "note": "search adds slack; chrono gave a single day",
+      "expected": {
+        "after": "2026-10-01",
+        "before": "2026-10-31",
+        "hard": true,
+        "ambiguous": false
+      }
+    },
+    {
+      "id": "last-week",
+      "question": "last week",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "note": "Monday weeks; now is a Monday",
+      "expected": {
+        "after": "2026-11-09",
+        "before": "2026-11-15",
+        "hard": true,
+        "ambiguous": false
+      }
+    },
+    {
+      "id": "bill-due-nov-28",
+      "question": "the bill due Nov 28",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "note": "R-IN-12: a content date gives no item-date range",
+      "expected": {
+        "hard": false,
+        "ambiguous": false,
+        "contentDate": true,
+        "termsInclude": "nov 28"
+      }
+    },
+    {
+      "id": "flight-on-dec-4",
+      "question": "my flight on Dec 4",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "note": "R-IN-12",
+      "expected": {
+        "hard": false,
+        "ambiguous": false,
+        "contentDate": true
+      }
+    },
+    {
+      "id": "receipt-from-12-04-us",
+      "question": "the receipt from 12/04",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "note": "most recent past occurrence, month first in en-US",
+      "expected": {
+        "after": "2025-12-04",
+        "before": "2025-12-04",
+        "hard": false,
+        "ambiguous": true
+      }
+    },
+    {
+      "id": "yesterday-after-dst",
+      "question": "messages from yesterday",
+      "now": "2026-11-02T00:30:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "note": "US DST ended on Nov 1, 2026; calendar-field arithmetic",
+      "expected": {
+        "after": "2026-11-01",
+        "before": "2026-11-01",
+        "hard": true,
+        "ambiguous": false
+      }
+    },
+    {
+      "id": "gmail-q-dates",
+      "question": "emails between march 1 and march 15",
+      "now": "2026-11-16T10:00:00",
+      "tz": "America/Chicago",
+      "locale": "en-US",
+      "note": "R-IN-14: the Gmail clauses widen by a day each side",
+      "expected": {
+        "after": "2026-03-01",
+        "before": "2026-03-15",
+        "hard": true,
+        "ambiguous": false,
+        "gmail": [
+          "after:2026/02/28",
+          "before:2026/03/16"
+        ]
+      }
+    }
+  ]
+}

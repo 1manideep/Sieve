@@ -1,0 +1,61 @@
+{
+  "cases": [
+    {
+      "id": "charset-iso-8859-1",
+      "input": {
+        "id": "18c3a0000000c002",
+        "threadId": "18c3a0000000c002",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Kestrelmoor Bank <alerts@kestrelmoor.example>"
+            },
+            {
+              "name": "To",
+              "value": "Alex Rivera <alex.rivera@inbox.example>"
+            },
+            {
+              "name": "Subject",
+              "value": "Charset iso-8859-1"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 10 Nov 2026 15:00:00 GMT"
+            }
+          ],
+          "mimeType": "multipart/alternative",
+          "parts": [
+            {
+              "partId": "0",
+              "mimeType": "text/plain",
+              "filename": "",
+              "headers": [
+                {
+                  "name": "Content-Type",
+                  "value": "text/plain; charset=\"iso-8859-1\""
+                }
+              ],
+              "body": {
+                "size": 12,
+                "data": "Y2Fm6SByZWNlaXB0"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "café receipt",
+        "throws": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "cases": [
+    {
+      "id": "b-emoji",
+      "input": "=?UTF-8?B?8J+OgiBQYXJ0eQ==?=",
+      "expected": "🎂 Party"
+    },
+    {
+      "id": "q-underscores",
+      "input": "=?UTF-8?Q?Lease_signing_on_Friday?=",
+      "expected": "Lease signing on Friday"
+    },
+    {
+      "id": "split-emoji",
+      "input": "=?UTF-8?B?8J+O?= =?UTF-8?B?giBQYXJ0eQ==?=",
+      "expected": "🎂 Party",
+      "note": "one emoji split across two encoded words"
+    },
+    {
+      "id": "mixed-charsets",
+      "input": "=?ISO-8859-1?Q?caf=E9?= =?UTF-8?B?8J+Ogg==?=",
+      "expected": "café🎂"
+    },
+    {
+      "id": "text-around",
+      "input": "Re: =?UTF-8?Q?Deposit_=E2=9C=85?= for 3B",
+      "expected": "Re: Deposit ✅ for 3B"
+    },
+    {
+      "id": "malformed",
+      "input": "=?UTF-8?B?!!!?= Party",
+      "expected": "=?UTF-8?B?!!!?= Party"
+    },
+    {
+      "id": "none",
+      "input": "Plain subject",
+      "expected": "Plain subject"
+    },
+    {
+      "id": "already-decoded",
+      "input": "🎂 Party",
+      "expected": "🎂 Party"
+    }
+  ]
+}

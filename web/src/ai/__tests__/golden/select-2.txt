@@ -1,0 +1,22 @@
+Today is 2026-11-16.
+Question: How much was my deposit and when did I pay it?
+
+P1
+Kind: email
+From: Oakview Property Management <dana@oakview.example>
+Date: 2026-03-04
+Title: Re: Deposit for the apartment
+Passage:
+<<<
+Hi Alex, thanks for your email. We received your security deposit of $1,200 on March 3. It will be returned within 30 days of move-out, minus any repair costs. Let me know your move-out date so we can schedule the inspection. Best, Dana, Oakview Property Management
+>>>
+
+P2
+Kind: email
+From: Skyline Air <no-reply@skyline.example>
+Date: 2026-04-03
+Title: Your booking is confirmed: Chicago to Seattle
+Passage:
+<<<
+Booking reference K7Q2LM. Flight SA 1432 departs Chicago O'Hare (ORD) on Friday, December 4 at 7:45 AM and arrives in Seattle (SEA) at 10:20 AM. Seat 14C. One checked bag included.
+>>>

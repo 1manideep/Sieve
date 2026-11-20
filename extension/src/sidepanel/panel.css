@@ -1,0 +1,52 @@
+/* Panel tokens (50 section 8.2): the web app's tokens (40 section 15.1), then panel aliases with the mockup
+   values as fallbacks. Vite resolves the import at build time; nothing is loaded at run time. */
+@import '../../../web/src/styles/tokens.css';
+
+:root {
+  --p-font: var(--font-sans, Inter, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji');   /* 70 R-EMO-06 */
+  --p-font-head: var(--font-display, 'Space Grotesk', Inter, sans-serif);
+  --p-ink: var(--color-text, #0F172A);
+  --p-text: var(--color-text-body, #1F2937);
+  --p-label: var(--color-text-secondary, #334155);
+  --p-muted: var(--color-text-muted, #475569);
+  --p-subtle: var(--color-text-subtle, #64748B);
+  --p-bg: var(--color-surface, #FFFFFF);
+  --p-surface: var(--color-surface-sunken, #F8FAFC);
+  --p-border: var(--color-border, #E2E8F0);
+  --p-border-strong: var(--color-border-strong, #CBD5E1);
+  --p-device: var(--color-device, #0F766E);           /* teal: on-device, primary button */
+  --p-device-hover: var(--color-device-strong, #115E59);
+  --p-device-tag-bg: var(--color-device-tint, #E3F2EF);
+  --p-device-tag-fg: var(--color-device-strong, #115E59);
+  --p-cloud-tag-bg: var(--color-cloud-tint, #E6EDFD);  /* blue: cloud */
+  --p-cloud-tag-fg: var(--color-cloud, #1E40AF);
+  --p-warn-tag-bg: var(--color-warn-tint, #FEF3C7);    /* amber: warnings */
+  --p-warn-tag-fg: var(--color-warn-text, #92400E);
+  --p-warn-box-bg: var(--color-warn-tint-2, #FFFBEB);
+  --p-warn-box-border: var(--color-warn-border, #FCD34D);
+  --p-never-tag-bg: var(--color-never-tint, #FEE2E2);
+  --p-never-tag-fg: var(--color-never-text, #991B1B);
+  --p-muted-tag-bg: var(--color-surface-muted, #F1F5F9);
+  --p-muted-tag-fg: var(--color-text-secondary, #334155);
+  --p-radius-card: var(--radius-xl, 14px);
+  --p-radius-box: var(--radius-lg, 12px);
+  --p-radius-pill: var(--radius-pill, 999px);
+  color-scheme: light;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--p-bg);
+  color: var(--p-ink);
+  font-family: var(--p-font);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}

@@ -1,0 +1,28 @@
+.panel {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--color-cloud-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-cloud-tint-2);
+}
+.title { font: var(--text-h4); }
+.body { margin: 0; font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+.noText { margin: 0; font-size: 14px; color: var(--color-text-muted); }
+
+.disclosure {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--target-min);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-link);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); }

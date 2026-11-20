@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "suspicious": {
+      "type": "boolean"
+    },
+    "quote": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "suspicious",
+    "quote"
+  ]
+}

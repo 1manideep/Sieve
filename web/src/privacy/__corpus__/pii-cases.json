@@ -1,0 +1,1020 @@
+{
+  "format": [
+    {
+      "id": "email-plus",
+      "text": "Write to dana.lee+lease@oakview.example today.",
+      "expect": [
+        {
+          "match": "dana.lee+lease@oakview.example",
+          "type": "email",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "email-obfuscated",
+      "text": "Reach me at alex [at] rivera [dot] example any time.",
+      "expect": [
+        {
+          "match": "alex [at] rivera [dot] example",
+          "type": "email",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "email-handle",
+      "text": "Ping @oakview on chat.",
+      "expect": [],
+      "mustNotFlag": [
+        "@oakview"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "email-localhost",
+      "text": "The test address user@localhost bounced.",
+      "expect": [],
+      "mustNotFlag": [
+        "user@localhost"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "phone-us-parens",
+      "text": "You can reach the office at (312) 555-0142 after noon.",
+      "expect": [
+        {
+          "match": "(312) 555-0142",
+          "type": "phone",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "phone-us-dashes",
+      "text": "Her number is 312-555-0199.",
+      "expect": [
+        {
+          "match": "312-555-0199",
+          "type": "phone",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "phone-uk",
+      "text": "The London desk is on +44 20 7946 0958.",
+      "expect": [
+        {
+          "match": "+44 20 7946 0958",
+          "type": "phone",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "phone-plus-one",
+      "text": "Text +1 415-555-2671 when you land.",
+      "expect": [
+        {
+          "match": "+1 415-555-2671",
+          "type": "phone",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "phone-order-number",
+      "text": "Order 2133734253 has shipped.",
+      "expect": [],
+      "mustNotFlag": [
+        "2133734253"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "phone-money",
+      "text": "The rent is $1,200 this month.",
+      "expect": [],
+      "mustNotFlag": [
+        "$1,200"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "phone-timestamp",
+      "text": "Logged at 2026-03-03 10:20 by the system.",
+      "expect": [],
+      "mustNotFlag": [
+        "2026-03-03 10:20"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "phone-meeting-id",
+      "text": "Meeting ID 845 2231 9087 starts soon.",
+      "expect": [],
+      "mustNotFlag": [
+        "845 2231 9087"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "phone-local-labelled",
+      "text": "Call 555-0142 if the door is locked.",
+      "expect": [
+        {
+          "match": "555-0142",
+          "type": "phone",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "phone-local-unlabelled",
+      "text": "Gate 555-0142 is near the exit.",
+      "expect": [],
+      "mustNotFlag": [
+        "555-0142"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "card-visa",
+      "text": "Paid with 4111 1111 1111 1111 yesterday.",
+      "expect": [
+        {
+          "match": "4111 1111 1111 1111",
+          "type": "card",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "card-mastercard",
+      "text": "Card on file: 5500-0000-0000-0004.",
+      "expect": [
+        {
+          "match": "5500-0000-0000-0004",
+          "type": "card",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "card-amex",
+      "text": "The amex 3782 822463 10005 was charged.",
+      "expect": [
+        {
+          "match": "3782 822463 10005",
+          "type": "card",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "card-bad-luhn",
+      "text": "The number 4111 1111 1111 1112 was rejected.",
+      "expect": [],
+      "mustNotFlag": [
+        "4111 1111 1111 1112"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "card-sequence",
+      "text": "Ticket 1234 5678 9012 3456 is void.",
+      "expect": [],
+      "mustNotFlag": [
+        "1234 5678 9012 3456"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "iban-gb",
+      "text": "Send it to GB82 WEST 1234 5698 7654 32 please.",
+      "expect": [
+        {
+          "match": "GB82 WEST 1234 5698 7654 32",
+          "type": "iban",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "iban-de",
+      "text": "IBAN DE89 3704 0044 0532 0130 00 for the refund.",
+      "expect": [
+        {
+          "match": "DE89 3704 0044 0532 0130 00",
+          "type": "iban",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "iban-nl",
+      "text": "Use NL91 ABNA 0417 1643 00 for the deposit.",
+      "expect": [
+        {
+          "match": "NL91 ABNA 0417 1643 00",
+          "type": "iban",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "iban-bad-check",
+      "text": "The old one was GB82 WEST 1234 5698 7654 33 and it bounced.",
+      "expect": [],
+      "mustNotFlag": [
+        "GB82 WEST 1234 5698 7654 33"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "ssn-dashed",
+      "text": "Her number is 472-81-0094 on the form.",
+      "expect": [
+        {
+          "match": "472-81-0094",
+          "type": "ssn",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "ssn-labelled-bare",
+      "text": "SSN: 472810094",
+      "expect": [
+        {
+          "match": "472810094",
+          "type": "ssn",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "ssn-area-000",
+      "text": "Example 000-12-3456 is not valid.",
+      "expect": [],
+      "mustNotFlag": [
+        "000-12-3456"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "ssn-area-666",
+      "text": "Example 666-12-3456 is not valid.",
+      "expect": [],
+      "mustNotFlag": [
+        "666-12-3456"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "ssn-area-9xx",
+      "text": "Example 912-34-5678 is not valid.",
+      "expect": [],
+      "mustNotFlag": [
+        "912-34-5678"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "ssn-group-00",
+      "text": "Example 123-00-4567 is not valid.",
+      "expect": [],
+      "mustNotFlag": [
+        "123-00-4567"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "ssn-serial-0000",
+      "text": "Example 123-45-0000 is not valid.",
+      "expect": [],
+      "mustNotFlag": [
+        "123-45-0000"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "ssn-unlabelled-bare",
+      "text": "Ref 472810094 is your case.",
+      "expect": [],
+      "mustNotFlag": [
+        "472810094"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "account-number",
+      "text": "Account number: 000123456789",
+      "expect": [
+        {
+          "match": "000123456789",
+          "type": "account",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "account-acct-hash",
+      "text": "Acct #: 98765432",
+      "expect": [
+        {
+          "match": "98765432",
+          "type": "account",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "account-routing",
+      "text": "Routing number 021000021",
+      "expect": [
+        {
+          "match": "021000021",
+          "type": "account",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "account-aba",
+      "text": "ABA: 011000015",
+      "expect": [
+        {
+          "match": "011000015",
+          "type": "account",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "account-ending",
+      "text": "Your account ending 4421 was charged.",
+      "expect": [],
+      "mustNotFlag": [
+        "4421"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "account-routing-bad-check",
+      "text": "Routing 123456789 is wrong.",
+      "expect": [],
+      "mustNotFlag": [
+        "123456789"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "dob-numeric",
+      "text": "DOB: 04/12/1990",
+      "expect": [
+        {
+          "match": "04/12/1990",
+          "type": "dob",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "dob-month-name",
+      "text": "Date of birth: April 12, 1990",
+      "expect": [
+        {
+          "match": "April 12, 1990",
+          "type": "dob",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "dob-born-on",
+      "text": "She was born on 12 April 1990 in Ohio.",
+      "expect": [
+        {
+          "match": "12 April 1990",
+          "type": "dob",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "dob-due-date",
+      "text": "Due on 04/12/2026 at the latest.",
+      "expect": [],
+      "mustNotFlag": [
+        "04/12/2026"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "dob-birthday",
+      "text": "Happy birthday!!",
+      "expect": [],
+      "mustNotFlag": [
+        "birthday"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "address-street-apt",
+      "text": "Mail it to 221 Oak Street, Apt 3B by Friday.",
+      "expect": [
+        {
+          "match": "221 Oak Street, Apt 3B",
+          "type": "address",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "address-parkway",
+      "text": "The campus is at 1600 Amphitheatre Pkwy in the valley.",
+      "expect": [
+        {
+          "match": "1600 Amphitheatre Pkwy",
+          "type": "address",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "address-po-box",
+      "text": "Send forms to PO Box 4471.",
+      "expect": [
+        {
+          "match": "PO Box 4471",
+          "type": "address",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "address-flight",
+      "text": "Flight SA 1432 departs at noon.",
+      "expect": [],
+      "mustNotFlag": [
+        "SA 1432"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "name-greeting",
+      "text": "Hi Dana,\nThe keys are ready.",
+      "expect": [
+        {
+          "match": "Dana",
+          "type": "name",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "name-greeting-title",
+      "text": "Dear Mr. Patel,\nYour results are in.",
+      "expect": [
+        {
+          "match": "Patel",
+          "type": "name",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "name-greeting-there",
+      "text": "Hi there,\nWelcome aboard.",
+      "expect": [],
+      "mustNotFlag": [
+        "there"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "name-greeting-team",
+      "text": "Hello Team!\nShip it.",
+      "expect": [],
+      "mustNotFlag": [
+        "Team"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "name-signoff-inline",
+      "text": "See you soon. Best, Dana, Oakview Property Management",
+      "expect": [
+        {
+          "match": "Dana",
+          "type": "name",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "name-signoff-next-line",
+      "text": "Thanks,\nMarcus Lee",
+      "expect": [
+        {
+          "match": "Marcus Lee",
+          "type": "name",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "name-signoff-team",
+      "text": "Thanks,\nThe Shopwell Team",
+      "expect": [],
+      "mustNotFlag": [
+        "The Shopwell Team"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "name-title",
+      "text": "Your appointment with Dr. Patel is at noon.",
+      "expect": [
+        {
+          "match": "Patel",
+          "type": "name",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "ip-v4",
+      "text": "The login came from 203.0.113.5 last night.",
+      "expect": [
+        {
+          "match": "203.0.113.5",
+          "type": "other",
+          "by": "validator"
+        }
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "ip-version-string",
+      "text": "Update to version 1.13.16 today.",
+      "expect": [],
+      "mustNotFlag": [
+        "1.13.16"
+      ],
+      "stages": [
+        "validators"
+      ]
+    },
+    {
+      "id": "protected-values",
+      "text": "Your deposit was $1,200, paid on March 3 at 7:45 AM. Seat 14C on SA 1432, booking K7Q2LM, in 2026.",
+      "expect": [],
+      "mustNotFlag": [
+        "$1,200",
+        "March 3",
+        "7:45 AM",
+        "14C",
+        "SA 1432",
+        "K7Q2LM",
+        "2026"
+      ],
+      "stages": [
+        "validators"
+      ]
+    }
+  ],
+  "persona": [
+    {
+      "id": "persona-inspection",
+      "text": "Hi Alex,\n\nThanks for sending the move-out date. Priya Nair from our maintenance team will do the inspection on December 2 at 10:00 AM. If that time doesn't work, call her at (312) 555-0187 or email priya.nair@thistlewick-pm.example.\n\nPlease leave the keys at 1847 W Tamsin Ave, Unit 3B, in the lockbox.\n\nBest,\nDana Whitfield\nThistlewick Property Management",
+      "expect": [
+        {
+          "match": "Alex",
+          "type": "name"
+        },
+        {
+          "match": "Priya Nair",
+          "type": "name"
+        },
+        {
+          "match": "(312) 555-0187",
+          "type": "phone"
+        },
+        {
+          "match": "priya.nair@thistlewick-pm.example",
+          "type": "email"
+        },
+        {
+          "match": "1847 W Tamsin Ave, Unit 3B",
+          "type": "address"
+        },
+        {
+          "match": "Dana Whitfield",
+          "type": "name"
+        }
+      ],
+      "mustNotFlag": [
+        "December 2",
+        "10:00 AM"
+      ]
+    },
+    {
+      "id": "persona-puppies",
+      "text": "Hey Alex!\n\nMarcus and I found a breeder near Evanston. Her name is Grace Okafor and she has two puppies left. Grace said we can visit on Saturday. Her number is 312-555-0164.\n\nCheers,\nJordan",
+      "expect": [
+        {
+          "match": "Alex",
+          "type": "name"
+        },
+        {
+          "match": "Marcus",
+          "type": "name"
+        },
+        {
+          "match": "Grace Okafor",
+          "type": "name"
+        },
+        {
+          "match": "Grace",
+          "type": "name",
+          "occurrence": 2
+        },
+        {
+          "match": "312-555-0164",
+          "type": "phone"
+        },
+        {
+          "match": "Jordan",
+          "type": "name"
+        }
+      ],
+      "mustNotFlag": [
+        "Saturday",
+        "Evanston"
+      ]
+    },
+    {
+      "id": "persona-appointment",
+      "text": "Dear Ms. Rivera,\n\nThis is a reminder of your appointment with Dr. Patel on Monday, November 23 at 8:30 AM. Please bring your insurance card and arrive 15 minutes early. Our office is at 900 N Lakeview Drive, Suite 210.\n\nIf you need to reschedule, call 773-555-0102.\n\nKind regards,\nCorvane Medical Group",
+      "expect": [
+        {
+          "match": "Rivera",
+          "type": "name"
+        },
+        {
+          "match": "Patel",
+          "type": "name"
+        },
+        {
+          "match": "900 N Lakeview Drive, Suite 210",
+          "type": "address"
+        },
+        {
+          "match": "773-555-0102",
+          "type": "phone"
+        }
+      ],
+      "mustNotFlag": [
+        "November 23",
+        "8:30 AM",
+        "15 minutes"
+      ]
+    },
+    {
+      "id": "persona-team-update",
+      "text": "Hi team,\n\nThanks to Sofia Moreno for shipping the ranking fix last week. Tomasz will review pull request 212 tomorrow, and Ben Hartley joins the call on Thursday.\n\nIf anything breaks, message me on chat or write to alex.rivera@quorrel.example.\n\nThanks,\nAlex",
+      "expect": [
+        {
+          "match": "Sofia Moreno",
+          "type": "name"
+        },
+        {
+          "match": "Tomasz",
+          "type": "name"
+        },
+        {
+          "match": "Ben Hartley",
+          "type": "name"
+        },
+        {
+          "match": "alex.rivera@quorrel.example",
+          "type": "email"
+        },
+        {
+          "match": "Alex",
+          "type": "name"
+        }
+      ],
+      "mustNotFlag": [
+        "212",
+        "Thursday"
+      ]
+    },
+    {
+      "id": "persona-bank",
+      "text": "Hello Alex Rivera,\n\nYour statement for checking account number 000123456789 is ready. Routing number 021000021. Your card ending 4421 was used at Shopwell on Nov 12.\n\nKestrelmoor Bank\nPO Box 4471, Chicago, IL 60601",
+      "expect": [
+        {
+          "match": "Alex Rivera",
+          "type": "name"
+        },
+        {
+          "match": "000123456789",
+          "type": "account"
+        },
+        {
+          "match": "021000021",
+          "type": "account"
+        },
+        {
+          "match": "PO Box 4471",
+          "type": "address"
+        }
+      ],
+      "mustNotFlag": [
+        "4421",
+        "Nov 12"
+      ]
+    },
+    {
+      "id": "persona-flight",
+      "text": "Hi Alex,\n\nYour flight SA 1432 to Seattle departs Friday, December 4 at 7:45 AM from gate B12. Seat 14C. Booking reference K7Q2LM.\n\nTraveler: Alex Rivera, date of birth 07/19/1991.\nPassport number on file: X12345678.\n\nSkyAmber Airlines",
+      "expect": [
+        {
+          "match": "Alex",
+          "type": "name"
+        },
+        {
+          "match": "Alex Rivera",
+          "type": "name"
+        },
+        {
+          "match": "07/19/1991",
+          "type": "dob"
+        },
+        {
+          "match": "X12345678",
+          "type": "other"
+        }
+      ],
+      "mustNotFlag": [
+        "SA 1432",
+        "December 4",
+        "7:45 AM",
+        "14C",
+        "K7Q2LM"
+      ]
+    },
+    {
+      "id": "persona-potluck",
+      "text": "Hi Alex, it's Mei Lin from 3A. Rafael Duarte and I are hosting a potluck on Sunday at 6 PM. Bring the chili! Text me at 555-0171 if you can make it.\n\nMei Lin",
+      "expect": [
+        {
+          "match": "Alex",
+          "type": "name"
+        },
+        {
+          "match": "Mei Lin",
+          "type": "name"
+        },
+        {
+          "match": "Rafael Duarte",
+          "type": "name"
+        },
+        {
+          "match": "555-0171",
+          "type": "phone"
+        },
+        {
+          "match": "Mei Lin",
+          "type": "name",
+          "occurrence": 2
+        }
+      ],
+      "mustNotFlag": [
+        "Sunday"
+      ]
+    },
+    {
+      "id": "persona-claim",
+      "text": "Dear Alex,\n\nTo finish your renters insurance claim, we need the last form. Your policy is RI-2026-88431. The adjuster, Nadia Petrov, can be reached at nadia.petrov@harbordeck-ins.example or +1 312-555-0133.\n\nSincerely,\nHarbordeck Insurance Claims Desk",
+      "expect": [
+        {
+          "match": "Alex",
+          "type": "name"
+        },
+        {
+          "match": "RI-2026-88431",
+          "type": "other"
+        },
+        {
+          "match": "Nadia Petrov",
+          "type": "name"
+        },
+        {
+          "match": "nadia.petrov@harbordeck-ins.example",
+          "type": "email"
+        },
+        {
+          "match": "+1 312-555-0133",
+          "type": "phone"
+        }
+      ],
+      "mustNotFlag": [
+        "Harbordeck Insurance Claims Desk"
+      ]
+    },
+    {
+      "id": "persona-wedding",
+      "text": "Hi sweetie,\n\nDad and I loved the photos from the Fourth of July. Your cousin Lucia is getting married in June 2027 and she wants your address for the invitation. I told her it's 1847 W Tamsin Ave, Unit 3B, Chicago.\n\nLove,\nMom",
+      "expect": [
+        {
+          "match": "Lucia",
+          "type": "name"
+        },
+        {
+          "match": "1847 W Tamsin Ave, Unit 3B",
+          "type": "address"
+        }
+      ],
+      "mustNotFlag": [
+        "June 2027",
+        "Fourth of July"
+      ]
+    },
+    {
+      "id": "persona-receipt",
+      "text": "Thanks for your order, Alex!\n\nOrder #88231 shipped to Alex Rivera, 1847 W Tamsin Ave, Unit 3B. Charged to Visa 4111 1111 1111 1111 on November 14. Questions? Call 312-555-0119.\n\nThe Crestmarrow Team",
+      "expect": [
+        {
+          "match": "Alex",
+          "type": "name"
+        },
+        {
+          "match": "Alex Rivera",
+          "type": "name"
+        },
+        {
+          "match": "1847 W Tamsin Ave, Unit 3B",
+          "type": "address"
+        },
+        {
+          "match": "4111 1111 1111 1111",
+          "type": "card"
+        },
+        {
+          "match": "312-555-0119",
+          "type": "phone"
+        }
+      ],
+      "mustNotFlag": [
+        "88231",
+        "November 14"
+      ]
+    }
+  ]
+}

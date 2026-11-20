@@ -1,0 +1,54 @@
+/* White header, 1px bottom border, inner max width 1240px, padding 14px 24px (40 section 7.2). */
+.appHeader {
+  position: relative;
+  z-index: var(--z-header);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+/* Below 1280px: two rows. Row 1: logo left, right group right. Row 2: the nav at full width. */
+.inner {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas:
+    'logo right'
+    'nav nav';
+  align-items: center;
+  column-gap: var(--space-4);
+  row-gap: var(--space-2);
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 14px var(--gutter);
+}
+
+.logo { grid-area: logo; }
+
+.nav {
+  grid-area: nav;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.right {
+  grid-area: right;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.setup { grid-template-areas: 'logo right'; }
+
+/* 1280px and wider: one row (logo, nav, right group). */
+@media (min-width: 1280px) {
+  .inner {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: 'logo nav right';
+  }
+  .setup { grid-template-columns: auto 1fr; grid-template-areas: 'logo right'; }
+  .nav { overflow-x: visible; }
+}
+
+.main:focus { outline: none; }

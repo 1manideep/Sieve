@@ -1,0 +1,38 @@
+{
+  "cases": [
+    {
+      "id": "health-de",
+      "input": {
+        "id": "18c3a0000000e001",
+        "threadId": "18c3a0000000e001",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "Guten Tag, Ihr Laborbefund vom 10. November liegt vor. Bitte melden Sie sich in ",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "0",
+          "filename": "",
+          "headers": [
+            {
+              "name": "Content-Type",
+              "value": "text/plain; charset=\"utf-8\""
+            }
+          ],
+          "mimeType": "text/plain",
+          "body": {
+            "size": 91,
+            "data": "R3V0ZW4gVGFnLCBJaHIgTGFib3JiZWZ1bmQgdm9tIDEwLiBOb3ZlbWJlciBsaWVndCB2b3IuIEJpdHRlIG1lbGRlbiBTaWUgc2ljaCBpbiBkZXIgUHJheGlzLg"
+          }
+        }
+      },
+      "expected": {
+        "fakeLabel": "Personal",
+        "category": "Health",
+        "categoryBy": "rule"
+      },
+      "note": "R-MAIL-08"
+    }
+  ]
+}

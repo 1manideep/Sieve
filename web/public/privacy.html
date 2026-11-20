@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="referrer" content="no-referrer">
+<title>Sieve privacy policy</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #1b1f24;
+    --muted: #57606a;
+    --rule: #d8dee4;
+    --link: #0b6b63;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111417;
+      --text: #e6e8eb;
+      --muted: #a3abb4;
+      --rule: #2e353c;
+      --link: #5fd0c3;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  main { max-width: 42rem; margin: 0 auto; padding: 48px 16px 64px; }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 8px; }
+  .date { color: var(--muted); margin: 0 0 32px; }
+  ul { padding-left: 1.2em; margin: 0 0 32px; }
+  li { margin: 0 0 14px; }
+  strong { font-weight: 650; }
+  a { color: var(--link); }
+  footer { border-top: 1px solid var(--rule); padding-top: 16px; color: var(--muted); }
+  footer p { margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Sieve privacy policy</h1>
+  <p class="date">Last updated: November 18, 2026</p>
+
+  <ul>
+    <li><strong>Stays on your device:</strong> your mail and file contents, the search index, subjects and previews, photo captions, personal details found in them, and any on-device answer you did not approve.</li>
+    <li><strong>Reaches our Firebase project:</strong> who asked and what they asked, request status, the approved text (deleted right after the assistant collects it), receipts that record what was shared but never the content, your settings, your assistant grants, whether your Sieve tab is online, and a tamper-evident log of hashes.</li>
+    <li><strong>Reaches Gemini in the cloud:</strong> only text you approved (for drafting), the Playground's sample data when your browser has no on-device model, or your own file only after you allow it for that file.</li>
+    <li><strong>Gmail:</strong> read-only, fetched by your browser straight from Google, never through our servers.</li>
+    <li><strong>The extension:</strong> shows requests from your own Sieve tab on the same computer, keeps them in memory only, sends nothing over the network and stores nothing on disk.</li>
+    <li><strong>No tracking:</strong> no analytics, no crash reporting, no ads.</li>
+    <li><strong>Delete:</strong> "Delete my account" removes everything tied to your account and clears the on-device index.</li>
+  </ul>
+
+  <footer>
+    <p>If you use the Playground assistant, the approved payload (sample data only, never yours) passes through Firestore for a few seconds and is deleted when the assistant collects it.</p>
+    <p>Questions: open an issue on the <a href="https://github.com/1manideep/Sieve/issues">GitHub repository</a>.</p>
+    <p><a href="/">Back to Sieve</a></p>
+  </footer>
+</main>
+</body>
+</html>

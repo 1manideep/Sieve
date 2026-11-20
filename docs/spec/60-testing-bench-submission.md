@@ -101,7 +101,7 @@ Pin exact versions at implementation (00 section 4). Majors and rules:
     "test:watch": "vitest --project '!rules'",
     "test:rules": "firebase emulators:exec --project demo-sieve --only firestore,database \"vitest run --project rules\"",
     "test:functions": "firebase emulators:exec --project demo-sieve --only auth,firestore,database,functions \"cd functions && venv/bin/python -m pytest -q tests\"",
-    "e2e": "playwright test -c e2e/playwright.config.ts",
+    "e2e": "playwright test -c web/playwright.config.ts",
     "e2e:ext": "npm run e2e -w extension",
     "functions:setup": "cd functions && python3.13 -m venv venv && venv/bin/pip install -r requirements.txt -r requirements-dev.txt",
     "bench:setup": "cd bench && python3.13 -m venv .venv && .venv/bin/pip install -r requirements.txt",
@@ -120,6 +120,7 @@ Pin exact versions at implementation (00 section 4). Majors and rules:
 ```
 
 Notes:
+- `e2e` runs the web config of 40 section 19 (`web/playwright.config.ts`, specs in `web/e2e/`); an earlier draft named `e2e/playwright.config.ts` (brought in line with the code on Nov 18).
 - Arguments pass through with `--`, for example `npm run bench:run -- --arm baseline --runs 3`.
 - `functions/venv` is the folder name the Firebase CLI expects for Python functions (verify, section 11). `functions/requirements-dev.txt` holds `pytest`, `httpx` and the `mcp` client used only by tests, so they are not deployed.
 - `eslint .` uses a flat config (`eslint.config.js`) with `typescript-eslint` recommended rules, `eslint-plugin-react-hooks`, and these bans in `web/src` and `extension/src`: `react/no-danger`, and `no-restricted-properties` for `innerHTML`, `outerHTML`, `insertAdjacentHTML`, `document.write`.
@@ -184,7 +185,7 @@ Component specs define the detailed cases; these are the minimum each owner must
 }
 ```
 
-No Hosting emulator: the web app runs on Vite at 5173 in every test and demo setup. (Port 5000 is also taken by the macOS AirPlay Receiver.)
+No Hosting emulator in tests: the web app runs on Vite at 5173 in every test and demo setup. firebase.json still declares a Hosting emulator for checking rewrites and headers, on port 5080 (port 5000 is taken by the macOS AirPlay Receiver). The functions HTTP tests hit the Functions emulator directly; the two Hosting tests need `SIEVE_HOSTING_BASE` (set at implementation, WP6, Nov 18).
 
 `.firebaserc`:
 
@@ -249,41 +250,40 @@ E2E runs in Playwright's Chromium, which has no Gemini Nano, so model availabili
 - Outputs are deterministic: `label` returns the seed category; `select-answer` picks the record named for that question in `e2e/fixtures/answers.json` (else the first candidate) and returns that file's `answer` and `excerpt`; `caption` returns the seed caption; `draft` returns `Draft: ` plus the approved text; `injection-check` flags text that contains any phrase in `bench/canaries.json`; `pii-check` adds nothing.
 - The import is `if (import.meta.env.VITE_SIEVE_E2E === '1') { ({ fakeRunModel } = await import('./testing/fakeModel')); }`, which production builds remove as dead code. `check:repo` fails if a production `web/dist` contains the string `fakeModel`.
 
-#### 3.9.2 Configuration (`e2e/playwright.config.ts`)
+#### 3.9.2 Configuration (`web/playwright.config.ts`)
+
+The code follows 40 section 19: one config in the web package, the dev server on port 5174, and the projects `desktop` (1280 by 800) and `narrow` (768 by 1024, Playground specs only). The Nano state is set per spec by the seam below, not by a project. (An earlier draft of this section had `e2e/playwright.config.ts`, port 5173 and the projects `nano-ready` and `no-nano`; brought in line with the code on Nov 18.)
 
 ```ts
 import { defineConfig, devices } from '@playwright/test';
+
+const PORT = 5174;
+
 export default defineConfig({
-  testDir: '.',
-  workers: 1,
+  testDir: './e2e',
   timeout: 60_000,
-  use: { baseURL: 'http://localhost:5173', trace: 'retain-on-failure', ...devices['Desktop Chrome'] },
-  webServer: [
-    {
-      name: 'emulators',
-      command: 'firebase emulators:start --project demo-sieve --only auth,firestore,database',
-      url: 'http://127.0.0.1:8080',
-      reuseExistingServer: true,
-      timeout: 120_000,
-    },
-    {
-      name: 'web',
-      command: 'npm run dev -w web -- --mode e2e --port 5173 --strictPort',
-      url: 'http://localhost:5173',
-      reuseExistingServer: false,
-      timeout: 60_000,
-    },
-  ],
+  expect: { timeout: 15_000 },
+  workers: 1,
+  fullyParallel: false,
+  reporter: [['list']],
+  use: { baseURL: `http://localhost:${PORT}`, trace: 'retain-on-failure' },
+  webServer: {
+    command: `npm run dev -- --mode e2e --port ${PORT} --strictPort`,
+    port: PORT,
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+    env: { VITE_E2E: 'true', VITE_USE_EMULATORS: 'true', VITE_SIEVE_E2E: '1' },   // the model seam of 3.9.1; no .env.e2e file
+  },
   projects: [
-    { name: 'nano-ready', metadata: { nano: 'available' } },
-    { name: 'no-nano', metadata: { nano: 'unavailable' } },
+    { name: 'desktop', use: { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 800 } } },
+    { name: 'narrow', use: { ...devices['Desktop Chrome'], viewport: { width: 768, height: 1024 } }, testMatch: /playground-.*\.spec\.ts/ },
   ],
 });
 ```
 
-`e2e/fixtures.ts` extends `test` so every page gets `addInitScript(n => { window.__sieveE2E = { nano: n, calls: [] }; }, nano)` from the project metadata, and a network guard: `context.route('**/*')` allows `localhost:5173`, `127.0.0.1` emulator ports and any font host 40 uses; every other request is aborted and recorded. Each test ends by asserting the record is empty.
+`web/e2e/fixtures/stubs.ts` gives every page `window.__sieveE2E = { nano, calls: [], faults: {}, answers, canaries }` through `addInitScript` (`installSeam`, with the availability each spec asks for) and a network guard (`guardNetwork`): requests to Firestore, the Realtime Database and the cloud model are aborted and recorded, App Check is answered locally, and each spec ends by asserting the record is empty. The emulators are not started here: anonymous sign-in uses the Auth emulator when one runs, and the Playground needs nothing else.
 
-#### 3.9.3 Tests (`e2e/playground.spec.ts`, both projects unless noted)
+#### 3.9.3 Tests (`web/e2e/playground-*.spec.ts` and `a11y.spec.ts`; "nano-ready" and "no-nano" below are the stubbed availabilities, run in both viewport projects unless noted)
 
 | Id | Test | Expect |
 |---|---|---|
@@ -966,9 +966,11 @@ Sieve was started for #BuildHybridAI 2026. The repository's first commit is Nov 
 
 ### Pre-existing work
 
-- **Ratchet** (`ratchet-authz-core`, `ratchet-authz-mcp` on PyPI): an open-source authorization library (MIT) by the same author, developed separately before Sieve. Sieve uses it unmodified as a dependency for the scoped, expiring connector grants and the tamper-evident audit log. Sieve's grant model, MCP tools and Firestore audit store are new.
+- **Ratchet** (`ratchet-authz-core` on PyPI): an open-source authorization library (MIT) by the same author, developed separately before Sieve. Sieve uses it unmodified as a dependency for the scoped, expiring connector grants and the tamper-evident audit log. Sieve's grant model, MCP tools and Firestore audit store are new.
 - Open-source libraries listed in `package.json` and `functions/requirements.txt`, under their own licenses.
 ```
+
+Only `ratchet-authz-core` is named because it is the one Ratchet package Sieve depends on (`functions/requirements.txt`). `ratchet-authz-mcp` is not a runtime dependency (01 section 11.7, 30 D3), so it is not disclosed as used code.
 
 Mani confirms the Ratchet wording (when it was started and first published) before submission.
 

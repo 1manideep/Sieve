@@ -1,0 +1,48 @@
+/* /try (80 sections 1 and 7): the seat's screen full width at 16:10, kept inside the viewport height. */
+.page {
+  max-width: var(--playground-max);
+  margin: 0 auto;
+  padding: 36px var(--gutter) 64px;
+  display: grid;
+  gap: var(--space-5);
+}
+
+.status { margin: 0; display: flex; align-items: center; gap: var(--space-2); font: var(--text-row); color: var(--color-text-body); }
+
+.session { display: grid; gap: var(--space-3); justify-items: center; }
+.strip {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: 10px 16px;
+  background: var(--color-device-tint-2);
+  border: 1px solid var(--color-device);
+  border-radius: var(--radius-lg);
+  font: 600 14px/1.45 var(--font-sans);
+  color: var(--color-device-strong);
+}
+.stripReal { color: var(--color-text); }
+.timer { font-variant-numeric: tabular-nums; }
+.screen { width: min(100%, calc((100vh - 220px) * 1.6)); min-width: min(100%, 640px); }
+.viewer {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--color-frame-bezel);
+}
+
+.message {
+  display: grid;
+  gap: var(--space-4);
+  justify-items: start;
+  padding: 20px 22px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+}
+.messageText { margin: 0; font: var(--text-body); color: var(--color-text-body); max-width: 70ch; }
+.actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }

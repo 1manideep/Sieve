@@ -1,0 +1,79 @@
+{
+  "cases": [
+    {
+      "id": "mime-bad-base64",
+      "input": {
+        "id": "18c3a0000000d002",
+        "threadId": "18c3a0000000d002",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "Good part",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Kestrelmoor Bank <alerts@kestrelmoor.example>"
+            },
+            {
+              "name": "To",
+              "value": "Alex Rivera <alex.rivera@inbox.example>"
+            },
+            {
+              "name": "Subject",
+              "value": "Bad base64"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 10 Nov 2026 15:00:00 GMT"
+            }
+          ],
+          "mimeType": "multipart/mixed",
+          "parts": [
+            {
+              "partId": "0",
+              "mimeType": "text/plain",
+              "filename": "",
+              "headers": [
+                {
+                  "name": "Content-Type",
+                  "value": "text/plain"
+                }
+              ],
+              "body": {
+                "size": 6,
+                "data": "!!!***"
+              }
+            },
+            {
+              "partId": "0",
+              "mimeType": "text/plain",
+              "filename": "",
+              "headers": [
+                {
+                  "name": "Content-Type",
+                  "value": "text/plain"
+                }
+              ],
+              "body": {
+                "size": 23,
+                "data": "VGhlIGdvb2QgcGFydCBzdXJ2aXZlcy4"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "includes": [
+          "The good part survives."
+        ],
+        "throws": false
+      },
+      "note": "R-MAIL-01: a part whose data does not decode is skipped"
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "cases": [
+    {
+      "id": "charset-euc-kr",
+      "input": {
+        "id": "18c3a0000000c006",
+        "threadId": "18c3a0000000c006",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Kestrelmoor Bank <alerts@kestrelmoor.example>"
+            },
+            {
+              "name": "To",
+              "value": "Alex Rivera <alex.rivera@inbox.example>"
+            },
+            {
+              "name": "Subject",
+              "value": "Charset euc-kr"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 10 Nov 2026 15:00:00 GMT"
+            }
+          ],
+          "mimeType": "multipart/alternative",
+          "parts": [
+            {
+              "partId": "0",
+              "mimeType": "text/plain",
+              "filename": "",
+              "headers": [
+                {
+                  "name": "Content-Type",
+                  "value": "text/plain; charset=\"euc-kr\""
+                }
+              ],
+              "body": {
+                "size": 10,
+                "data": "vsiz58fPvLy_5A"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "안녕하세요",
+        "throws": false
+      }
+    }
+  ]
+}

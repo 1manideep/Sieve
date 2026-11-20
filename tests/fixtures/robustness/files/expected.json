@@ -1,0 +1,198 @@
+{
+  "cases": [
+    {
+      "id": "empty.txt",
+      "input": "files/empty.txt",
+      "expected": {
+        "indexed": true,
+        "text": "",
+        "preview": "(No text found)"
+      },
+      "note": "R-FILE-01"
+    },
+    {
+      "id": "empty.pdf",
+      "input": "files/empty.pdf",
+      "expected": {
+        "skip": "unreadable"
+      },
+      "note": "R-FILE-01"
+    },
+    {
+      "id": "empty.jpg",
+      "input": "files/empty.jpg",
+      "expected": {
+        "skip": "unreadable"
+      },
+      "note": "R-FILE-01"
+    },
+    {
+      "id": "lease-text.pdf",
+      "input": "files/lease-text.pdf",
+      "expected": {
+        "textIncludes": "12. Pets."
+      },
+      "note": "a valid file after the bad ones"
+    },
+    {
+      "id": "truncated.pdf",
+      "input": "files/truncated.pdf",
+      "expected": {
+        "skip": "unreadable",
+        "scanContinues": true
+      },
+      "note": "R-FILE-02"
+    },
+    {
+      "id": "garbage.pdf",
+      "input": "files/garbage.pdf",
+      "expected": {
+        "skip": "unreadable",
+        "scanContinues": true
+      },
+      "note": "R-FILE-02"
+    },
+    {
+      "id": "scan.pdf",
+      "input": "files/scan.pdf",
+      "expected": {
+        "text": "",
+        "skipCount": "no-text"
+      },
+      "note": "R-FILE-06"
+    },
+    {
+      "id": "truncated.jpg",
+      "input": "files/truncated.jpg",
+      "expected": {
+        "dims": {
+          "width": 3000,
+          "height": 4000
+        },
+        "decode": "unreadable",
+        "scanContinues": true
+      },
+      "note": "R-FILE-02"
+    },
+    {
+      "id": "truncated.json",
+      "input": "files/truncated.json",
+      "expected": {
+        "rawTextFallback": true,
+        "textIncludes": "Jordan Ellis"
+      },
+      "note": "R-FILE-02"
+    },
+    {
+      "id": "notes-cp1252.txt",
+      "input": "files/notes-cp1252.txt",
+      "expected": {
+        "text": "Café notes: “deposit” is €1,200\n"
+      },
+      "note": "R-FILE-07"
+    },
+    {
+      "id": "notes-utf16le-bom.txt",
+      "input": "files/notes-utf16le-bom.txt",
+      "expected": {
+        "text": "Lease renewal for unit 3B 🎂\n"
+      },
+      "note": "R-FILE-07"
+    },
+    {
+      "id": "notes-utf16be-bom.txt",
+      "input": "files/notes-utf16be-bom.txt",
+      "expected": {
+        "text": "Lease renewal for unit 3B\n"
+      },
+      "note": "R-FILE-07"
+    },
+    {
+      "id": "notes-utf16le-nobom.txt",
+      "input": "files/notes-utf16le-nobom.txt",
+      "expected": {
+        "text": "Lease renewal for unit 3B\n"
+      },
+      "note": "R-FILE-07: zeros at odd positions"
+    },
+    {
+      "id": "notes-sjis.txt",
+      "input": "files/notes-sjis.txt",
+      "expected": {
+        "text": "こんにちは\n",
+        "declared": "shift_jis"
+      },
+      "note": "R-FILE-07: without a declared label Shift_JIS reads as windows-1252; folder files have no label"
+    },
+    {
+      "id": "notes-utf8-bom.txt",
+      "input": "files/notes-utf8-bom.txt",
+      "expected": {
+        "text": "Packing list: charger, rain jacket\n"
+      },
+      "note": "R-FILE-07"
+    },
+    {
+      "id": "binary.dat.txt",
+      "input": "files/binary.dat.txt",
+      "expected": {
+        "skip": "binary"
+      },
+      "note": "R-FILE-07"
+    },
+    {
+      "id": "bomb-30000.png",
+      "input": "files/bomb-30000.png",
+      "expected": {
+        "dims": {
+          "width": 30000,
+          "height": 30000
+        },
+        "skip": "too-large",
+        "createImageBitmapCalls": 0
+      },
+      "note": "R-FILE-08"
+    },
+    {
+      "id": "encrypted-user.pdf",
+      "input": "files/encrypted-user.pdf",
+      "expected": {
+        "skip": "password"
+      },
+      "note": "R-FILE-05: made once with qpdf --encrypt; not generated here"
+    },
+    {
+      "id": "encrypted-owner-only.pdf",
+      "input": "files/encrypted-owner-only.pdf",
+      "expected": {
+        "indexed": true
+      },
+      "note": "R-FILE-05: made once with qpdf; not generated here"
+    },
+    {
+      "id": "cid-garbage.pdf",
+      "input": "files/cid-garbage.pdf",
+      "expected": {
+        "text": "",
+        "skipCount": "no-text"
+      },
+      "note": "R-FILE-06: needs a font without ToUnicode; not generated here"
+    },
+    {
+      "id": "cjk.pdf",
+      "input": "files/cjk.pdf",
+      "expected": {
+        "textIncludes": "検査"
+      },
+      "note": "R-FILE-06: needs a CMap font; not generated here"
+    },
+    {
+      "id": "cve-2024-4367-style.pdf",
+      "input": "files/cve-2024-4367-style.pdf",
+      "expected": {
+        "noConsoleLog": true
+      },
+      "note": "R-FILE-04: the public proof-of-concept structure; not generated here"
+    }
+  ]
+}

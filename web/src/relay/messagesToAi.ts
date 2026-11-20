@@ -1,0 +1,14 @@
+// Sentences written into RelayRequest.message for the outside AI (40 section 11.6). Never content.
+// Blocked and no-match share one sentence (00 decision D6): an outside AI must not tell "blocked" from "no match".
+// The person still sees the real reason in the app.
+export const MSG = {
+  declined: 'The person declined to share this.',
+  blocked: 'Nothing to share for that.',
+  noMatch: 'Nothing to share for that.',
+  modelUnavailable: "Sieve can't read the person's data on this device right now. Try again later.",
+  error: "Sieve couldn't prepare an answer on the person's device. Try again later.",
+  badRequest: "Sieve couldn't read this request. Ask again.",
+  noReadableWords: 'The question had no readable words. Ask again in plain text.',   // 70 R-MCP-04
+} as const;
+
+export type MessageKey = keyof typeof MSG;

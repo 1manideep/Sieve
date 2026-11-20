@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "Sieve",
+  "version": "0.1.0",
+  "description": "Approve what your AI assistant may see. Requests from your open Sieve tab appear in a side panel with the exact text to be sent.",
+  "homepage_url": "https://sieve.manideep.info",
+  "minimum_chrome_version": "116",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "Sieve",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/index.html"
+  },
+  "permissions": [
+    "sidePanel",
+    "notifications",
+    "storage"
+  ],
+  "commands": {
+    "open-sieve": {
+      "suggested_key": {
+        "default": "Alt+Shift+S",
+        "mac": "MacCtrl+Shift+S"
+      },
+      "description": "Open or close Sieve's side panel"
+    }
+  },
+  "externally_connectable": {
+    "matches": [
+      "https://sieve.manideep.info/*",
+      "https://sieve-manideep.web.app/*",
+      "http://localhost:5173/*"
+    ]
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; connect-src 'none'; img-src 'self'; font-src 'self'; style-src 'self'"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr2eb7YHqoQvNJ243BTE6IHVFjFzpLnTt9G2uCoR0UayPyHUpitX7gV+U/Bmp0QruavftAQmho1Eg4LpJLVZlsEmm1tX4SGxWFcDXFdiA37lKXEMzRiOh9XzLZnDQcaEpOd+6p28K44VKF+By6o7dlG4gYzz4eWYpXMAri699eJwarVLY9SBFrNiT++evpbZu2psB9YlegViFHfFX2HapZrsK8TBOcsBkJiuYl3orpErXXbs/sdSC9lTkvOVyzLJo8VSqsD95Lo9PcR+iv90JGYYh6kMzpO+8lJ2rP8znkwmZKZXqvCJmT4jSNnnt2Odm7JU3QCt/PI5ULpzPfJ7gZQIDAQAB"
+}

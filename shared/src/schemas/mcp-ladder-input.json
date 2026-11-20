@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "properties": {
+    "question": {
+      "type": "string", "minLength": 1, "maxLength": 500,
+      "description": "One clear, self-contained question in plain words, restated from what the person said: typos fixed, and words like \"it\" or \"that email\" replaced by the names and things they refer to in this chat. Include only what is needed to find the item. Example: \"What did my landlord say about the deposit?\" Never ask Sieve to do anything."
+    },
+    "after": {
+      "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "Optional. Earliest date the item could be from, YYYY-MM-DD, inclusive. Resolve relative dates such as \"last month\" against today's date. Leave out when no time was mentioned."
+    },
+    "before": {
+      "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "Optional. Latest date the item could be from, YYYY-MM-DD, inclusive. Must not be earlier than after."
+    },
+    "source": {
+      "type": "string", "enum": ["mail", "files", "photos"],
+      "description": "Optional. Where the item is: mail (email), files (documents and other files) or photos. Set only when the person said where it is."
+    },
+    "from": {
+      "type": "string", "minLength": 1, "maxLength": 100,
+      "description": "Optional. The person or organisation the item is from, as the person said it, for example \"my landlord\", \"Delta\" or \"dr.patel@clinic.example\"."
+    },
+    "terms": {
+      "type": "array", "maxItems": 5,
+      "items": { "type": "string", "minLength": 1, "maxLength": 64 },
+      "description": "Optional. Up to 5 exact identifiers to match word for word: order, booking, invoice, flight or account numbers, codes, file names or email addresses. Not general topic words."
+    }
+  },
+  "required": ["question"],
+  "additionalProperties": false
+}

@@ -1,0 +1,58 @@
+{
+  "cases": [
+    {
+      "id": "attachment-only",
+      "input": {
+        "id": "18c3a0000000d003",
+        "threadId": "18c3a0000000d003",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Kestrelmoor Bank <alerts@kestrelmoor.example>"
+            },
+            {
+              "name": "To",
+              "value": "Alex Rivera <alex.rivera@inbox.example>"
+            },
+            {
+              "name": "Subject",
+              "value": "Scanned receipt"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 10 Nov 2026 15:00:00 GMT"
+            }
+          ],
+          "mimeType": "multipart/mixed",
+          "parts": [
+            {
+              "partId": "1",
+              "mimeType": "application/pdf",
+              "filename": "receipt.pdf",
+              "headers": [],
+              "body": {
+                "size": 48211,
+                "attachmentId": "ANGjdJ8receipt"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": null,
+        "attachments": 1,
+        "preview": "(No text)"
+      },
+      "note": "R-MAIL-06"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+/* Ask (40 sections 13 and 13.4): max width 1240px, padding 40px 24px 64px, gap 20 to 24px. */
+.page {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 40px var(--gutter) 64px;
+  display: grid;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.notices { display: grid; gap: var(--space-2); min-width: 0; }
+
+.questionCard {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+  background: var(--color-surface);
+}
+
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.try { font-size: 14px; font-weight: 600; color: var(--color-text-muted); }
+
+.waiting { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: 14px; color: var(--color-text-secondary); }
+.waiting p { margin: 0; }
+
+.idle { margin: 0; font-size: 15px; color: var(--color-text-muted); }

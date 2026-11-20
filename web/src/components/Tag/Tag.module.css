@@ -1,0 +1,22 @@
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-width: 0;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  font: var(--text-label);
+  vertical-align: middle;
+}
+
+.text { min-width: 0; overflow-wrap: anywhere; }
+.icon { flex: none; width: 14px; height: 14px; }
+
+.device { background: var(--color-device-tint); color: var(--color-device-strong); }
+.deviceCode { background: var(--color-device-tint-2); border-color: var(--color-device); color: var(--color-device-strong); }
+.cloud { background: var(--color-cloud-tint); color: var(--color-cloud); }
+.warn { background: var(--color-warn-tint); color: var(--color-warn-text); }
+.never { background: var(--color-never-tint); color: var(--color-never-text); }
+.muted { background: var(--color-surface-muted); color: var(--color-text-secondary); }

@@ -1,0 +1,19 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "presence": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$deviceId": {
+          ".write": "auth != null && auth.uid === $uid && auth.token.firebase.sign_in_provider !== 'anonymous' && $deviceId.matches(/^[A-Za-z0-9_-]{8,64}$/)",
+          ".validate": "newData.hasChildren(['state', 'isHomeBase', 'lastChanged'])",
+          "state": { ".validate": "newData.isString() && (newData.val() === 'online' || newData.val() === 'offline')" },
+          "isHomeBase": { ".validate": "newData.isBoolean()" },
+          "lastChanged": { ".validate": "newData.isNumber() && newData.val() <= now + 60000" },
+          "$other": { ".validate": false }
+        }
+      }
+    }
+  }
+}

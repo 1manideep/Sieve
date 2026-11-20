@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "seedVersion": "pg-2026-11-16.2",
+  "playgroundNow": "2026-11-17T09:00:00-06:00",
+  "embeddingModel": "Xenova/all-MiniLM-L6-v2",
+  "counts": {
+    "emails": 30,
+    "documents": 6,
+    "photos": 10,
+    "records": 46
+  },
+  "photos": {
+    "placeholders": [
+      "IMG_4821.jpg",
+      "IMG_4822.jpg",
+      "IMG_3310.jpg",
+      "IMG_5007.jpg",
+      "IMG_5120.jpg",
+      "IMG_5133.jpg",
+      "IMG_5201.jpg",
+      "cat-on-windowsill.png",
+      "IMG_5250.jpg",
+      "IMG_5302.jpg"
+    ],
+    "originals": []
+  }
+}

@@ -1,0 +1,11 @@
+.header { background: transparent; }
+
+.inner {
+  display: flex;
+  align-items: center;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 14px var(--gutter);
+}
+
+.main:focus { outline: none; }

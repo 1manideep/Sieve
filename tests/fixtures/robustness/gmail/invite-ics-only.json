@@ -1,0 +1,65 @@
+{
+  "cases": [
+    {
+      "id": "invite-ics-only",
+      "input": {
+        "id": "18c3a0000000d004",
+        "threadId": "18c3a0000000d004",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Thistlewick Property Management <leasing@thistlewick-pm.example>"
+            },
+            {
+              "name": "To",
+              "value": "Alex Rivera <alex.rivera@inbox.example>"
+            },
+            {
+              "name": "Subject",
+              "value": "Invitation: Lease signing"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 10 Nov 2026 15:00:00 GMT"
+            }
+          ],
+          "mimeType": "multipart/mixed",
+          "parts": [
+            {
+              "partId": "0",
+              "mimeType": "text/calendar",
+              "filename": "",
+              "headers": [
+                {
+                  "name": "Content-Type",
+                  "value": "text/calendar; charset=\"utf-8\""
+                }
+              ],
+              "body": {
+                "size": 309,
+                "data": "QkVHSU46VkNBTEVOREFSDQpCRUdJTjpWRVZFTlQNClNVTU1BUlk6TGVhc2Ugc2lnbmluZw0KRFRTVEFSVDtUWklEPUFtZXJpY2EvQ2hpY2FnbzoyMDI2MTIwNFQwOTAwMDANCkRURU5EO1RaSUQ9QW1lcmljYS9DaGljYWdvOjIwMjYxMjA0VDA5MzAwMA0KTE9DQVRJT046VW5pdCAzQlwsIGZyb250IG9mZmljZQ0KT1JHQU5JWkVSO0NOPURhbmEgV2hpdGZpZWxkOm1haWx0bzpkYW5hQHRoaXN0bGV3aWNrLXBtLmV4YW1wbGUNCkRFU0NSSVBUSU9OOkJyaW5nIHRoZSBzaWduZWQNCiAgcmVuZXdhbA0KRU5EOlZFVkVOVA0KRU5EOlZDQUxFTkRBUg0K"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "includes": [
+          "Summary: Lease signing",
+          "Starts: 2026-12-04 09:00 (America/Chicago)"
+        ],
+        "later": true
+      },
+      "note": "R-MAIL-06 (later): folded lines and escaped commas"
+    }
+  ]
+}

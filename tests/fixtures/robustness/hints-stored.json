@@ -1,0 +1,134 @@
+{
+  "note": "parseStoredHints never throws; valid fields survive; null means undefined",
+  "cases": [
+    {
+      "id": "terms-mixed",
+      "input": {
+        "terms": [
+          1,
+          null
+        ],
+        "after": "2026-10-01"
+      },
+      "expected": {
+        "after": "2026-10-01"
+      }
+    },
+    {
+      "id": "terms-partly-valid",
+      "input": {
+        "terms": [
+          "A1",
+          7,
+          "B2",
+          "A1",
+          "1",
+          "2",
+          "3",
+          "4"
+        ]
+      },
+      "expected": {
+        "terms": [
+          "A1",
+          "B2",
+          "1",
+          "2",
+          "3"
+        ]
+      }
+    },
+    {
+      "id": "after-number",
+      "input": {
+        "after": 20261001,
+        "before": "2026-10-31"
+      },
+      "expected": {
+        "before": "2026-10-31"
+      }
+    },
+    {
+      "id": "impossible-date",
+      "input": {
+        "after": "2026-02-30",
+        "source": "mail"
+      },
+      "expected": {
+        "source": "mail"
+      }
+    },
+    {
+      "id": "day-first-date",
+      "input": {
+        "before": "16/11/2026",
+        "from": "Dana"
+      },
+      "expected": {
+        "from": "Dana"
+      }
+    },
+    {
+      "id": "after-later-than-before",
+      "input": {
+        "after": "2026-10-05",
+        "before": "2026-10-01",
+        "terms": [
+          "4471"
+        ]
+      },
+      "expected": {
+        "terms": [
+          "4471"
+        ]
+      }
+    },
+    {
+      "id": "bad-source-and-from",
+      "input": {
+        "source": "spam",
+        "from": "Dana\u202E",
+        "terms": [
+          "A1",
+          "A1",
+          "  "
+        ]
+      },
+      "expected": {
+        "terms": [
+          "A1"
+        ]
+      }
+    },
+    {
+      "id": "not-an-object",
+      "input": [
+        "2026-10-01"
+      ],
+      "expected": null
+    },
+    {
+      "id": "nothing-valid",
+      "input": {
+        "after": "",
+        "before": null,
+        "source": 7,
+        "from": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "terms": [
+          "\u200B",
+          "",
+          "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          7
+        ],
+        "interpreted": [
+          {
+            "text": "x",
+            "as": "y",
+            "ambiguous": false
+          }
+        ]
+      },
+      "expected": null
+    }
+  ]
+}

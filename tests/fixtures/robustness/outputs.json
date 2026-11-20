@@ -1,0 +1,285 @@
+{
+  "cases": [
+    {
+      "id": "spans-overlapping",
+      "input": {
+        "text": "Call Dana Whitfield at 555-0142 today.",
+        "spans": [
+          {
+            "start": 5,
+            "end": 19,
+            "type": "name",
+            "by": "validator"
+          },
+          {
+            "start": 10,
+            "end": 31,
+            "type": "phone",
+            "by": "validator"
+          }
+        ]
+      },
+      "expected": {
+        "wellFormed": true,
+        "tokensWhole": true,
+        "removedValues": [
+          "Whitfield",
+          "555-0142"
+        ]
+      }
+    },
+    {
+      "id": "spans-adjacent",
+      "input": {
+        "text": "DanaWhitfield5550142",
+        "spans": [
+          {
+            "start": 0,
+            "end": 13,
+            "type": "name",
+            "by": "validator"
+          },
+          {
+            "start": 13,
+            "end": 20,
+            "type": "phone",
+            "by": "validator"
+          }
+        ]
+      },
+      "expected": {
+        "wellFormed": true,
+        "tokensWhole": true,
+        "removedValues": [
+          "Whitfield",
+          "5550142"
+        ]
+      }
+    },
+    {
+      "id": "spans-out-of-range",
+      "input": {
+        "text": "Short text.",
+        "spans": [
+          {
+            "start": 5,
+            "end": 500,
+            "type": "name",
+            "by": "validator"
+          },
+          {
+            "start": -3,
+            "end": 2,
+            "type": "name",
+            "by": "validator"
+          }
+        ]
+      },
+      "expected": {
+        "wellFormed": true,
+        "noThrow": true
+      }
+    },
+    {
+      "id": "spans-zero-length",
+      "input": {
+        "text": "Nothing here.",
+        "spans": [
+          {
+            "start": 4,
+            "end": 4,
+            "type": "name",
+            "by": "validator"
+          }
+        ]
+      },
+      "expected": {
+        "wellFormed": true,
+        "unchanged": true
+      }
+    },
+    {
+      "id": "spans-end-of-text",
+      "input": {
+        "text": "Reach me at alex.rivera@inbox.example",
+        "spans": [
+          {
+            "start": 12,
+            "end": 37,
+            "type": "email",
+            "by": "validator"
+          }
+        ]
+      },
+      "expected": {
+        "wellFormed": true,
+        "tokensWhole": true,
+        "removedValues": [
+          "alex.rivera@inbox.example"
+        ]
+      }
+    },
+    {
+      "id": "spans-inside-zwj-family",
+      "input": {
+        "text": "Family 👨\u200D👩\u200D👧 with Maria Rivera",
+        "spans": [
+          {
+            "start": 9,
+            "end": 12,
+            "type": "name",
+            "by": "validator"
+          },
+          {
+            "start": 20,
+            "end": 32,
+            "type": "name",
+            "by": "validator"
+          }
+        ]
+      },
+      "expected": {
+        "wellFormed": true,
+        "tokensWhole": true
+      }
+    },
+    {
+      "id": "spans-inside-flag",
+      "input": {
+        "text": "Trip 🇮🇳 with Jordan Ellis",
+        "spans": [
+          {
+            "start": 6,
+            "end": 8,
+            "type": "name",
+            "by": "validator"
+          }
+        ]
+      },
+      "expected": {
+        "wellFormed": true
+      }
+    },
+    {
+      "id": "excerpt-deposit",
+      "input": {
+        "recordText": "Hi Alex, the deposit of $1,200 will be returned within 21 days of move-out. Thanks, Dana",
+        "excerpt": "the deposit of $1,200 will be returned within 21 days of move-out."
+      },
+      "expected": {
+        "substringOfRecord": true
+      }
+    },
+    {
+      "id": "excerpt-emoji",
+      "input": {
+        "recordText": "Dinner at 7 👨\u200D👩\u200D👧 bring the cake 🎂 please",
+        "excerpt": "bring the cake 🎂 please"
+      },
+      "expected": {
+        "substringOfRecord": true
+      }
+    },
+    {
+      "id": "guard-rule-never",
+      "input": {
+        "change": "rule",
+        "category": "Money",
+        "to": "never"
+      },
+      "expected": {
+        "code": "rule-never",
+        "message": "Your rules now never share Money items. Nothing was sent.",
+        "firestoreWrites": 0,
+        "receipts": 0
+      }
+    },
+    {
+      "id": "guard-grant-narrowed",
+      "input": {
+        "change": "grant",
+        "removeCategory": "Money"
+      },
+      "expected": {
+        "code": "category-not-allowed",
+        "message": "Helper may no longer ask about Money items. Nothing was sent.",
+        "firestoreWrites": 0
+      }
+    },
+    {
+      "id": "guard-blocked",
+      "input": {
+        "change": "block"
+      },
+      "expected": {
+        "code": "blocked",
+        "message": "You blocked this item for Helper. Nothing was sent.",
+        "firestoreWrites": 0
+      }
+    },
+    {
+      "id": "guard-revoked",
+      "input": {
+        "change": "revoke"
+      },
+      "expected": {
+        "code": "request-closed",
+        "message": "This request was closed. Nothing was sent.",
+        "firestoreWrites": 0
+      }
+    },
+    {
+      "id": "guard-step-lowered",
+      "input": {
+        "change": "grant",
+        "maxStep": "answer",
+        "step": "excerpt"
+      },
+      "expected": {
+        "code": "step-too-high",
+        "message": "Helper may no longer receive this much. Nothing was sent."
+      }
+    },
+    {
+      "id": "guard-expired",
+      "input": {
+        "change": "expire"
+      },
+      "expected": {
+        "code": "expired",
+        "message": "This request expired. Nothing was sent."
+      }
+    },
+    {
+      "id": "guard-unmasked-card",
+      "input": {
+        "payload": "Card 4111 1111 1111 1111 was charged $1,200 for the deposit.",
+        "question": "how much was the deposit?"
+      },
+      "expected": {
+        "code": "unmasked-number",
+        "message": "Sieve found a card number that wasn't masked, so it stopped. Nothing was sent."
+      }
+    },
+    {
+      "id": "guard-card-in-question",
+      "input": {
+        "payload": "Card 4111 1111 1111 1111 was charged $1,200 for the deposit.",
+        "question": "what was charged to card 4111 1111 1111 1111?"
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "guard-hidden-char",
+      "input": {
+        "payload": "The deposit is $1,200.\u200B"
+      },
+      "expected": {
+        "code": "not-clean",
+        "message": "Sieve stopped: the text had characters it couldn't show you. Nothing was sent."
+      }
+    }
+  ]
+}

@@ -17,3 +17,24 @@ spikes/results/
 
 # Internal review notes stay out of the public repo
 docs/review/
+
+# Monorepo build, test and emulator output
+.env.local
+!.env.e2e
+venv/
+coverage/
+playwright-report/
+test-results/
+
+# Playground dataset tooling: the Python venv, and the original photos the build processes
+data/playground/tools/.venv/
+data/playground/photos/originals/
+
+# Extension release zips (50 section 12.5)
+artifacts/
+
+# Browser model weights and the ONNX runtime are fetched at build time (11 section 5), never committed
+web/public/models/
+web/public/ort/
+web/public/pdfjs/
+.vitest/

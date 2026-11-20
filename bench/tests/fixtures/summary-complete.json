@@ -1,0 +1,39 @@
+{
+  "_about": "Made-up values for the report tests. Not a measurement.",
+  "version": 1,
+  "set_id": "2026-11-24-set1",
+  "complete": true,
+  "rehearsal": false,
+  "model_id": "gemini-test-flash",
+  "date": "2026-11-24T18:30:00+00:00",
+  "arms": {},
+  "b": {
+    "chars": 41250,
+    "chars_min": 39870,
+    "chars_max": 44102,
+    "whole": 14,
+    "excerpts": 0,
+    "answers": 0,
+    "summaries": 31,
+    "items": 33,
+    "private": 6,
+    "photos": 1,
+    "inj": 1,
+    "correct": 8
+  },
+  "s": {
+    "chars": 1630,
+    "chars_min": 1512,
+    "chars_max": 1708,
+    "whole": 0,
+    "excerpts": 1,
+    "answers": 8,
+    "summaries": 0,
+    "items": 1,
+    "private": 0,
+    "photos": 0,
+    "inj": 0,
+    "correct": 9
+  },
+  "headline": "Across the 10 tasks, the outside model received 41,250 characters through direct access and 1,630 through Sieve."
+}

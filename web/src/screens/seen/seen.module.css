@@ -1,0 +1,94 @@
+/* What has AI seen? (40 section 13.7). */
+.page {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: 36px var(--gutter) 64px;
+  display: grid;
+  gap: var(--space-5);
+}
+
+/* AuditBadge */
+.audit { position: relative; display: grid; gap: var(--space-1); justify-items: end; max-width: 420px; }
+.auditRow { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; justify-content: flex-end; }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--target-min);
+  padding: 8px 14px;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  font: 600 14px/1.4 var(--font-sans);
+  cursor: pointer;
+}
+.badgeNeutral { background: var(--color-surface-muted); color: var(--color-text-secondary); }
+.badgeDevice { background: var(--color-device-tint); color: var(--color-device-strong); }
+.badgeNever { background: var(--color-never-tint); color: var(--color-never-text); border-color: var(--color-never-border); }
+.auditSub { margin: 0; font: var(--text-meta); color: var(--color-text-muted); text-align: right; }
+.popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: var(--z-popover);
+  width: min(360px, calc(100vw - 32px));
+  padding: 14px 16px;
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-popover);
+  font: 400 14px/1.5 var(--font-sans);
+  color: var(--color-text-body);
+}
+.popover[hidden] { display: none; }
+
+/* ReceiptFilters */
+.filters { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.aiGroup { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.filterLabel { font: 600 14px/1.45 var(--font-sans); color: var(--color-text-secondary); }
+.selectWrap { display: flex; align-items: center; gap: var(--space-2); }
+.select {
+  min-height: var(--target-min);
+  padding: 8px 12px;
+  border: 1px solid var(--color-border-control);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 15px;
+}
+
+/* ReceiptList */
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-divider);
+  align-items: flex-start;
+}
+.row:last-child { border-bottom: none; }
+.when { flex: 0 0 120px; font: var(--text-meta); color: var(--color-text-subtle); padding-top: 2px; }
+.whatWho { flex: 999 1 340px; min-width: 0; display: grid; gap: var(--space-1); }
+.what { margin: 0; font: 600 15px/1.45 var(--font-sans); overflow-wrap: anywhere; }
+.who { margin: 0; font: var(--text-meta); color: var(--color-text-muted); overflow-wrap: anywhere; }
+.tags { flex: 1 1 260px; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chars { font: var(--text-meta); color: var(--color-text-muted); }
+.action { flex: 0 0 auto; }
+
+.state {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: start;
+  padding: 20px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+}
+.stateText { margin: 0; font: var(--text-row); color: var(--color-text-body); }
+.note { margin: 0; font: var(--text-ui); font-weight: 400; color: var(--color-text-muted); }

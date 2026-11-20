@@ -1,0 +1,62 @@
+{
+  "cases": [
+    {
+      "id": "charset-utf-7-declared",
+      "input": {
+        "id": "18c3a0000000c00a",
+        "threadId": "18c3a0000000c00a",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Kestrelmoor Bank <alerts@kestrelmoor.example>"
+            },
+            {
+              "name": "To",
+              "value": "Alex Rivera <alex.rivera@inbox.example>"
+            },
+            {
+              "name": "Subject",
+              "value": "Charset utf-7-declared"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 10 Nov 2026 15:00:00 GMT"
+            }
+          ],
+          "mimeType": "multipart/alternative",
+          "parts": [
+            {
+              "partId": "0",
+              "mimeType": "text/plain",
+              "filename": "",
+              "headers": [
+                {
+                  "name": "Content-Type",
+                  "value": "text/plain; charset=\"utf-7\""
+                }
+              ],
+              "body": {
+                "size": 11,
+                "data": "SGVsbG8gK0FLTS0"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "Hello +AKM-",
+        "throws": false
+      },
+      "note": "browsers have no UTF-7; the label is dropped"
+    }
+  ]
+}

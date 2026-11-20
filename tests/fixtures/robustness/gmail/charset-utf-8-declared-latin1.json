@@ -1,0 +1,62 @@
+{
+  "cases": [
+    {
+      "id": "charset-utf-8-declared-latin1",
+      "input": {
+        "id": "18c3a0000000c00d",
+        "threadId": "18c3a0000000c00d",
+        "labelIds": [
+          "INBOX"
+        ],
+        "snippet": "",
+        "internalDate": "1794322800000",
+        "sizeEstimate": 2048,
+        "payload": {
+          "partId": "",
+          "filename": "",
+          "headers": [
+            {
+              "name": "From",
+              "value": "Kestrelmoor Bank <alerts@kestrelmoor.example>"
+            },
+            {
+              "name": "To",
+              "value": "Alex Rivera <alex.rivera@inbox.example>"
+            },
+            {
+              "name": "Subject",
+              "value": "Charset utf-8-declared-latin1"
+            },
+            {
+              "name": "Date",
+              "value": "Tue, 10 Nov 2026 15:00:00 GMT"
+            }
+          ],
+          "mimeType": "multipart/alternative",
+          "parts": [
+            {
+              "partId": "0",
+              "mimeType": "text/plain",
+              "filename": "",
+              "headers": [
+                {
+                  "name": "Content-Type",
+                  "value": "text/plain; charset=\"iso-8859-1\""
+                }
+              ],
+              "body": {
+                "size": 5,
+                "data": "Y2Fmw6k"
+              }
+            }
+          ]
+        }
+      },
+      "expected": {
+        "text": "café",
+        "throws": false
+      },
+      "note": "V3: Gmail is reported to return UTF-8 bytes whatever the declared charset"
+    }
+  ]
+}

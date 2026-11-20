@@ -1,0 +1,125 @@
+{
+  "cases": [
+    {
+      "id": "n01",
+      "input": {
+        "question": "deposit 1200",
+        "text": "The deposit is $1,200.00."
+      },
+      "expected": {
+        "shared": "1200"
+      }
+    },
+    {
+      "id": "n02",
+      "input": {
+        "question": "€1.200,00",
+        "text": "paid 1200 euros"
+      },
+      "expected": {
+        "shared": "1200"
+      }
+    },
+    {
+      "id": "n03",
+      "input": {
+        "question": "1.2k",
+        "text": "a 1,200 dollar deposit"
+      },
+      "expected": {
+        "shared": "1200"
+      }
+    },
+    {
+      "id": "n04",
+      "input": {
+        "question": "the $45 payment",
+        "text": "You paid Jordan Ellis $45.00"
+      },
+      "expected": {
+        "shared": "45"
+      }
+    },
+    {
+      "id": "n05",
+      "input": {
+        "question": "1 200",
+        "text": "a 1,200 dollar deposit"
+      },
+      "expected": {
+        "shared": "1200"
+      }
+    },
+    {
+      "id": "n06",
+      "input": {
+        "question": "1'200",
+        "text": "1200 francs"
+      },
+      "expected": {
+        "shared": "1200"
+      }
+    },
+    {
+      "id": "n07",
+      "input": {
+        "question": "1200.50",
+        "text": "total $1,200.50"
+      },
+      "expected": {
+        "shared": "1200.50"
+      }
+    },
+    {
+      "id": "n08",
+      "input": {
+        "question": "order 88231",
+        "text": "Order #88231 has shipped"
+      },
+      "expected": {
+        "shared": "88231"
+      }
+    },
+    {
+      "id": "n09",
+      "input": {
+        "question": "\uFF11\uFF12\uFF10\uFF10",
+        "text": "deposit 1200"
+      },
+      "expected": {
+        "shared": "1200"
+      }
+    },
+    {
+      "id": "n10",
+      "input": {
+        "question": "1.200",
+        "text": "deposit 1200"
+      },
+      "expected": {
+        "shared": "1200"
+      },
+      "note": "1.200 alone yields both 1200 and 1.2"
+    },
+    {
+      "id": "n11",
+      "input": {
+        "question": "1.200",
+        "text": "rate 1.2"
+      },
+      "expected": {
+        "shared": "1.2"
+      }
+    },
+    {
+      "id": "n12",
+      "input": {
+        "question": "2k budget",
+        "text": "budget of 2,000"
+      },
+      "expected": {
+        "shared": "2000"
+      }
+    }
+  ]
+}
