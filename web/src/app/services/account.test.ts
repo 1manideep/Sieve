@@ -58,7 +58,7 @@ describe('deleteAccount', () => {
     expect(order).toEqual(['stop', 'presence', 'push', 'deleteAccount', 'wipe', 'salt', 'signOut']);
     expect(window.localStorage.getItem('sieve.realDbOwner')).toBeNull();
     expect(window.localStorage.getItem('sieve.setupDone.u1')).toBeNull();
-    await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('/welcome'));
+    await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('/'));
     expect(useToasts.getState().toasts.at(-1)).toMatchObject({ tone: 'success', title: ACCOUNT_DELETE.done });
   });
 

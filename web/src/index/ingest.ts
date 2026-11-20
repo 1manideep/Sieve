@@ -93,8 +93,9 @@ async function pauseForStorage(db: SieveDb, source: SourceKind): Promise<void> {
 }
 
 /** The contract call: throws IngestError when the item is skipped. */
-export async function ingest(db: SieveDb, raw: RawItem, data: 'own' | 'sample'): Promise<IndexRecord> {
-  const rec = await ingestInternal(db, raw, data, {});
+/** `opts.priority: 'high'` when a person waits for the item (the queue makes it searchable first, 20 section 13.1). */
+export async function ingest(db: SieveDb, raw: RawItem, data: 'own' | 'sample', opts: { priority?: 'normal' | 'high' } = {}): Promise<IndexRecord> {
+  const rec = await ingestInternal(db, raw, data, opts.priority ? { priority: opts.priority } : {});
   if (!rec) throw new IngestError('invalid', 'This item was deleted while it was being added.');
   return rec;
 }

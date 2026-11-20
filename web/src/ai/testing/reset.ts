@@ -7,7 +7,7 @@ import { dropBaseSessions } from '../device/sessions';
 import { resetE2EHooksForTests } from '../e2e';
 import { clearModelCache, setHybridForTests } from '../hybrid';
 import { resetInitForTests } from '../init';
-import { resetPolicyBreachesForTests } from '../runModel';
+import { resetCloudRefusalsForTests, resetPolicyBreachesForTests } from '../runModel';
 
 export function resetAiForTests(): void {
   dropBaseSessions();
@@ -18,6 +18,7 @@ export function resetAiForTests(): void {
   clearModelCache();
   resetInitForTests();
   resetPolicyBreachesForTests();
+  resetCloudRefusalsForTests();
   resetE2EHooksForTests();
   TIMING.backgroundResumeDelayMs = BACKGROUND_RESUME_DELAY_MS;
   TIMING.sampleQuotaRetryMs = SAMPLE_QUOTA_RETRY_MS;

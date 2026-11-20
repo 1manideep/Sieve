@@ -2,7 +2,7 @@
 import { expect, test } from '@playwright/test';
 import { DEPOSIT_ANSWER, fakeDraft } from './fixtures/fakeModel';
 import { APPROVE, DRAFT_HEADING, INSTRUCTION, LANDLORD, LANDLORD_OTHER_SENTENCE, askChip, chip, openPlayground, openTrace, tabTo, traceRow } from './fixtures/helpers';
-import { cloudCalls, prepareStubs } from './fixtures/stubs';
+import { cloudCalls, prepareStubs, seamCalls } from './fixtures/stubs';
 
 test.describe('Playground golden path', () => {
   test('on-device model ready: answer on the device, draft in the cloud, one receipt', async ({ page }) => {
@@ -34,6 +34,17 @@ test.describe('Playground golden path', () => {
     expect(cloud[0].prompt).toContain(INSTRUCTION);
     expect(cloud[0].prompt).not.toContain(LANDLORD_OTHER_SENTENCE);
 
+    // Every model call of the visit (11 section 10.7): loading and indexing the sample data make none; the question
+    // makes one select-answer, then one injection-check and one pii-check on the text that would leave, on the device.
+    const calls = await seamCalls(page);
+    expect(calls.map((c) => c.purpose)).toEqual(['select-answer', 'injection-check', 'pii-check', 'draft']);
+    for (const c of calls.slice(1, 3)) {
+      expect(c).toMatchObject({ recordIds: ['playground:pg-mail-02'], data: 'sample', sdkReported: 'on_device' });
+      expect(c.prompt).toContain('$1,200');
+    }
+    await expect(page.locator('li[data-kind="injection"][data-where="device"]').getByText('No hidden instructions in the text to share')).toBeVisible();
+    await expect(page.locator('li[data-kind="pii"][data-where="device"]').getByText('No more personal details in the text to share')).toBeVisible();
+
     await page.getByRole('tab', { name: 'What has AI seen? (1)' }).click();
     await expect(page.getByTestId('receipt-what')).toHaveText('Answer only from "Re: Deposit for the apartment"');
     expect(forbidden).toEqual([]);
@@ -51,7 +62,28 @@ test.describe('Playground golden path', () => {
     await expect(page.getByText('Sample data ran in the cloud', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: APPROVE }).click();
     await expect(page.getByTestId('draft-text')).toHaveText(fakeDraft(DEPOSIT_ANSWER));
-    expect((await cloudCalls(page)).map((c) => c.purpose)).toEqual(expect.arrayContaining(['select-answer', 'draft']));
+    // Without the on-device model the share-time injection check of sample data runs in the cloud (as the ingest check
+    // did before); the personal details check never leaves the device, so it is skipped.
+    const cloud = (await cloudCalls(page)).map((c) => c.purpose);
+    expect(cloud).toEqual(expect.arrayContaining(['select-answer', 'injection-check', 'draft']));
+    expect(cloud).not.toContain('pii-check');
+    expect((await seamCalls(page)).some((c) => c.purpose === 'pii-check')).toBe(false);
+  });
+
+  test('a second ask of the same text reuses the share-time check: no new injection or pii call', async ({ page }) => {
+    const { errors } = await prepareStubs(page, { availability: 'available' });
+    await openPlayground(page, errors);
+    await askChip(page, LANDLORD);
+    const count = async (purpose: string) => (await seamCalls(page)).filter((c) => c.purpose === purpose).length;
+    expect([await count('select-answer'), await count('injection-check'), await count('pii-check')]).toEqual([1, 1, 1]);
+    const field = page.getByLabel('Ask the Playground');
+    await field.fill(LANDLORD);
+    await field.press('Enter');
+    await expect.poll(() => count('select-answer'), { timeout: 45_000 }).toBe(2);
+    await expect(page.getByRole('button', { name: APPROVE }).last()).toBeVisible({ timeout: 45_000 });
+    expect([await count('injection-check'), await count('pii-check')]).toEqual([1, 1]);
+    await openTrace(page);
+    await expect(page.getByText('This exact text was checked before: no hidden instructions').first()).toBeVisible();
   });
 
   test('no model in this Chrome: the toggle says so and the golden path completes through the cloud', async ({ page }) => {

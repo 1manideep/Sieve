@@ -1,6 +1,7 @@
 // "Assistants" (40 sections 13.8.1 to 13.8.3; F5): each connected assistant as a glass card with its state, its
 // limits, Change limits and Revoke; past connections under a disclosure; the blue "Connect an assistant" button
 // that opens the dialog (also opened by ?connect=1, which is then removed from the URL); the explainer line.
+// Next to Revoke, the "Auto-approve answers" switch (13.8.9, testing mode): on this computer only, for 2 hours.
 import { useEffect, useId, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
@@ -8,6 +9,7 @@ import { Button } from '@/components/Button/Button';
 import { Icon } from '@/components/icons';
 import { Skeleton } from '@/components/Skeleton/Skeleton';
 import { SETTINGS, fillText } from '@/copy/screens-controls';
+import { useAutoApprove } from '@/state/autoApprove';
 import { useGrants } from '@/state/grants';
 import { useNetwork } from '@/state/network';
 import { useToasts } from '@/state/toasts';
@@ -16,7 +18,7 @@ import type { RealSource } from '../sources/sourcesDb';
 import { ConnectAiDialog } from './ConnectAiDialog';
 import { Confirm } from './kit/Confirm';
 import kit from './kit/kit.module.css';
-import { formatDate, formatRelative } from './kit/when';
+import { formatClock, formatDate, formatRelative } from './kit/when';
 import { NarrowDialog } from './NarrowDialog';
 import { SettingsCard } from './SettingsCard';
 import { callableMessage, capLabel, categoriesLabel, sourcesLabel } from './settingsText';
@@ -45,8 +47,18 @@ export function grantMeta(g: GrantView, now: number = Date.now()): string {
   });
 }
 
-function GrantRow({ grant, onNarrow, onRevoke }: { grant: GrantView; onNarrow?(): void; onRevoke?(): void }) {
+interface GrantRowProps {
+  grant: GrantView;
+  onNarrow?(): void;
+  onRevoke?(): void;
+  /** When auto-approve ends for this connection; undefined when it is off. */
+  autoUntil?: number;
+  onAutoApprove?(on: boolean): void;
+}
+
+function GrantRow({ grant, onNarrow, onRevoke, autoUntil, onAutoApprove }: GrantRowProps) {
   const tag = STATE_TAGS[grant.state];
+  const noteId = useId();
   return (
     <li className={`${kit.glassSm} ${styles.grantRow}`}>
       <div className={styles.grantTop}>
@@ -65,7 +77,32 @@ function GrantRow({ grant, onNarrow, onRevoke }: { grant: GrantView; onNarrow?()
           <button type="button" className={`${kit.textButton} ${kit.never}`} onClick={onRevoke}>
             {SETTINGS.revoke}
           </button>
+          {onAutoApprove ? (
+            <label className={styles.choice}>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={autoUntil !== undefined}
+                aria-describedby={noteId}
+                onChange={(e) => onAutoApprove(e.target.checked)}
+              />
+              <span className={styles.choiceLabel}>{SETTINGS.autoApprove}</span>
+            </label>
+          ) : null}
         </div>
+      ) : null}
+      {onAutoApprove && autoUntil !== undefined ? (
+        <div className={styles.inline}>
+          <p className={styles.warnText}>{fillText(SETTINGS.autoApproveUntil, { time: formatClock(autoUntil) })}</p>
+          <button type="button" className={kit.textButton} onClick={() => onAutoApprove(false)}>
+            {SETTINGS.autoApproveStop}
+          </button>
+        </div>
+      ) : null}
+      {onAutoApprove ? (
+        <p id={noteId} className={styles.note}>
+          {SETTINGS.autoApproveNote}
+        </p>
       ) : null}
     </li>
   );
@@ -73,6 +110,7 @@ function GrantRow({ grant, onNarrow, onRevoke }: { grant: GrantView; onNarrow?()
 
 export function AisCard({ connected }: { connected: RealSource[] }) {
   const { status, grants } = useGrants(useShallow((s) => ({ status: s.status, grants: s.grants })));
+  const autoUntil = useAutoApprove((s) => s.until);
   const online = useNetwork((s) => s.online);
   const [params] = useSearchParams();
   const location = useLocation();
@@ -102,6 +140,7 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
   const past = grants.filter((g) => g.state === 'expired' || g.state === 'revoked');
 
   const revoke = async (grant: GrantView) => {
+    useAutoApprove.getState().turnOff(grant.id);   // at once, whatever the call returns
     try {
       await useGrants.getState().revoke(grant.id);
       useToasts.getState().push({ tone: 'success', title: fillText(SETTINGS.revoked, { aiName: grant.aiName }) });
@@ -130,7 +169,14 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
         ) : (
           <ul className={styles.grantList}>
             {current.map((g) => (
-              <GrantRow key={g.id} grant={g} onNarrow={() => setNarrowing(g)} onRevoke={() => setRevoking(g)} />
+              <GrantRow
+                key={g.id}
+                grant={g}
+                onNarrow={() => setNarrowing(g)}
+                onRevoke={() => setRevoking(g)}
+                autoUntil={autoUntil[g.id]}
+                onAutoApprove={(on) => (on ? useAutoApprove.getState().turnOn(g.id) : useAutoApprove.getState().turnOff(g.id))}
+              />
             ))}
           </ul>
         )}

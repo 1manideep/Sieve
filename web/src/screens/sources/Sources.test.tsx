@@ -6,6 +6,7 @@ import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import type { Category, SourceKind } from '@sieve/shared';
 import { CONSOLE, SOURCES, fillText } from '@/copy/screens-controls';
 import { useIndexing } from '@/state/indexing';
+import { useSettings } from '@/state/settings';
 import { useSources, type SourceRowView, type SourcesState } from '@/state/sources';
 import { expectNoAxeViolations } from '@/test/axe';
 import { Component } from './index';
@@ -90,7 +91,7 @@ beforeEach(() => {
   fake.rows = [];
   fake.records = [];
   useSources.setState({ busy: {}, ...actions });
-  useIndexing.setState({ state: 'idle', left: 0, done: 0, total: 0, etaMs: undefined });
+  useIndexing.setState({ state: 'idle', pausedBy: undefined, left: 0, done: 0, total: 0, etaMs: undefined, activity: undefined, counting: false, onBattery: false, batteryOverride: false });
 });
 
 afterEach(() => {
@@ -181,6 +182,64 @@ describe('Sources', () => {
     await expectNoAxeViolations();
     await user.click(screen.getByRole('button', { name: SOURCES.resume }));
     expect(actions.setPaused).toHaveBeenCalledWith(false);
+  });
+
+  it('says what it works on now, in the order the work runs (20 section 13.5)', async () => {
+    fake.rows = [row('folder', { progress: { done: 0, total: 22 }, folderName: 'Taxes' })];
+    useIndexing.setState({ state: 'running', left: 22, done: 0, total: 22, activity: { stage: 'reading', inventory: { pdfs: 7 } } });
+    const view = renderSources();
+    expect(await screen.findByText('Reading 7 PDFs')).toBeInTheDocument();
+    useIndexing.setState({ activity: { stage: 'reading', inventory: { pdfs: 7, notes: 3, photos: 12 } } });
+    expect(await screen.findByText('Reading 7 PDFs, 3 notes and 12 photos')).toBeInTheDocument();
+    useIndexing.setState({ activity: { stage: 'label', count: 10 } });
+    expect(await screen.findByText('Sorting 10 items with Gemini Nano')).toBeInTheDocument();
+    useIndexing.setState({ activity: { stage: 'embed' } });
+    expect(await screen.findByText('Making the search index')).toBeInTheDocument();
+    useIndexing.setState({ activity: { stage: 'privacy' } });
+    expect(await screen.findByText('Checking for personal details')).toBeInTheDocument();
+    useIndexing.setState({ activity: { stage: 'caption', count: 12 } });
+    expect(await screen.findByText('Describing 12 photos with Gemini Nano')).toBeInTheDocument();
+    useIndexing.setState({ activity: { stage: 'caption', count: 1 } });
+    expect(await screen.findByText('Describing 1 photo with Gemini Nano')).toBeInTheDocument();
+    expect(screen.getByText('22 items left')).toBeInTheDocument();
+    // while a source is still finding items: "so far", no ETA (20 section 13.5)
+    useIndexing.setState({ counting: true, done: 128, total: 5_670, etaMs: 44 * 60_000 });
+    expect(await screen.findByText('128 of 5,670 items so far. Still finding more.')).toBeInTheDocument();
+    expect(screen.queryByText(/about 44 min left/)).toBeNull();
+    await expectNoAxeViolations();
+    view.unmount();
+  });
+
+  it('paused on battery: says so, and the header Resume indexes anyway', async () => {
+    const user = userEvent.setup();
+    fake.rows = [row('folder', { progress: { done: 2, total: 9 }, folderName: 'Taxes' })];
+    useIndexing.setState({ state: 'paused', pausedBy: 'battery', left: 7, done: 2, total: 9, onBattery: true });
+    renderSources();
+    expect(await screen.findByText(SOURCES.batteryText)).toBeInTheDocument();
+    expect(screen.getByText('Paused on battery. Plug in, or press Resume to index anyway.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: SOURCES.pausedTitle })).toBeInTheDocument();
+    // the card's own Resume is for the Ask home; here the header button is the one
+    expect(screen.queryByRole('button', { name: SOURCES.batteryResume })).not.toBeInTheDocument();
+    await expectNoAxeViolations();
+    await user.click(screen.getByRole('button', { name: SOURCES.resume }));
+    expect(actions.setPaused).toHaveBeenCalledWith(false);
+  });
+
+  it('the switch "Describe photos with Gemini Nano" is on by default and saves on this device', async () => {
+    const user = userEvent.setup();
+    const set = vi.spyOn(useSettings.getState(), 'setDescribePhotos');
+    useSettings.setState({ describePhotos: true, setDescribePhotos: set as unknown as (on: boolean) => Promise<void> });
+    set.mockImplementation(async (on: boolean) => {
+      useSettings.setState({ describePhotos: on });
+    });
+    renderSources();
+    const sw = await screen.findByRole('switch', { name: SOURCES.describePhotos });
+    expect(sw).toBeChecked();
+    expect(sw).toHaveAccessibleDescription(SOURCES.describePhotosHelp);
+    await user.click(sw);
+    expect(set).toHaveBeenCalledWith(false);
+    expect(sw).not.toBeChecked();
+    set.mockRestore();
   });
 
   it('says the index is up to date with the last sync time', async () => {

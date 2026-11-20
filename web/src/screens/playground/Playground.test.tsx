@@ -72,7 +72,7 @@ describe('Playground', () => {
   it('opens without sign-in (F2): the public header, the headline and the prompt card, five suggestions, "What is on this computer", the device bar, footnote', async () => {
     renderPlayground();
     // The public header: Sieve as text, the OPEN SOURCE pill, the tabs and the white Try now.
-    expect(screen.getByRole('link', { name: 'Sieve' })).toHaveAttribute('href', '/welcome');
+    expect(screen.getByRole('link', { name: 'Sieve' })).toHaveAttribute('href', '/');
     expect(screen.getByText('OPEN SOURCE')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Try now' })).toHaveAttribute('href', '/try');
     expect(screen.getByRole('heading', { level: 1, name: 'Ask your own data. Only one line leaves.' })).toBeInTheDocument();
@@ -157,7 +157,7 @@ describe('Playground', () => {
     expect(screen.getByRole('radio', { name: 'Not available' })).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByText('No on-device model')).toBeInTheDocument();
     expect(screen.getByText(/No on-device model in this Chrome. Sample files run in the cloud and are labelled./)).toBeInTheDocument();
-    expect(screen.getByText("This Chrome can't run Gemini Nano. Playground answers run in the cloud on sample data.")).toBeInTheDocument();
+    expect(screen.getByText("This Chrome can't run Gemini Nano. Answers here run in the cloud on sample data.")).toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
@@ -256,11 +256,11 @@ describe('Playground', () => {
     expect(usePlayground.getState().tab).toBe('ask');
   });
 
-  it('"Use your own data" is fenced: Gmail testing mode and the local folder before Google sign-in', async () => {
+  it('"Use your own data" is fenced: what Google\'s warning asks for and the local folder before Google sign-in', async () => {
     renderPlayground();
     await userEvent.click(screen.getByRole('button', { name: 'Use your own data' }));
     const dialog = screen.getByRole('dialog', { name: 'Use your own data' });
-    expect(within(dialog).getByText(/Gmail access is still in Google's testing mode/)).toBeInTheDocument();
+    expect(within(dialog).getByText("Google shows a warning that Sieve isn't verified yet. Press Advanced, then Go to Sieve.")).toBeInTheDocument();
     expect(within(dialog).getByText(/A local folder works for everyone/)).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'Sign in with Google' })).toHaveFocus();
     await expectNoAxeViolations();

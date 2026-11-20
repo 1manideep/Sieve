@@ -1,15 +1,13 @@
 // Welcome (`/welcome`), F1 in docs/design/final-flow.md: black, 120 twinkling stars, two still ribbons, the dotted
 // sphere with the constellation (1,204 emails / 92 photos / 31 documents caught on it, one approved line out), the
 // sentence, Open Sieve and Try on a real computer, three numbers in the footer. Initial focus stays on the document;
-// the CTAs come first in tab order. Open Sieve signs in with Google (and honours ?next), or goes to the Playground
-// when sign-in is not possible.
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+// the CTAs come first in tab order. Open Sieve signs in with Google (and honours ?next); on an error it stays here,
+// with the error toast. Everyone uses their own data; the demo is "Try on a real computer".
 import { useDocumentTitle } from '@/app/useDocumentTitle';
 import { Button, LinkButton } from '@/components/Button/Button';
-import { safePath, waitForGoogle } from '@/components/signIn';
+import { useOpenSieve } from '@/components/useOpenSieve';
 import { SCREENS, TITLES } from '@/copy/strings';
 import { WELCOME_COPY } from '@/copy/screens-main';
-import { useSession } from '@/state/session';
 import styles from './welcome.module.css';
 
 interface Star { x: number; y: number; w: number; o: number; d: number; t: number }
@@ -83,21 +81,7 @@ function Constellation() {
 }
 
 export function WelcomeScreen() {
-  const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const signingIn = useSession((s) => s.signingIn);
-
-  const openSieve = async () => {
-    const result = await useSession.getState().signInWithGoogle();
-    if (result === 'cancelled') return;
-    if (result === 'error') {
-      navigate('/playground');
-      return;
-    }
-    await waitForGoogle();
-    // A new account is sent on to /setup by the Google session (40 section 6.5).
-    navigate(safePath(params.get('next'), '/'));
-  };
+  const { openSieve, signingIn } = useOpenSieve();
 
   return (
     <div className={styles.stage}>
@@ -123,9 +107,7 @@ export function WelcomeScreen() {
             {WELCOME_COPY.tryComputer}
           </LinkButton>
         </div>
-        <p className={styles.note}>
-          {WELCOME_COPY.signInNote} <Link to="/playground">{WELCOME_COPY.signInNoteLink}</Link>
-        </p>
+        <p className={styles.note}>{WELCOME_COPY.signInNote}</p>
       </section>
 
       <footer className={styles.footer}>

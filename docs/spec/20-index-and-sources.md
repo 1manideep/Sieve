@@ -871,18 +871,34 @@ export async function hasCloudConsent(db: SieveDb, recordId: string): Promise<bo
 
 ## 13. Background ingest queue (`queue/ingestQueue.ts`)
 
-The per-item work that makes the index better over time: newest first, in idle time, pausable, never in a question's way. Owned by this spec; 10's planned `pipeline/enrich.ts` (`startEnrichment`) becomes a re-export of `startIngestQueue` (22.5).
+The per-item work that makes the index better over time: newest first, in idle time, one lane at a time with a rest after every job, pausable, held on battery, never in a question's way. Owned by this spec; 10's planned `pipeline/enrich.ts` (`startEnrichment`) becomes a re-export of `startIngestQueue` (22.5).
+
+Why it is paced (Nov 20, 2026): with three lanes running flat out at the same time (Nano labels and captions, the WebGPU embedder, and the privacy scan with Rampart on WebGPU and three Nano calls per item), a folder of 7 PDFs kept a MacBook Pro M5 Pro hot. The owner's decision: "Indexing, it's fine if it takes a little time." So the lanes run in series, rest between jobs, stop on battery, and the privacy scan no longer calls Nano (11 P3).
 
 ### 13.1 Lanes and stages
 
 | Stage | Lane | Applies when | Call | Writes (via `writeIfCurrent`) |
 |---|---|---|---|---|
-| label | Nano | non-photo, `categoryBy` not `seed`, and (`categoryBy === 'rule'` or `promptVersion.label < PROMPT_VERSIONS.label`) | 10's `labelBatch(items, data, { priority: 'background', signal })`, `LABEL_BATCH_SIZE` per call | `category`, `categoryBy` (from `by`), `promptVersion.label`; then the Health safety net (12.1 step 9) |
-| caption | Nano | photo, image decodable, rule not `never`, and no caption or (`captionBy` not `seed` and `promptVersion.caption < PROMPT_VERSIONS.caption`) | 10's `captionPhoto(blob, data, { recordId, priority: 'background', signal })` | `caption`, `captionBy`, `preview` (when it was the date placeholder), `promptVersion.caption`; then the Health safety net on the caption; then enqueue embed |
-| embed | ML | `embedTexts(record, rule).inputs` non-empty and the record has no vectors at its version | `getMl().run('embed', { texts }, { priority: 'background' })`, `EMBED_BATCH` texts per call (one record's chunks may span calls; the write waits for all) | vectors: delete the id's rows and `bulkPut` new rows `{ id: recordId + '#' + n, recordId, start, end, vector, model: EMBEDDING_MODEL, recordVersion }`, only if `sourceHash` still matches (7.3) |
-| privacy | 11's queue | 11 decides (`expectedStages`, `isScanCurrent`) | `createPrivacyScanQueue(deps)` with the deps in 13.3 | `pii`, `injection`, `privacyScan` |
+| Order | Lane | Applies when | Call | Rest after a job | Writes (via `writeIfCurrent`) |
+|---|---|---|---|---|---|
+| 1 | embed (ML worker) | `embedTexts(record, rule).inputs` non-empty and the record has no vectors at its version | `getMl().run('embed', { texts }, { priority: 'background' })`, `EMBED_BATCH` texts per call (one record's chunks may span calls; the write waits for all) | `EMBED_REST_MS` (250 ms) | vectors: delete the id's rows and `bulkPut` new rows `{ id: recordId + '#' + n, recordId, start, end, vector, model: EMBEDDING_MODEL, recordVersion }`, only if `sourceHash` still matches (7.3) |
+| 2 | label (Nano) | non-photo, `categoryBy` not `seed`, and (`categoryBy === 'rule'` or `promptVersion.label < PROMPT_VERSIONS.label`) | 10's `labelBatch(items, data, { priority: 'background', signal })`, `LABEL_BATCH_SIZE` per call | `NANO_REST_MS` (1,000 ms) | `category`, `categoryBy` (from `by`), `promptVersion.label`; then the Health safety net (12.1 step 9) |
+| 3 | privacy (11's scan) | 11 decides (`expectedStages`, `isScanCurrent`): plain code and Rampart, no Nano (11 section 6) | `scanRecord(record, data, { rule, signal })`, one item per job | `PRIVACY_REST_MS` (100 ms) | `pii`, `injection`, `privacyScan` (with `nanoPending`) |
+| 4 | caption (Nano) | photo, image decodable, rule not `never`, no caption or an outdated one, the switch on, on power, under `CAPTION_SESSION_MAX` this session (13.5) | 10's `captionPhoto(blob, data, { recordId, priority: 'background', signal })`, newest photo first | `NANO_REST_MS` (1,000 ms) | `caption`, `captionBy`, `preview` (when it was the date placeholder), `promptVersion.caption`; then the Health safety net on the caption; then enqueue embed |
 
-The Nano lane and the ML lane run at the same time (Nano is in Chrome; the embedder is in the ML worker). 10's device scheduler serializes all Nano calls and preempts background calls for questions (10 section 7.6), so the queue needs no preemption logic of its own for Nano; aborted calls (`aborted`) are re-queued at the front without counting an attempt. The ML worker serves foreground jobs (question embeddings, share-time PII) before background batches, so a question waits at most one background batch (about 16 chunks, well under a second).
+```mermaid
+flowchart LR
+  W["Wake or 60 s recheck"] --> H{"Paused or held on battery?"}
+  H -- yes --> W
+  H -- no --> P["First lane in order with work it can run: embed, label, privacy, caption"]
+  P -- none --> W
+  P --> J["One job"]
+  J --> Y["Yield (scheduler.postTask background, else setTimeout 0)"]
+  Y --> R["Rest: 250 ms after embed, 1,000 ms after Nano, 100 ms after privacy"]
+  R --> H
+```
+
+The lanes run **one at a time**, in that fixed order (`QUEUE_LANE_ORDER` in `index/config.ts`; the loop is `queue/serial.ts`): before every job the loop takes the first lane that has work it can run now, so items that arrive while labels run are embedded next. Embeddings come first so questions by meaning find new items early: on a 5,670-message Gmail, labels at about 0.8 s each plus their rests would otherwise hold the search index back by well over an hour. Safety does not wait for Nano labels: ingest already applies the code label and the Health safety net (12.1), and a label that later moves an item to a `never` category re-embeds it from its header only. Work a person is waiting for (priority `high`: a file just added, a Playground add, a live Gmail hit, a share-time re-index; a handful of items) goes first, in the same order, without the rest. A job that ran a model is followed by the yield and the lane's rest; a job that only dropped stale items gets the yield alone; a lane that cannot run now (its model is loading, consent is missing) is skipped for that round, and the privacy lane waits while the Rampart model loads instead of holding the loop. The rests are named constants in `QUEUE_PACING`, which unit tests set to 0. Preemption is unchanged: 10's device scheduler serializes all Nano calls and preempts background calls for questions (10 section 7.6), and aborted calls (`aborted`) are re-queued at the front without counting an attempt; the ML worker serves foreground jobs (question embeddings, share-time PII) before background batches, so a question waits at most one background batch.
 
 ### 13.2 Behaviour
 
@@ -902,10 +918,10 @@ export function startIngestQueue(db: SieveDb): IngestQueue;          // leader t
 
 - **Backlog.** `start()` scans records by `date` descending and queues each record's needed stages. New and re-indexed records arrive through `enqueue`. Each stage keeps its own list ordered by date descending; `high` goes to the front.
 - **Each job** reads the record and remembers its `version`; its write goes through `writeIfCurrent` (5.3). A stale or deleted record makes the write a no-op; the job is dropped (a re-index has already queued fresh work).
-- **Idle time.** Between jobs the lanes yield with `scheduler.postTask(() => {}, { priority: 'background' })` when available, else `setTimeout(0)`. They keep running in a background tab (the home base usually is one).
+- **Idle time.** After every job the loop yields with `scheduler.postTask(() => {}, { priority: 'background' })` when available, else `setTimeout(0)`, then rests (13.1). It keeps running in a background tab (the home base usually is one).
 - **Availability.** Own data: label needs text availability `available`; caption needs image `available`, or (Playground uploads) a consent row. Sample: 10's policy (`PREFER_ON_DEVICE`). When a stage cannot run it reports `waiting: 'model'` (or `'consent'`) and is re-checked when 10's `subscribeNano` reports a change. Folder photos need folder permission for captioning (`waiting: 'permission'`). Embedding waits for the ML worker (`waiting: 'model'` while it loads).
 - **Retry.** A failed call (not aborted) retries after `STAGE_RETRY_DELAYS_MS`; a label batch failing three times is split in halves; a single item failing three times is skipped for this session.
-- **Pause.** `pause()` finishes the running call and stops; also calls `privacyQueue.pause()`.
+- **Pause.** `pause()` finishes the running call and stops; also calls `privacyQueue.pause()`. The battery hold (13.5) works the same way without the person's pause.
 
 ### 13.3 Privacy queue wiring (11 section 6.3)
 
@@ -926,14 +942,17 @@ const deps: ScanQueueDeps = {
 };
 ```
 
-The optional third argument of `save` is requested from 11 (22.4); until then the `loaded` map supplies the version. Results written by the pipeline at share time (`onScanned`, 11 section 10.2) go through `patchRecord(db, id, version, patch)` with the version the pipeline read.
+The optional third argument of `save` is requested from 11 (22.4); until then the `loaded` map supplies the version. Results written by the pipeline at share time (`onScanned`, 11 section 10.2, and the `shareChecks` cache of 11 section 10.7) go through `patchRecord(db, id, version, patch)` with the version the pipeline read.
+
+A record joins the privacy lane only when its scan is not current (`expectedStages` and `isScanCurrent` checked as it is classified; records seen before 11's functions load are checked once they have), so the lane's list is real work and counts toward the source rows' progress. Nano availability changes no longer refresh the lane (11 section 6.2); a rule change and `refreshAll()` still do.
 
 ### 13.4 Progress and ETA (`queue/eta.ts`)
 
 - `total` per stage: records needing it when the backlog was built plus those enqueued since; `done`: completed or skipped.
 - `secPerItem` starts at `COST_PRIOR_SEC` (label 0.8 s measured per item in batches; caption 10 s, the middle of the measured 7 to 12 s; embed 0.015 s per chunk, an estimate) and follows an exponentially weighted average (`COST_EWMA_ALPHA`) of observed per-item time.
-- `etaMs = (total - done) * secPerItem * 1000`; the Nano lane's stages add up (one Nano call at a time); the ML lane runs in parallel; the overall ETA is the larger of the two lanes. Gmail fetching has its own ETA (15.4).
-- Each connected source row gets `progress` = records of that source that are searchable at full quality (label final for this device, and embedded or not embeddable) over records discovered, and `etaMs` (22.1). 40's `useIndexing` reads the rows; 11's privacy queue status is shown separately.
+- `etaMs = (total - done) * secPerItem * 1000` plus the rests still ahead (`restEtaMs`: one `NANO_REST_MS` per label batch and per photo, one `EMBED_REST_MS` per embed batch, one `PRIVACY_REST_MS` per privacy item). The lanes run in series, so the overall ETA is the **sum** of the four (`overallEtaMs`); a privacy prior (`COST_PRIOR_SEC.privacy`, 0.1 s) joins the existing priors, and the EWMA is unchanged. Captions that may not run (switch off, on battery, cap reached) count 0. Gmail fetching has its own ETA (15.4).
+- Each connected source row gets `progress` = records of that source with no stage left (labelled for this device, embedded or not embeddable, privacy scan current, and described when captions may run) over records discovered, `etaMs` (22.1), `stage` and `stageCount`, and `counting` (13.5). 40's `useIndexing` reads the rows.
+- **One writer.** The queue's `writeSourceRows` is the only writer of `progress` (Nov 20: the Gmail backfill used to write its own fetch count into the same field, so the card alternated between the two, "128, then 137, then lower again"). Within a pass (from work appearing until none is left) `done` never goes down, even when an item gets new work (a new label re-opens its embedding), and `done` stays below `total` until nothing is left. While a source job is still listing (`syncProgress.listing`: the Gmail listing pages, the folder walk) the row's `counting` is true and its `total` only grows; the job's `remaining` meanwhile is what it found beyond the items already indexed. A listing that stops half way clears it. 40 throttles and smooths what is shown (40 section 9.12).
 
 Example, six months of a typical inbox plus one photo folder:
 
@@ -944,9 +963,18 @@ Example, six months of a typical inbox plus one photo folder:
 | Labels, batches of 10 | 3,060 | 0.8 s (measured) | about 41 min |
 | Captions | 400 | 7 to 12 s (measured) | about 67 min |
 | Embeddings, about 1.5 chunks per item | 4,600 chunks | about 15 ms (estimate) | about 1 to 2 min |
-| Privacy scan (11: Nano PII and injection about 4 s each) | 3,060 | about 8 s | hours; 11's queue, background |
+| Privacy scan (11: plain code and Rampart, no Nano) | 3,060 | about 0.1 s plus the 100 ms rest | about 10 min |
+| Rests between jobs | 306 label batches, 290 embed batches, 3,060 privacy items, 400 photos | 1 s, 0.25 s, 0.1 s, 1 s | about 18 min in all |
 
-Search works from the first minute on keyword and early vectors; vectors and labels are complete in about an hour; the privacy scan finishes over several hours and share time scans any item that is not done yet (11 `scanNow`).
+The lanes run in series, so the queue's work adds up: about 2 hours on power, longer than the old parallel lanes, and the GPU never runs flat out. Search works from the first minute on keyword and early vectors; labels, then vectors, are complete in under an hour; Nano reads an item's text only when it is about to be shared (11 section 10.7), and share time scans any item the privacy lane has not reached yet in memory.
+
+### 13.5 Battery, the inventory, the captions switch and what the card says
+
+- **Battery.** 40's `useIndexing` (40 section 9.12) reads `navigator.getBattery()` when it exists (Chrome): `onBattery = !battery.charging`, updated on `chargingchange`. No Battery API means on power. It hands `{ onBattery, batteryOverride, captions }` to the queue with `setQueueConditions(db, ...)`. On battery without the override every model lane holds (like a pause the device made: the running job finishes, `waiting: 'power'`), and the card says "Paused on battery. Plug in, or press Resume to index anyway." Plugging in resumes on its own. Resume (the card's button on the Ask home, the Sources header button, the status popover) sets `batteryOverride` for the rest of the session. The source jobs keep reading text on battery; only model work holds.
+- **Inventory.** A folder scan (16.4) walks the whole folder first. Before pass 2 reads any file, and so before any model work, it writes `row.inventory` (the files it will read, by kind: `pdfs`, `notes` (txt, md), `files` (json), `photos`), sets `syncProgress` to the files left to read (unchanged files take the fast path and are not counted), and calls `rt.queue.writeRowsNow()` so the row's `progress.total` is known at once. A Gmail backfill writes `inventory: { emails }` with its listing (15.4).
+- **Stage.** Each row's `stage` is `reading` while its source job still has files or emails to read, else the lane its items wait for (the lane working now when it has items of this source, else the first such lane in order), with `stageCount` for `label` and `caption`. 40's card shows the first stage in the order reading, embed, label, privacy, caption: "Reading 7 PDFs" (or "Reading 7 PDFs, 3 notes and 12 photos"), "Making the search index", "Sorting 10 items with Gemini Nano", "Checking for personal details", "Describing 12 photos with Gemini Nano" (40 section 13.6).
+- **Just added, then asked.** Before a question's retrieval, `prepareProposal` calls `flushUrgentEmbeds(db)`: it resolves when every item enqueued with priority `high` has its vectors, or after `URGENT_FLUSH_MS` (3 s), or at once when nothing can run (paused, on battery, the embedder not ready) or the queue runs in another tab. On a timeout the search runs as it is. So a test email added in the Playground and asked about at once is found by meaning.
+- **Captions.** The costliest work (about 10 s of GPU per photo), so captions run only on power (the battery override does not cover them), newest photo first, at most `CAPTION_SESSION_MAX` (200) per session, and only while the Sources switch "Describe photos with Gemini Nano" is on (default on; kept on this device per account, 40 section 13.6). Photos waiting only for a caption that may not run now do not count as work left.
 
 ## 14. Sources: state, pause, rebuild, disconnect (`sources/registry.ts`, `sources/types.ts`)
 
@@ -1010,9 +1038,10 @@ export function clearGmailToken(): void;
 export function revokeGmailToken(): Promise<void>;
 ```
 
-- `preloadGis`: inject `<script src="https://accounts.google.com/gsi/client" async>` once; resolve when `google.accounts.oauth2` exists; reject after 15 s with `gis-load-failed` ("Couldn't reach Google sign-in. Check your connection and try again."). 40 calls it when the Sources screen mounts, so the popup opens within the click's user activation.
+- `preloadGis`: inject `<script src="https://accounts.google.com/gsi/client" async>` once; resolve when `google.accounts.oauth2` exists; reject after 15 s, or on the script's `error` event, with `gis-load-failed`. A script that failed or timed out is removed from the page, so the next attempt injects a fresh one. 40 calls it when the Sources screen mounts, best effort, so the popup opens within the click's user activation. A click never waits for it.
 - One token client: `google.accounts.oauth2.initTokenClient({ client_id: import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID, scope: GMAIL_SCOPE, include_granted_scopes: false, callback, error_callback })`.
-- `requestGmailToken` is called synchronously in the click handler: `tokenClient.requestAccessToken({ prompt, login_hint })`.
+- `requestGmailToken` is called synchronously in the click handler: `tokenClient.requestAccessToken({ prompt, login_hint })`. Google Identity Services is the first choice whenever it has loaded.
+- Fallback, the Firebase popup (added Nov 20: the script is blocked in some Chromes): when `google.accounts.oauth2` is missing at click time (the preload failed or has not finished) or there is no client id, the same click calls `reauthenticateWithPopup(auth.currentUser, provider)` at once, with `provider = new GoogleAuthProvider()`, `provider.addScope(GMAIL_SCOPE)` and `setCustomParameters({ prompt: 'consent', login_hint: user.email })` (renewal sends only `login_hint`). The token is `GoogleAuthProvider.credentialFromResult(result)?.accessToken`, kept in the same module variable for `FIREBASE_TOKEN_MS` (55 minutes; the result has no lifetime). The scopes are trusted when the result lists them; otherwise a POST to `https://oauth2.googleapis.com/tokeninfo` with the token in the body (never in a URL) checks for `GMAIL_SCOPE`, and a token without it gives `scope-denied`. Popup errors: `auth/popup-blocked` gives `popup-blocked`, `auth/popup-closed-by-user` and `auth/cancelled-popup-request` give `popup-closed`, `auth/user-mismatch` gives `unknown` ("Pick the Google account you use for Sieve, then try again."). Only the error code is read, never logged with the error (it can carry the credential). `gis-load-failed` ("Sign in to Sieve with Google first, then connect Gmail.") is left only for when neither way is open (no signed-in Google user). `revokeGmailToken` without the script POSTs the token in the body to `https://oauth2.googleapis.com/revoke`. On app start, a connected row with no token gets `needsAuth: true`, and a stale click error (`gis-load-failed`, `popup-blocked`, `popup-closed`) is cleared, so the card shows only the sign in again notice with Continue.
 - Callback: `resp.error` gives `scope-denied` ("Sieve needs read-only access to Gmail. Nothing was connected."); `!google.accounts.oauth2.hasGrantedAllScopes(resp, GMAIL_SCOPE)` revokes and gives `scope-denied`; else `token = { value: resp.access_token, expiresAt: Date.now() + Number(resp.expires_in) * 1000 }`.
 - `error_callback`: `popup_failed_to_open` gives `popup-blocked` ("Chrome blocked the Google sign-in window. Allow pop-ups for this site and try again."); `popup_closed` gives `popup-closed` ("Sign-in was closed. Nothing changed."); other `unknown`.
 - The token is in one module variable, only sent in `Authorization: Bearer` to `gmail.googleapis.com`; the app logger replaces `/ya29\.[\w.-]+/` with `[token]`. The token model has no refresh token. `getGmailToken()` returns null from `expiresAt - GMAIL_TOKEN_SKEW_MS`; background jobs then stop with `needsAuth: true`; interactive callers skip Gmail with a report note. Renewal needs a click: `reauthorize(db, 'gmail')` calls `requestGmailToken({ prompt: '', loginHint: row.account })`.
@@ -1193,7 +1222,7 @@ Breadth-first over `dir.entries()`; `path` is relative to the root (invariant 1)
 
 Triggers: app start after permission, `visibilitychange` to visible or window `focus` (at most every 2 minutes), every `FOLDER_RESCAN_MS` while leader, `syncNow`, and before indexing files the person just added to the folder through Sieve.
 
-1. `jobStartedAt`; walk fully (pass 1) collecting entries and skips; `progress.total`.
+1. `jobStartedAt`; walk fully (pass 1) collecting entries and skips. Then the inventory (13.5), before any file is read or any model runs: `row.inventory` (files to read by kind), `syncProgress` (files left to read), and `rt.queue.writeRowsNow()` for `progress.total`.
 2. **Deletions first** (invariant 5): if the walk completed without a permission or not-found error, `removeRecords(db, storedFolderIds - seenIds, 'source-deleted')`.
 3. Pass 2, newest `lastModified` first, checking pause and signal between files:
    - heic: skipped (16.5); over `MAX_BYTES` for its type: `too-large`.

@@ -110,7 +110,7 @@ export async function deleteAccount(onStep: (s: DeleteStep) => void): Promise<'o
 
   // 5. Done.
   onStep('done');
-  navigate('/welcome');
+  navigate('/');
   useToasts.getState().push({ tone: 'success', title: ACCOUNT_DELETE.done });
   return 'ok';
 }

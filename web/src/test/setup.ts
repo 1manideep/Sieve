@@ -3,6 +3,13 @@ import '@testing-library/jest-dom/vitest';
 import 'fake-indexeddb/auto';
 import { cleanup } from '@testing-library/react';
 import { afterEach } from 'vitest';
+import { QUEUE_PACING } from '@/index/config';
+
+// The background queue rests between jobs (20 section 13.1); unit tests run it without the rests. The pacing tests set
+// the real values themselves.
+QUEUE_PACING.nanoRestMs = 0;
+QUEUE_PACING.embedRestMs = 0;
+QUEUE_PACING.privacyRestMs = 0;
 
 afterEach(() => {
   cleanup();

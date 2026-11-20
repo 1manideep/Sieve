@@ -4,6 +4,7 @@
 import { create } from 'zustand';
 import type { ItemKind, SourceKind } from '@sieve/shared';
 import { SOURCES_FLOW } from '@/copy/strings';
+import { useIndexing } from './indexing';
 import type { DbKind } from './types';
 
 export interface SourceRowView {
@@ -121,6 +122,8 @@ export const useSources = create<SourcesState>()((set) => {
 
     setPaused: (paused) =>
       busy('pause', async () => {
+        // Resume anywhere also means "index anyway" on battery, for the rest of the session (20 section 13.5).
+        if (!paused) useIndexing.getState().resumeOnBattery();
         const { sources, index } = await load();
         await sources.setIndexingPaused(index.openDb('real'), paused);
       }),

@@ -193,11 +193,12 @@ export function defaultDeviceLabel(): string;   // "Chrome on Mac" | "Chrome on 
 
 | Path | Screen | Who | Layout | Document title |
 |---|---|---|---|---|
-| `/welcome` | Welcome | anyone; a Google user is redirected to `/` | `PublicLayout` | "Sieve: give AI the answer, not your inbox" |
-| `/playground` | Playground | anyone, no login | own header (13.9) | "Playground · Sieve" |
+| `/` | Welcome, the landing | anyone, signed in or not (Nov 20: the root is the landing for everyone; a signed-in person's Open Sieve goes to `/ask` without a popup) | `PublicLayout` | "Sieve: give AI the answer, not your inbox" |
+| `/welcome`, `/landing` | redirect to `/`, keeping the query (`?next=`) | anyone | | |
+| `/playground` | Playground | anyone, no login; reached only by the demo seats (`?seat=1`, 80 section 74), never linked | own header (13.9) | "Playground · Sieve" |
 | `/prepare` | Prepare the on-device model (`?back=<path>`) | anyone | `PublicLayout` | "Prepare the on-device model · Sieve" |
 | `/setup` | First-run setup | Google user | `MainLayout` without nav | "Set up · Sieve" |
-| `/` | Ask | Google user | `MainLayout` | "Ask · Sieve" |
+| `/ask` | Ask (the signed-in home) | Google user | `MainLayout` | "Ask · Sieve" |
 | `/requests` | Requests (`?id=<requestId>` selects one) | Google user | `MainLayout` | "Requests · Sieve" |
 | `/sources` | Sources | Google user | `MainLayout` | "Sources · Sieve" |
 | `/seen` | What has AI seen? | Google user | `MainLayout` | "What has AI seen? · Sieve" |
@@ -215,12 +216,13 @@ export const router = createBrowserRouter([
     errorElement: <RouteError />,
     children: [
       { element: <PublicLayout />, children: [
-        { path: '/welcome', loader: welcomeLoader, lazy: () => import('../screens/welcome') },
+        { path: '/', lazy: () => import('../screens/welcome') },
+        { path: '/welcome', loader: ({ request }) => redirect('/' + new URL(request.url).search) },
         { path: '/prepare', lazy: () => import('../screens/prepare') },
       ]},
       { path: '/playground', lazy: () => import('../screens/playground') },
       { element: <MainLayout />, loader: requireGoogle, children: [
-        { path: '/', lazy: () => import('../screens/ask') },
+        { path: '/ask', lazy: () => import('../screens/ask') },
         { path: '/requests', lazy: () => import('../screens/requests') },
         { path: '/sources', lazy: () => import('../screens/sources') },
         { path: '/seen', lazy: () => import('../screens/seen') },
@@ -239,12 +241,11 @@ export const router = createBrowserRouter([
 
 ```ts
 export async function requireGoogle({ request }: LoaderFunctionArgs): Promise<null>;
-export async function welcomeLoader(): Promise<null>;
 ```
 
-- Both first `await whenAuthReady()` (resolved by the first `onAuthStateChanged` callback; section 9.1).
-- `requireGoogle`: if `useSession.getState().kind !== 'google'`, `throw redirect('/welcome?next=' + encodeURIComponent(pathname + search + hash))`.
-- `welcomeLoader`: if `kind === 'google'`, `throw redirect('/')`.
+- It first does `await whenAuthReady()` (resolved by the first `onAuthStateChanged` callback; section 9.1).
+- `requireGoogle`: if `useSession.getState().kind !== 'google'`, `throw redirect('/?next=' + encodeURIComponent(pathname + search + hash))`.
+- There is no loader on the landing: it renders for everyone. `useOpenSieve()` (components/useOpenSieve.ts) waits for auth to be ready (4 s at most), then sends a signed-in person to `?next` or `/ask` with no popup, and opens the Google popup otherwise.
 
 ### 5.4 Navigation flow
 
@@ -253,17 +254,20 @@ flowchart TD
   A[Visit any URL] --> B{Auth ready}
   B -->|Google user| C{Index owner check}
   B -->|anonymous or none| D{Route}
-  D -->|/playground| P[Playground<br/>anonymous sign-in if no user]
+  D -->|/playground, demo seats only| P[Playground<br/>anonymous sign-in if no user]
   D -->|/prepare| M[Prepare the on-device model]
-  D -->|/welcome or a Google-only route| W[Welcome]
-  W -->|Try the Playground| P
-  W -->|Sign in with Google| G[Google popup]
-  P -->|Use your own data| G
+  D -->|/try| T[Try on a real computer<br/>a demo seat]
+  D -->|/ the landing, or a Google-only route| W[Welcome]
+  W -->|Open Sieve: sign in with Google| G[Google popup]
+  W -->|Try on a real computer| T
+  T -->|no seat: Open Sieve| G
   G -->|new user, setup not done| S[/setup/]
   G -->|returning user| N[next, or /]
   C -->|another account's index| X[Blocking dialog: clear or sign out]
   C -->|ok| R[Requested screen]
 ```
+
+Everyone signs in and uses their own data. No product screen links to `/playground`: the public header, Welcome, Try, Not found, the route error screen, the Ask notices, the status popover and the model setup panel offer Open Sieve (Google sign-in), Settings or the model setup instead. The Playground stays in the code because the demo seats run it (Chrome in kiosk mode on `/playground?seat=1`, 80 section 74).
 
 ---
 
@@ -289,7 +293,7 @@ flowchart TD
 |---|---|---|
 | anonymous (Playground) | "Use your own data" or "Sign in with Google" | `signInWithPopup` replaces the anonymous session. The anonymous account is abandoned; it holds nothing (Playground data lives in the `sieve-playground` IndexedDB and is untouched). |
 | Google | opens `/playground` | Stays signed in. The Playground uses `openDb('playground')`, `PLAYGROUND_SETTINGS` and local receipts. The home base keeps running in this tab. The Playground header shows "Back to my data" instead of "Use your own data". |
-| Google | Sign out | Stop the home base (11.7), stop every listener, `reset()` every Google-scoped store, navigate to `/welcome`. The real index stays on this device (it is the person's own data on their own computer). |
+| Google | Sign out | Stop the home base (11.7), stop every listener, `reset()` every Google-scoped store, navigate to `/`. The real index stays on this device (it is the person's own data on their own computer). |
 | Google A, then Google B in the same browser | sign in as B | Index owner check (6.4). |
 
 Popup errors (`FirebaseError.code`):
@@ -344,7 +348,6 @@ Mockup: white header, 1px bottom border `--color-border`, inner max width 1240px
     <Logo />               shield svg 28px + "Sieve" (Space Grotesk 700, 20px); link to "/"
     <MainNav />            Ask · Requests [badge] · Sources · What has AI seen? · Settings
     <div class="right">
-      <LinkButton to="/playground" variant="secondary" size="sm">Playground</LinkButton>
       <StatusStrip />
       <AccountMenu />
     </div>
@@ -357,14 +360,13 @@ Mockup: white header, 1px bottom border `--color-border`, inner max width 1240px
 - `MainNav` uses `NavLink` (`aria-current="page"` on the active link), `aria-label="Main"`. Item: 15px, weight 500, padding 10px 12px, radius 10px, colour `--color-text-secondary`, min height 44px; hover `--color-surface-hover`; active background `--color-inverse`, text `--color-on-inverse`.
 - Requests badge when `n = awaitingCount > 0`: pill, background `--color-never-strong`, white 11px bold, min width 18px, height 18px. The link's accessible name becomes "Requests, {n} waiting".
 - At 1280px and wider: one row (logo, nav, right group). Below 1280px: two rows; row 1 logo left and right group right, row 2 the nav at full width with `overflow-x: auto` inside the nav only (never the page).
-- `/setup` renders the header without `MainNav` and without the Playground button.
+- `/setup` renders the header without `MainNav`.
 
 ### 7.3 `AccountMenu`
 
 A 44px circle button with the first letter of the display name (or email) on `--color-surface-muted`, `aria-label="Account"`, `aria-haspopup="menu"`, `aria-expanded`. Menu (role `menu`, items `menuitem`, arrow keys move, Esc closes and returns focus):
 - Header text (not an item): "Signed in as {email}"
 - "Settings" → `/settings`
-- "Playground" → `/playground`
 - "Sign out"
 
 ### 7.4 Offline banner
@@ -416,7 +418,7 @@ On close, focus returns to the opener. Backdrop `rgba(15, 23, 42, 0.45)`. Radius
 ### 7.8 Error boundaries
 
 - Route level, `RouteError` (`errorElement`):
-  - 404 (`isRouteErrorResponse(e) && e.status === 404`): title "This page isn't here.", button "Go to Ask" (Google users) or "Open the Playground" (others).
+  - 404 (`isRouteErrorResponse(e) && e.status === 404`): title "This page isn't here.", button "Go to Ask" (Google users) or "Open Sieve" (others; signs in with Google like Welcome, `useOpenSieve`).
   - Chunk load failure (message contains "Failed to fetch dynamically imported module" or "Importing a module script failed"): title "Sieve was updated", body "Reload to get the new version.", button "Reload".
   - Anything else: title "Something broke on this screen", body "Nothing was shared. Reload to try again.", buttons "Reload" and "Go to Ask". In development only, the error message is shown in a `<pre>`.
 - Component level, `components/ErrorBoundary` (class component with `getDerivedStateFromError` and `componentDidCatch`) wraps each `ApprovalCard`, the Playground device, and each Settings card. Fallback card: title "This part couldn't be shown", body "Nothing was shared.", button "Try again" (resets the boundary).
@@ -462,6 +464,14 @@ Background indexing (from `useIndexing`, section 9.12), shown only when `state !
 | `yielding` (a question is running) | "Indexing paused for your question" | neutral |
 | `paused` (by the person) | "Indexing paused" | amber |
 
+Auto-approve (from `useAutoApprove`, 13.8.9), shown only while it is on for any connection on this computer:
+
+| State | Text | Tone |
+|---|---|---|
+| on for one or more connections | "Auto-approve on" | amber |
+
+It is also shown as a link to `/settings#ais` under the rail's meter card (a link cannot sit inside the card's button).
+
 `{left}` uses `Intl.NumberFormat('en-US')`. Accessible name of the pill: "Status: {segments joined by commas}. Show details."
 
 ### 8.2 Status popover
@@ -480,7 +490,7 @@ Clicking the pill opens a non-modal popover (`aria-expanded` on the pill; Esc an
    - `downloadable`: "Chrome sets up Gemini Nano once. It takes a few minutes." Action "Set it up" (navigates to `/prepare?back={current path}`).
    - setup running: "Setting up Gemini Nano: {pct}%. You can keep using Sieve." Action "Show progress" (`/prepare`).
    - `downloading` (not by this tab): "Chrome is setting up Gemini Nano. This can take a few minutes."
-   - `unavailable`, `no-api`: "This Chrome can't run Gemini Nano. Your own data stays unread here unless you turn on cloud fallback. The Playground still works." Action "Open the Playground".
+   - `unavailable`, `no-api`: "This Chrome can't run Gemini Nano. Your own data stays unread here unless you turn on cloud fallback." Action "Turn on cloud fallback" (`/settings#cloud`).
 3. **Indexing** (only when `useIndexing.state !== 'idle'`)
    - `running`: "Reading {left} items on this device. About {eta} left." plus a progress bar (`done / total`). Action "Pause".
    - `yielding`: "Paused while Sieve answers your question. It picks up again on its own."
@@ -792,18 +802,28 @@ Background indexing status, derived on the device. No model calls here; it only 
 ```ts
 interface IndexingState {
   state: 'idle' | 'running' | 'yielding' | 'paused';
+  pausedBy?: 'person' | 'battery';                 // why it is paused
   left: number;                                    // sum over connected real sources of (total - done)
   done: number; total: number;
   etaMs?: number;
+  activity?: { stage: 'reading' | 'label' | 'embed' | 'privacy' | 'caption'; count?: number; inventory?: Partial<Record<'pdfs' | 'notes' | 'photos' | 'files' | 'emails', number>> };
+  onBattery: boolean;                              // navigator.getBattery(): not charging; no Battery API means on power
+  batteryOverride: boolean;                        // Resume on battery; lasts for the session
   foregroundBusy: number;                          // count of running questions (ask + home base); > 0 means 'yielding'
   beginForeground(): () => void;                   // returns end(); used by useAsk and the engine around prepareProposal
-  start(db: SieveDb): () => void;                  // liveQuery on db.sources; Google session only (real db)
+  start(db: SieveDb): () => void;                  // liveQuery on db.sources, the battery watch; Google session only (real db)
+  resumeOnBattery(): void;                         // "press Resume to index anyway"
 }
 ```
 
-- `state`: `paused` if every connected source row has `paused: true`; else `yielding` if `foregroundBusy > 0` and `left > 0`; else `running` if `left > 0`; else `idle`.
+- `state`: `paused` (`pausedBy: 'person'`) if every connected source row has `paused: true`; else `paused` (`pausedBy: 'battery'`) if `onBattery`, not `batteryOverride` and `left > 0`; else `yielding` if `foregroundBusy > 0` and `left > 0`; else `running` if `left > 0`; else `idle`.
+- Battery (20 section 13.5): `start` reads `navigator.getBattery()` when it exists and follows `chargingchange`; it hands `{ onBattery, batteryOverride, captions }` (captions: the Sources switch, 13.6) to the queue with `setQueueConditions`, through a dynamic import of `@/index`. `useSources.setPaused(false)` (the Sources header and the status popover) also calls `resumeOnBattery`, so every Resume means "index anyway".
+- `activity`: the first `stage` in the order reading, embed, label, privacy, caption that a connected row with work left reports (20 section 13.5), with the summed `stageCount` (label, caption) or `inventory` (reading).
+- What the bars show (Nov 20, the owner's reports: "it has to flow naturally ... just make sure it doesn't oscillate"). One place: `bySource[kind] = { done, total, fraction, counting }` for each source and `done`, `total`, `fraction` overall, which are the sources' numbers added up. Every bar reads them: the `IndexingCard` (Sources and the Ask home), each `SourceCard`'s bar and its "indexing {pct}%" chip, and Setup step 1's compact cards; the status popover reads `done` and `total`. The rows arrive through the liveQuery at most every 500 ms; the numbers on screen change at most once per `SHOW_EVERY_MS` (1 s), the latest rows winning. Within a pass (from work appearing until none is left) `done` and `fraction` never go down, overall and per source; while a source is `counting` (still listing) its `total` only grows, the percent is taken against the total so far (and still never goes back), and the card says "{done} of {total} items so far. Still finding more." instead of an ETA.
+- `etaMs`: an EWMA (`ETA_EWMA_ALPHA` 0.2) of the rate measured over the samples of the last 120 s (20 s of samples first), re-estimated at most every `ETA_UPDATE_MS` (10 s), rounded (`roundEta`: minutes under 10 min, 5 min under an hour, 10 min above, so "about 45 min"). Within one steady run (running, the same stage) it never goes up and drops at most `ETA_MAX_STEP_MS` (3 min) beyond the time that passed; a pause, the battery, a question (yielding) or a lane finishing (a new stage) starts a new run.
 - `etaMs`: from the observed rate. Keep samples `{ at, done }` from the last 120 s; rate = (newest.done - oldest.done) / (newest.at - oldest.at); `etaMs = left / rate` when at least 20 s of samples and rate > 0, else undefined. Samples reset when state changes to `paused` or `yielding`.
 - Priority itself is enforced by the AI layer (CR-2 `priority`): background work passes `'background'`, questions run first. `beginForeground` only drives what the person sees.
+- Who shows it: the Sources screen's `IndexingCard` (13.6), the same card on the Ask home while `state` is not `idle` (13.4), Setup step 1's source cards (13.3) and the status popover (8.2).
 
 ### 9.13 `useRecords` (`state/records.ts`)
 
@@ -952,7 +972,7 @@ Order (so a cancelled sign-in does not wipe the index for nothing):
 2. `push`: `disablePush` if enabled (errors ignored).
 3. `account`: `deleteUser(auth.currentUser)`. On `auth/requires-recent-login`: `reauthenticateWithPopup(user, googleProvider)` and retry once. A closed popup returns `'cancelled'`: restart the home base if it was active, and show "Your account wasn't deleted. Sign-in was cancelled."
 4. `device`: `await openDb('real').delete()`; remove `localStorage` keys `sieve.realDbOwner` and `sieve.setupDone.{uid}`.
-5. `done`: navigate to `/welcome`, toast success "Your account and data were deleted."
+5. `done`: navigate to `/`, toast success "Your account and data were deleted."
 
 Server-side data (`users/{uid}`, `audit/{uid}`, `presence/{uid}`, the user's `connectors/*`) is removed by the Delete User Data extension and functions (30) when the auth user is deleted.
 
@@ -980,6 +1000,8 @@ export interface EngineDeps {
   toast: ToastState['push'];
   announce(text: string, p?: 'polite' | 'assertive'): void;
   navigate(to: string): void;
+  autoApprove?(grantId: string): boolean;                // 13.8.9: on, and not expired, for this connection here
+  markAutoApproved?(receiptId: string, on: boolean): void;   // 13.8.9: for "Approved automatically" on /seen
 }
 export interface HomeBaseEngine {
   start(): void;                                       // begins the requests listener; role is computed from the user doc
@@ -1127,6 +1149,8 @@ Outcome handling:
 | `model-unavailable` | `finishRequest` `error`, `MSG.modelUnavailable` | none | toast warning "{aiName} asked, but this Chrome has no on-device model. Sieve told it to try later." |
 | `error`, a thrown error, or the timeout | `finishRequest` `error`, `MSG.error` | none | toast error "Sieve couldn't prepare an answer for {aiName}. It was told to try again later." |
 | aborted by expiry | nothing (functions mark it expired) | none | entry removed |
+
+Auto-approve (13.8.9): for `ready`, after `markAwaiting` really returned `'ok'` (not the offline fallback), the engine checks `autoApprove(grantId)` and the clean-answer conditions. When all hold, it does not announce, toast or send a preview to the extension. It calls `decide({ requestId, approved: true, step: 'answer', decidedBy: 'app' })`, so every check in 11.8 and the send check run as for a click. `markAutoApproved(id, true)` runs just before `finishRequest` writes the receipt. If `decide` fails, the mark is removed. If the entry is still `awaiting-person`, it then waits for the person as in the row above, with the reason on the card.
 
 Messages to the AI (`relay/messagesToAi.ts`, written into `RelayRequest.message`; the assistant receives them):
 
@@ -1338,42 +1362,33 @@ Relay entries that are preparing show the same `PreparingCard` on the Requests s
 
 Common page header (`components/PageHeader`): H1 (Space Grotesk 36px, 700, `-0.02em`; Ask uses 40px) and a lead paragraph (16px; Ask 17px; `--color-text-muted`), optional actions on the right (wrap below at narrow widths). Main content: `max-width: 1240px; margin: 0 auto; padding: 36px 24px 64px` (Ask: `40px 24px 64px`), vertical gap 20 to 24px.
 
-### 13.1 Welcome (`/welcome`)
+### 13.1 Welcome (`/`, the landing; `/welcome` and `/landing` redirect here)
+
+The final design's F1 board (docs/design/final-flow.md) under the public header.
 
 ```
 <WelcomeScreen>
-  <section hero>            two columns at >= 1024px (copy 7fr, example 5fr); stacked below
-    <Tag tone="device">Built with Gemini Nano and Firebase AI Logic</Tag>
-    <h1>Give AI the answer, not your inbox.</h1>
+  <Sky/> <Ribbons/> <Scene role="img"/>           the stars, the dotted sphere and the constellation, all decorative
+  <section hero>
+    <h1>Only what you approve leaves your computer.</h1>
     <p lead/>
-    <div ctas> <Button primary>Try the Playground</Button> <Button secondary>Sign in with Google</Button> </div>
-    <p captions/>
-    <ExampleCard />         static illustration
+    <div ctas> <Button primary>Open Sieve</Button> <LinkButton secondary to="/try">Try on a real computer</LinkButton> </div>
+    <p note>Open Sieve signs you in with Google.</p>
   </section>
-  <section tiles> 3 x <FeatureTile/> </section>
-  <p requirements/>
-  <footer/>
+  <footer> three numbers (46 / 1 / 44) and the "built with" line </footer>
 </WelcomeScreen>
 ```
 
-- H1 56px / 1.05, Space Grotesk 700 at 1280px and wider; 44px below 1024px.
-- Lead: "Sieve finds what a task needs in your email, files and photos with a model on your own device, and shares only what you approve."
-- "Try the Playground" → `/playground`. Caption under it: "No sign-in. A pretend computer with sample mail, photos and documents."
-- "Sign in with Google" → `signInWithGoogle()`; then `next` (from the query) or `/setup` / `/`. Caption: "Use your own Gmail and files. Sign-in asks only for your name and email; Gmail access is a separate step you choose."
-- `ExampleCard` (static, `role="img"`, `aria-label="Example: Claude asked about a deposit and received only the answer."`): blue eyebrow "REQUEST FROM CLAUDE", text "landlord email about the deposit", a non-interactive three-step ladder with "1 · Answer only" selected, a dashed preview box labelled "WHAT WOULD LEAVE THIS DEVICE" containing "Your deposit was $1,200, paid on March 3.", and tags "This device · Gemini Nano" (teal) and "41 characters left" (muted).
-- Tiles:
-  1. "Found on your device": "Gemini Nano reads your mail and files inside Chrome. Your inbox never goes to a server."
-  2. "You approve every share": "See the exact words before anything leaves: just the answer, a short excerpt, or the item with personal details hidden."
-  3. "A receipt for everything": "What has AI seen? lists every share: who asked, what left, and when."
-- Requirements: "Works best in Chrome 139 or later with Gemini Nano. Without it, the Playground runs its sample data in the cloud and labels every step that does."
-- Footer (13px): "Open source under Apache-2.0" · "Source code" (link `VITE_REPO_URL`) · "Built for #BuildHybridAI 2026".
-- Keyboard: initial focus stays on the document; Tab order: skip link, "Try the Playground", "Sign in with Google", footer links.
+- "Open Sieve" → `useOpenSieve()` (`components/useOpenSieve.ts`, shared with the public header's Open Sieve, Try, Not found and the route error screen): a Google user goes straight to `next` or `/`; otherwise `signInWithGoogle()`. On `'ok'` it waits for the Google session, then goes to `next` (from the query, same origin only) or `/`; a new account goes on to `/setup` (6.5). On `'cancelled'` nothing changes. On `'error'` it stays on Welcome, where the session store has shown the error toast. It never goes to `/playground`.
+- "Try on a real computer" → `/try` (the demo seats, 80).
+- There is no Playground link or note: everyone signs in and uses their own data.
+- Keyboard: initial focus stays on the document; Tab order: skip link, the header links, Open Sieve, Try on a real computer.
 
 ### 13.2 Prepare the on-device model (`/prepare`)
 
-The one-time model setup. Chrome needs a user gesture to start the download, so it always starts from a click. Reachable from Setup step 1 (embedded), the status popover, the Ask notice and the Playground note.
+The one-time model setup. Chrome needs a user gesture to start the download, so it always starts from a click. Reachable from Setup step 2 (embedded), the status popover and the Ask notices.
 
-`PublicLayout` header shows the logo and a "Back" link to `?back=` (default `/` for Google users, `/playground` otherwise). Body: one centred card, max width 640px, padding 32px, containing `ModelSetupPanel` (16.18):
+`PublicLayout` header shows the logo and a "Back" link to `?back=` (default `/`). Body: one centred card, max width 640px, padding 32px, containing `ModelSetupPanel` (16.18):
 
 - Eyebrow (12px, 600, uppercase, `--color-text-subtle`): "One-time setup"
 - H1 (32px): "Prepare the on-device model"
@@ -1388,18 +1403,18 @@ States:
 | State | Shows |
 |---|---|
 | `downloadable`, setup idle | Primary button "Start setup" (initial focus). Its click handler calls `useAvailability.getState().startSetup()` as its first statement. |
-| setup `downloading` | Determinate `ProgressBar` (`aria-valuetext="{pct}% downloaded"`), text "{pct}% · about {eta} left" (ETA appears after 10 s of samples, computed like 9.12), and "Keep this tab open. You can try the Playground in another tab meanwhile." with the link "Open the Playground in a new tab". |
+| setup `downloading` | Determinate `ProgressBar` (`aria-valuetext="{pct}% downloaded"`), text "{pct}% · about {eta} left" (ETA appears after 10 s of samples, computed like 9.12), and "Keep this tab open while it downloads." |
 | setup `installing` | Indeterminate bar, "Installing on this device…", "Almost done. Chrome is unpacking the model." |
 | `done` or `available` | Check icon (teal), title "The on-device model is ready", text "Gemini Nano is set up in this Chrome.", primary "Continue" (focused) → `back`. Announce "The on-device model is ready." |
 | `downloading`, not started by this tab | Indeterminate bar, "Chrome is already setting up the model.", button "Show progress" (calls `startSetup()` to attach a progress monitor; see V-6). |
 | setup `error` | Title "Setup didn't finish", the mapped message, primary "Try again" (calls `startSetup()`). |
-| `unavailable`, `no-api` | Title "This Chrome can't run the on-device model", text "Gemini Nano needs desktop Chrome 139 or later on Windows 10 or 11, macOS 13 or later, Linux, or a Chromebook Plus, with 22 GB of free disk space and either a graphics card with more than 4 GB of memory or 16 GB of RAM. Your own data stays unread here unless you turn on cloud fallback. The Playground still works and labels what runs in the cloud.", buttons "Open the Playground" (primary) and "Back". |
+| `unavailable`, `no-api` | Title "This Chrome can't run the on-device model", text "Gemini Nano needs desktop Chrome 139 or later on Windows 10 or 11, macOS 13 or later, Linux, or a Chromebook Plus, with 22 GB of free disk space and either a graphics card with more than 4 GB of memory or 16 GB of RAM. Your own data stays unread here unless you turn on cloud fallback. With it on, Sieve asks you before the cloud model reads anything.", buttons "Turn on cloud fallback" (primary, `/settings#cloud`) and "Back". |
 
 Error mapping (from the rejection's `name` / message):
 - `QuotaExceededError` or a message about disk space: "Chrome needs more free disk space (about 22 GB) to set up the model."
 - `NotAllowedError`: "Chrome needs a click to start. Press Try again."
 - `NetworkError` or offline: "The download stopped. Check your connection and press Try again."
-- anything else: "Chrome couldn't set up the model. Try again, or use the Playground, which works without it."
+- anything else: "Chrome couldn't set up the model. Try again, or turn on cloud fallback in Settings."
 
 Progress is announced (polite) at 25%, 50%, 75% and on completion, never on every tick. Leaving the page does not cancel Chrome's download; while this tab stays open the status strip shows "Preparing on-device model {pct}%".
 
@@ -1412,21 +1427,32 @@ Goal: judges see the on-device path as the intended one, never wait on it, and w
 3. **Questions during setup** run on sample data with `PREFER_ON_DEVICE`, so they go to Gemini in the cloud. The result card shows the blue tag "Answered in the cloud while Nano sets up (sample data only)" and the trace step reads "Cloud · Gemini (sample data; Nano still setting up)".
 4. **The switch moment.** When availability becomes `available`: a polite announcement and toast "Gemini Nano is ready. From now on, answers stay on this computer."; the strip turns teal "On-device model ready"; the most recent cloud-answered result card gets a button "Ask again on this device", which reruns the same question with Nano and shows both runs' traces side by side with their real timings ("Before: in the cloud, {ms} ms · Now: on this device, {ms} ms"). Show the timings as measured even if the cloud was faster; the card's footnote says "On this device, nothing left your computer." Respect reduced motion (no animation, just the colour change).
 5. **Own data (signed in) during setup:** no cloud fallback unless the person turned it on in Settings. Ask shows "Sieve answers once the on-device model is ready ({pct}%)." and offers "Answer when ready", which keeps the question and runs it automatically on `available` (cancellable).
-6. **No Nano possible here** (`unavailable`, `no-api`): the strip says "This Chrome can't run Gemini Nano. Playground answers run in the cloud on sample data." with a "Why?" link to the requirements text in the table above. Never a dead end.
+6. **No Nano possible here** (`unavailable`, `no-api`): the strip says "This Chrome can't run Gemini Nano. Answers here run in the cloud on sample data." with a "Why?" link to the requirements text in the table above (`/prepare?back=` the current page). Never a dead end.
 7. **Photos:** seed photos always use their precomputed on-device captions (tag "Captioned on-device in advance"). The "Caption live" button appears only when image input is `available` (it needs the multimodal flag).
 
 Acceptance tests for this subsection (Playwright with the mocked availability from section 21): (a) `downloadable` → strip button visible, no download started without a click; (b) click → progress updates, a suggested question during setup returns a cloud-tagged answer; (c) availability flips to `available` → toast, teal strip, "Ask again on this device" reruns with a device-tagged trace; (d) signed-in Ask during setup with cloud fallback off → no model call, "Answer when ready" queues and runs on `available`.
 
 ### 13.3 First-run setup (`/setup`)
 
-`MainLayout` without nav. Max width 760px, centred. Header row: H1 "Set up Sieve" (36px) and a "Skip setup" text button on the right (sets `sieve.setupDone.{uid}` and navigates to `/`). A stepper line: "Step {n} of 4" plus four dots (`aria-hidden`; the text is the accessible label). Each step is a card with a title, a short body, its controls, and "Back" / "Next" (or "Skip for now") at the bottom. Steps can be revisited.
+`MainLayout` without nav. Max width 760px, centred. Header row: H1 "Set up Sieve" (36px) and a "Skip setup" text button on the right (sets `sieve.setupDone.{uid}` and navigates to `/`). A stepper line: "Step {n} of 4" plus four dots (`aria-hidden`; the text is the accessible label). Each step is a card with a title, a short body, its controls, and "Back" / "Next" (or "Skip for now") at the bottom. Steps can be revisited. Connect comes first: indexing starts in the background as soon as a source is connected, and runs while the person finishes setup.
 
-1. **"Prepare the on-device model"**. Embedded `ModelSetupPanel` without its H1. When `available`: "Gemini Nano is ready on this computer." The download continues if the person moves on.
-2. **"Make this computer your home base"**. Body: "Requests from AIs you connect come to an open Sieve tab on one computer. Sieve does the private work there and asks you before anything is shared." Field "Name this computer" (default label). Button "Make this my home base". Done state: "This computer is your home base." with a teal check.
-3. **"Connect a source"**. Two compact `SourceCard`s (Gmail, Local folder) with their connect buttons and live progress. Note: "Indexing runs in the background on this device. You can ask questions while it works; your questions go first."
-4. **"Get told when an AI asks"**. The push checkbox (13.8.7), the extension row (status from the bridge, "Get the extension" link), and the text link "Connect an AI" → `/settings?connect=1#ais`. Primary "Finish" sets `sieve.setupDone.{uid} = '1'` and navigates to `/`.
+```mermaid
+flowchart LR
+  G[Google sign-in<br/>new account] --> S1[1 Connect your data<br/>Gmail, Local folder]
+  S1 --> S2[2 Prepare the on-device model]
+  S2 --> S3[3 Make this computer your home base]
+  S3 --> S4[4 Get told when an AI asks]
+  S4 --> A[Ask, with the indexing card while it runs]
+  S1 -. indexing in the background .-> A
+  S2 -. download in the background .-> A
+```
 
-### 13.4 Ask (`/`)
+1. **"Connect your data"**. Body: "Sieve reads your Gmail and the folders you pick, on this computer only. Mail and files never reach our server." Two compact `SourceCard`s (Gmail, Local folder) with their connect buttons and live progress. Note: "Indexing runs in the background on this device. You can ask questions while it works; your questions go first." The footer button is primary "Next" once any real source row is connected (not the Playground's), otherwise secondary "Skip for now".
+2. **"Prepare the on-device model"**. Embedded `ModelSetupPanel` without its H1. When `available`: "Gemini Nano is ready on this computer." While the download or install runs: "The download keeps going in the background while you finish setup." The download continues if the person moves on. "Next" once the model is ready, otherwise "Skip for now".
+3. **"Make this computer your home base"**. Body: "Requests from AIs you connect come to an open Sieve tab on one computer. Sieve does the private work there and asks you before anything is shared." Field "Name this computer" (default label). Button "Make this my home base". Done state: "This computer is your home base." with a teal check. "Next" once done, otherwise "Skip for now".
+4. **"Get told when an AI asks"**. The push checkbox (13.8.7), the extension row (status from the bridge, "Get the extension" link), and the text link "Connect an assistant" → `/settings?connect=1#ais`. Primary "Finish" sets `sieve.setupDone.{uid} = '1'` and navigates to `/`.
+
+### 13.4 Ask (`/ask`)
 
 ```
 <AskScreen>
@@ -1463,16 +1489,20 @@ Notices (priority order; at most two shown):
 
 | Condition | Tone | Copy | Actions |
 |---|---|---|---|
-| no connected source | info | "Your private index is empty. Connect Gmail or a folder first." | "Go to Sources", "Try the Playground" |
+| no connected source | info | "Your private index is empty. Connect Gmail or a folder first." | "Go to Sources" |
 | model `downloadable` | warning | "Set up the on-device model once to ask about your own data. It takes a few minutes." | "Set it up" |
 | setup running or `downloading` | warning | "The on-device model is being set up ({pct}%). You can ask once it's ready." | "Show progress" |
-| `unavailable` / `no-api`, cloud fallback off | warning | "This Chrome has no on-device model, so Sieve can't read your own data here. Turn on cloud fallback in Settings, or try the Playground." | "Settings", "Try the Playground" |
+| `unavailable` / `no-api`, cloud fallback off | warning | "This Chrome has no on-device model, so Sieve can't read your own data here. See what the model needs, or turn on cloud fallback in Settings." | "Set up the on-device model" (`/prepare?back=/`), "Settings" (`/settings#cloud`) |
 | `unavailable` / `no-api`, cloud fallback on | cloud | "No on-device model here. Sieve will ask you before the cloud model reads anything, and show you the exact text." | none |
-| indexing `running` or `yielding` | info | "Indexing on this device: {left} items left. Answers can miss what isn't indexed yet. Your question goes first." | "Sources" |
+| indexing `running` or `yielding` (the conversation only; the Ask home shows the indexing card instead) | info | "Indexing on this device: {left} items left. Answers can miss what isn't indexed yet. Your question goes first." | "Sources" |
 
 "Find on this device" is disabled (with `aria-describedby` pointing at the notice) while the model is `downloadable` or being set up, and while it is `unavailable` with cloud fallback off.
 
-Idle hint (15px, `--color-text-muted`): "Ask a question, or pick an example above. Sieve searches only this device."
+No notice sends people to the Playground.
+
+Indexing on the Ask home (F2): while `useIndexing.state` is `running`, `yielding` or `paused`, the home shows the Sources screen's `IndexingCard` (13.6: title, `ProgressBar` done of total, the line that says what it works on, "{done} of {total} items · about {eta} left" or "{left} items left", the yielding and paused texts, and on battery "Paused on battery. Plug in, or press Resume to index anyway." with its own "Resume" button) below the prompt card and the chips, as wide as the prompt card (850px), in place of the one-line indexing notice. The card is loaded with a dynamic import, so it stays out of the after-sign-in bundle (17.1). It is gone when the index is up to date.
+
+Idle hint (15px, `--color-text-muted`): "Ask a question, or pick an example above. Sieve searches only this device." Hidden while a notice or the indexing card shows.
 
 Error card: title "Something went wrong" (or "Sieve took too long" for the timeout), body = `error`, button "Try again" (re-runs `ask`).
 
@@ -1502,6 +1532,8 @@ Keyboard: Enter in the input submits. `/` focuses the input when focus is not in
 | `standby` | info | "Another Sieve tab on this computer is the home base. Approve requests there, or use this tab instead." | "Use this tab instead" |
 | `active`, presence offline | warning | "This tab lost its connection. New requests wait until it's back." | none |
 | any role, no active grant | info | "No AI can ask yet. Connect an AI in Settings to get a link for it." | "Connect an AI" → `/settings?connect=1#ais` |
+
+`AutoApproveNotice` (13.8.9), right under `RoleBanner`, a warning `Notice` while any current connection has auto-approve on: "Auto-approving answers for {names} until {time}. Stop in Settings." Names are joined "A and B" or "A, B and C"; `{time}` is the latest expiry ("4:35 PM"); "Stop in Settings" is a link to `/settings#ais`. It goes away at once when the last one is stopped, revoked or expires.
 
 Empty (role `active`, no entries): `EmptyState` with the shield icon, title "Nothing waiting", body "When an AI asks, the request shows up here and in the Sieve extension."
 
@@ -1540,24 +1572,38 @@ Empty: "No requests in the last 24 hours."
 <SourcesScreen>
   <PageHeader title="Sources and your private index" lead="The index lives only on this device. Mail and files are read here, never on our server."
               actions=[<Button secondary>Pause indexing | Resume indexing</Button>, <Button secondary>Rebuild index</Button>] />
-  <IndexingCard />
+  <IndexingCard resume={false} />       the header button is the Resume here
   <div layout>                          flex wrap, gap 22
     <section aria-label="Sources">      flex 999 1 600px; grid 2 columns (1 below 900px), gap 14
       <SourceCard kind="gmail" /> <SourceCard kind="folder" /> <SourceCard kind="upload" />
       <LaterSources />
     </section>
+    <PhotoSwitch />                     glass row: switch "Describe photos with Gemini Nano" and its help line
     <aside aria-label="Categories"> <CategoryList /> </aside>     flex 1 1 340px
   </div>
 </SourcesScreen>
 ```
 
-`IndexingCard` (always shown when any source is connected):
+`IndexingCard` (always shown when any source is connected; the Ask home shows the same card while the state is not `idle`, 13.4):
 
 | `useIndexing.state` | Content |
 |---|---|
-| `running` | Title "Indexing on this device". `ProgressBar` done/total. Text "{done} of {total} items · about {eta} left" (or "{left} items left" without an ETA). Sub (13px): "Labels, captions and safety checks run with Gemini Nano on this computer. Your questions always go first." |
+| `running` | Title "Indexing on this device". `ProgressBar` at `fraction` (9.12). A line (14px, 500) that says what Sieve works on now, from `activity` (table below). Text "{done} of {total} items · about {eta} left" (or "{left} items left" without an ETA; "{done} of {total} items so far. Still finding more." while a source is still listing). Sub (12px): "Everything runs on this computer, one step at a time. Your questions always go first." |
 | `yielding` | Same title and bar; text "Paused while Sieve answers your question." |
-| `paused` | Title "Indexing paused"; bar; text "Resume to finish the index. {left} items left." |
+| `paused`, by the person | Title "Indexing paused"; bar; text "Resume to finish the index. {left} items left." |
+| `paused`, by the battery | Title "Indexing paused"; bar; text "Paused on battery. Plug in, or press Resume to index anyway."; a secondary "Resume" button (`resumeOnBattery`), shown on the Ask home only (the Sources header has "Resume indexing"). |
+
+The line that says what it works on (20 section 13.5), in the order the work runs:
+
+| `activity.stage` | Line |
+|---|---|
+| `reading` | "Reading {list}", the inventory in the order PDFs, notes, photos, other files, emails, joined "7 PDFs, 3 notes and 12 photos" (one: "1 PDF", "1 note", "1 photo", "1 other file", "1 email"); without an inventory "Reading new items" |
+| `embed` | "Making the search index" |
+| `label` | "Sorting {n} items with Gemini Nano" ("Sorting 1 item with Gemini Nano") |
+| `privacy` | "Checking for personal details" |
+| `caption` | "Describing {n} photos with Gemini Nano" ("Describing 1 photo with Gemini Nano") |
+
+`PhotoSwitch`: a checkbox with `role="switch"`, label "Describe photos with Gemini Nano", default on, help (13px, muted, `aria-describedby`) "About 10 seconds of GPU per photo, newest first. Only while this computer is plugged in." It is `useSettings.describePhotos` / `setDescribePhotos(on)`, kept on this device for the account (`localStorage` key `sieve.describePhotos.{uid}`, "Saved" like the other switches): it is about this computer's own work, and the users/{uid} rules allow only the four shared settings.
 | `idle` | Teal check, "Your index is up to date." and "Last updated {relative time}" from the newest `lastSyncAt`. |
 
 `SourceCard` (white card, padding 18px, gap 10px): name (17px 600), status tag right, detail (14px), progress (when connected), state notices, buttons.
@@ -1620,7 +1666,7 @@ Popover text: "Every allow and deny on your connectors is written to a hash-chai
 2. What and who (flex `999 1 340px`):
    - What (15px 600): shared: `{Step label} from "{title}"`, or `{Step label} from {n} items: "{title}" and {n-1} more`; declined "Nothing shared: you declined"; blocked "Nothing shared: {Category} is never shared"; expired "Nothing collected: the request expired"; a missing record shows "an item no longer on this device" as its title.
    - Who (13px): outside `{aiName} asked: "{question}"`; real in-app `You asked Gemini (in Sieve) to: "{question}"`; Playground `You asked: "{question}"`.
-3. Tags (flex `1 1 260px`): step tag ("Answer only" and "Excerpt" teal, "Full item" amber); decided-by tag (`app` "Approved by you", `extension` "Approved in the extension", `rule` "Blocked by a rule", declined "Declined by you"); status tag (`pending-collection` "Waiting for {aiName} to collect" cloud, `delivered` "Delivered" cloud, `revoked` "Revoked" muted, `declined` / `blocked` "Nothing left" muted, `expired` "Expired" muted); then muted text "{chars} characters left" (or "Nothing left this device").
+3. Tags (flex `1 1 260px`): step tag ("Answer only" and "Excerpt" teal, "Full item" amber); decided-by tag (`app` "Approved by you", or "Approved automatically" when this computer approved it with auto-approve, 13.8.9; `extension` "Approved in the extension"; `rule` "Blocked by a rule"; declined "Declined by you"); status tag (`pending-collection` "Waiting for {aiName} to collect" cloud, `delivered` "Delivered" cloud, `revoked` "Revoked" muted, `declined` / `blocked` "Nothing left" muted, `expired` "Expired" muted); then muted text "{chars} characters left" (or "Nothing left this device").
 4. Action: "Revoke" (danger outline) only for outside receipts that are `delivered` or `pending-collection`; `aria-label="Revoke {aiName}'s access to this item"`. Confirm: "Stop {aiName} from getting this again?" / "Sieve will refuse these items for {aiName} from now on. It can't recall what {aiName} already received." / "Revoke" (danger). After: toast success "{aiName} can't get that item again."; the row shows "Revoked" (disabled).
 
 States: loading, four skeleton rows; error, "Couldn't load your receipts. Check your connection." with "Try again"; no receipts, "Nothing has been shared yet. When you approve a share, its receipt shows up here."; filtered to nothing, "No receipts match these filters." with "Clear filters"; more than `limit`, a "Show more" button.
@@ -1639,7 +1685,7 @@ Header: H2 "AIs that can ask", primary button "Connect an AI". Sub: "Each AI get
 - Name (15px 600) and state tag: `active` "Active" (teal), `expiring` "Expires soon" (amber), `expired` "Expired" (muted), `revoked` "Revoked" (muted).
 - Limits (14px): "{step cap} · {categories} · {sources}". Step cap: `answer` "Answers only", `excerpt` "Answers and excerpts", `full` "Up to full items". Categories: all nine "All categories"; all but Health "All except Health"; else the names joined with ", ". Sources: all "All sources"; else names ("Gmail", "Local folder", "Files you add") joined with " and ".
 - Meta (13px): "Expires {date} · Last used {relative} · Link ends in …{linkHint}" ("Never used" when no `lastUsedAt`).
-- Actions for active and expiring: "Narrow" (secondary), "Revoke" (danger outline).
+- Actions for active and expiring: "Narrow" (secondary), "Revoke" (danger outline), and next to Revoke the switch "Auto-approve answers" (13.8.9).
 
 Expired and revoked grants are under a disclosure "Past connections ({n})", collapsed by default. Empty: "No AI can ask yet. Connect one to get a link you paste into that assistant." Loading: two skeleton rows.
 
@@ -1692,7 +1738,32 @@ H2 "Notifications and this computer".
 
 H2 "Account". "Signed in as {email}" and button "Sign out". Divider. H3 "Delete my account" (red), text "Wipes your settings, receipts, connections and sharing log from Firebase, and clears the index on this device." Button "Delete my account and data" (danger). Dialog: title "Delete your account?", body "This can't be undone. Your connector links stop working, and this computer's private index is cleared.", field "Type DELETE to confirm" (button enabled only when the value is exactly `DELETE`), primary danger "Delete everything". While running, a checklist with live status (spinner, then check): "Stopping the home base", "Turning off notifications", "Deleting your account", "Clearing this computer's index". Result handling per 10.7.
 
+#### 13.8.9 Auto-approve, testing mode
+
+Added Nov 20 at the owner's request, so he can ask hundreds of test questions without approving each one. It overrides the Nov 15 review decision "no auto-approve" (00 section 6, decision 1) for this testing mode only.
+
+- Placement: on each current connection card (13.8.1), next to Revoke, a switch (`role="switch"`) "Auto-approve answers" with the note (its `aria-describedby`) "For testing. Sieve answers this assistant's questions without asking you, answer only, for 2 hours. Every answer still gets a receipt." While on, the card also shows "Auto-approving until {time}" (warning colour) and a "Stop" button. Past connections have no switch.
+- Storage: this computer only, per account and connection. `localStorage['sieve.autoApprove.{uid}']` holds `{ [grantId]: expiresAt }`, read through `state/autoApprove.ts` (`useAutoApprove`, `readAutoApprove`, `autoApproveOn`). Every read and write is wrapped in try/catch, so storage that fails means off. Off by default. `expiresAt` is 2 hours (`AUTO_APPROVE_MS`) from the moment it is turned on. Expired, malformed and too-far entries (more than 2 hours and a minute ahead) are ignored and removed. The store follows other tabs through `storage` events and refreshes at the next expiry. Grants are written only by functions, and the `users/{uid}` rules allow only the four shared settings, so the switch lives in neither.
+- Who decides: the home base runs on this computer and reads the same store through `EngineDeps.autoApprove`. A request is approved without the person only if all of these hold: auto-approve is on and not expired for its grant; `proposal.outcome === 'ready'`; the request asked for `answer` or its `maxStep` is `answer`; the rule is `approve`; the proposal has no warnings of any kind (hidden instructions, hidden text in the question, personal details flagged, cloud model or cloud consent, ask first); the answer option is available and its text is not blank. It is approved at step `answer` with `decidedBy: 'app'`, through the same `decide()` and send check as a click (11.6, 11.8). In every other case the request waits for the person as before.
+
+```mermaid
+flowchart TD
+  P[Proposal ready, markAwaiting ok] --> A{Auto-approve on for this grant, not expired?}
+  A -- no --> W[Waits for the person: toast, extension, card]
+  A -- yes --> C{Answer step, rule approve, no warnings, answer not blank?}
+  C -- no --> W
+  C -- yes --> D["decide(answer, decidedBy app): every send check"]
+  D -- refused --> W
+  D -- sent --> R[Receipt with decidedBy app, marked Approved automatically here]
+```
+- Not waiting means not told: no in-app toast or announcement of a new request, and no preview for the extension, so no badge. The push "A request is waiting" is sent by functions when the request is queued, before the home base sees it. The switch never leaves this computer, so that push still arrives; turn push off in 13.8.7 while testing.
+- Receipts: each one records `decidedBy: 'app'`, and the receipt shape and rules do not change. This computer keeps the ids it approved this way in `localStorage['sieve.autoApproved.{uid}']` (the newest 1000), and What has AI seen? shows "Approved automatically" for them (13.7). On another computer the same receipt reads "Approved by you".
+- Visibility: while any connection has it on, the status strip shows "Auto-approve on" (8.1, a link to Settings), and Requests shows the `AutoApproveNotice` (13.5). Stop, turning the switch off and Revoke clear it at once. Revoke clears it before the call returns.
+- The Playground engine never auto-approves.
+
 ### 13.9 Playground (`/playground`)
+
+Reachable only by the demo seats (Chrome in kiosk mode on `/playground?seat=1`, 80 section 74); no product screen links to it.
 
 ```
 <PlaygroundScreen>                       page background --color-bg-playground
@@ -1804,7 +1875,7 @@ Adding calls `ingest(db, buildTestEmail(input), 'own')`, closes the composer, ad
 
 ### 13.10 Not found (`*`)
 
-H1 "This page isn't here." Link button "Go to Ask" (Google users) or "Open the Playground".
+H1 "This page isn't here." "Open Sieve": a link to Ask for Google users, otherwise a button that signs in with Google (`useOpenSieve`, 13.1).
 
 ---
 
@@ -2112,6 +2183,7 @@ interface SegmentedProps<V extends string> {
 }
 interface NoticeProps { tone: 'info' | 'warning' | 'cloud' | 'never' | 'success'; title?: string; children: ReactNode; actions?: ReactNode; icon?: IconName }
 interface ProgressBarProps { value?: number; label: string; valueText?: string }   // value 0..1; undefined = indeterminate; 8px tall, pill, track --color-border, fill --color-device
+// the fill's width moves with a 600 ms ease-out transition, so progress reads as a flow; prefers-reduced-motion keeps it (a bar filling in place is not motion)
 interface EmptyStateProps { icon: IconName; title: string; body: string; actions?: ReactNode }
 ```
 
@@ -2415,16 +2487,16 @@ The body of `/prepare` (13.2), reused by Setup step 1 (without the H1 when `embe
 
 | What | Budget |
 |---|---|
-| Initial JS for `/welcome` (shell, router, React, Firebase app and auth, welcome chunk) | 170 KB |
+| Initial JS for `/` (the landing: shell, router, React, Firebase app and auth, welcome chunk) | 170 KB |
 | Initial JS for `/playground` (adds the AI layer with `firebase/ai` and `firebase/app-check`, pipeline, privacy code without model weights, index, Dexie, MiniSearch) | 320 KB |
-| Additional JS after Google sign-in for `/` (Firestore, RTDB, messaging, services, engine) | 180 KB (was 160; measured at implementation on Nov 18: `firebase/firestore` 13.3.0 alone is 147.7 KB gzipped, the session code 14 KB; RTDB now loads only when the tab becomes the home base) |
+| Additional JS after Google sign-in for `/ask` (Firestore, RTDB, messaging, services, engine) | 180 KB (was 160; measured at implementation on Nov 18: `firebase/firestore` 13.3.0 alone is 147.7 KB gzipped, the session code 14 KB; RTDB now loads only when the tab becomes the home base) |
 | Any single route chunk | 60 KB |
 | All CSS | 35 KB |
 | Fonts (two variable woff2, latin) | 110 KB |
 
 Not in any initial graph (the script fails if they are): `pdfjs-dist`, `@huggingface/transformers` and the PII model weights. Their owners (20, 11) load them with dynamic `import()` on first need.
 
-Lighthouse (desktop, local production build): `/welcome` and `/playground` Performance at least 90, LCP at most 2.0 s, CLS at most 0.05, TBT at most 200 ms. Interaction: switching the ladder step updates the preview within one frame (no async work); ticking a related item shows "Preparing…" within 100 ms.
+Lighthouse (desktop, local production build): `/` (the landing) and `/playground` Performance at least 90, LCP at most 2.0 s, CLS at most 0.05, TBT at most 200 ms. Interaction: switching the ladder step updates the preview within one frame (no async work); ticking a related item shows "Preparing…" within 100 ms.
 
 ### 17.2 Code splitting rules
 
@@ -2502,7 +2574,7 @@ Config (`playwright.config.ts`): `webServer: { command: 'npm run dev -- --mode e
 7. **Narrow**: in the `narrow` project the golden path completes and `document.scrollingElement.scrollWidth <= window.innerWidth`.
 8. **Model setup**: stub `downloadable`; open `/prepare`; "Start setup"; the progress bar passes 25% and 50%; "The on-device model is ready" appears.
 
-`a11y.spec.ts`: `@axe-core/playwright` on `/welcome`, `/playground` (idle and with a ready result) and `/prepare` (stub `downloadable`): no violations with impact `serious` or `critical`.
+`a11y.spec.ts`: `@axe-core/playwright` on `/` (the landing), `/playground` (idle and with a ready result) and `/prepare` (stub `downloadable`): no violations with impact `serious` or `critical`.
 
 ---
 
@@ -2541,8 +2613,8 @@ Each is checked by a test in 18 or 19, or by hand on the demo machine where mark
 | AT-27 | What has AI seen? | the page opens | the audit badge shows "Checking the log…", then "Log intact" or the failure copy |
 | AT-28 | the browser goes offline | on Ask | the offline banner shows; Ask still searches; drafting is disabled with its reason |
 | AT-29 | a second Google account on the same browser | sign in | the "another account's index" dialog blocks until cleared or signed out |
-| AT-30 | Delete my account | confirm with DELETE | the home base stops, push is unregistered, the account is deleted (reauth if needed), the local index is cleared, and `/welcome` shows the toast |
-| AT-31 | all pages | axe | no serious or critical violations on `/welcome`, `/playground`, `/prepare` |
+| AT-30 | Delete my account | confirm with DELETE | the home base stops, push is unregistered, the account is deleted (reauth if needed), the local index is cleared, and `/` shows the toast |
+| AT-31 | all pages | axe | no serious or critical violations on `/` (the landing), `/playground`, `/prepare` |
 | AT-32 | all controls | measure | every interactive element is at least 44 by 44 px |
 | AT-33 | 768px wide | Ask and Playground | fully usable; no horizontal page scroll |
 | AT-34 | the production build | `check-bundle` | every budget in 17.1 passes; pdf.js and transformers are not in any initial graph |

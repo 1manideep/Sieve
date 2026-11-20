@@ -9,6 +9,7 @@ import { SEEN, SENTENCE } from '@/copy/screens-controls';
 import { formatCount } from '@/copy/format';
 import { SCREENS, TITLES } from '@/copy/strings';
 import { useAudit } from '@/state/audit';
+import { readAutoApproved } from '@/state/autoApprove';
 import { filterReceipts, useReceipts } from '@/state/receipts';
 import { useRecords } from '@/state/records';
 import { useSession } from '@/state/session';
@@ -43,6 +44,8 @@ export function Component() {
     useShallow((s) => ({ status: s.status, receipts: s.receipts, filters: s.filters, limit: s.limit })),
   );
   const meta = useRecords((s) => s.meta);
+  // Read again with each receipts snapshot: the home base marks a receipt as it approves it automatically.
+  const autoApproved = useMemo(() => (uid && receipts.length > 0 ? readAutoApproved(uid) : undefined), [uid, receipts]);
 
   useEffect(() => {
     if (!uid) return undefined;
@@ -98,7 +101,7 @@ export function Component() {
   } else {
     body = (
       <>
-        <ReceiptList variant="real" receipts={shown} meta={meta} now={now} />
+        <ReceiptList variant="real" receipts={shown} meta={meta} now={now} autoApproved={autoApproved} />
         {receipts.length >= limit ? (
           <div>
             <Button variant="secondary" onClick={() => useReceipts.getState().showMore()}>

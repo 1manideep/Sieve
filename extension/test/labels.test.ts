@@ -38,7 +38,7 @@ describe('labels', () => {
     expect(['answer', 'excerpt', 'full'].map((s) => stepLabel(s as 'answer'))).toEqual(['Answer only', 'Excerpt', 'Full item']);
   });
 
-  it('never uses an em dash in panel copy', () => {
+  it('never uses an em dash or a double dash in panel copy', () => {
     const strings: string[] = [];
     const collect = (v: unknown) => {
       if (typeof v === 'string') strings.push(v);
@@ -54,7 +54,11 @@ describe('labels', () => {
     collect(sentHeading(1234, 'Test assistant'));
     collect(notificationMessage('Test assistant'));
     expect(strings.length).toBeGreaterThan(40);
-    for (const s of strings) expect(s).not.toMatch(/—/);
+    expect(strings).toContain(COPY.settings.openOnArrival);
+    for (const s of strings) {
+      expect(s).not.toMatch(/—/);
+      expect(s).not.toMatch(/--/);
+    }
   });
 
   it('cuts names without splitting a surrogate pair', () => {

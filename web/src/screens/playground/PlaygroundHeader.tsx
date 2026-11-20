@@ -52,7 +52,7 @@ export function PlaygroundHeader({ onReset, tabs }: PlaygroundHeaderProps) {
     <header className={styles.header}>
       <div className={styles.headerInner}>
         <div className={styles.brand}>
-          <Link to="/welcome" className={styles.wordmark}>
+          <Link to="/" className={styles.wordmark}>
             {APP_NAME}
           </Link>
           <span className={styles.openSource}>{PLAYGROUND_COPY.openSource}</span>

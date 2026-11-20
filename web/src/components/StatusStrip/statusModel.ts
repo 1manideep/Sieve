@@ -9,10 +9,10 @@ export type Tone = 'teal' | 'amber' | 'neutral';
 
 export type StatusAction =
   | 'make-home-base' | 'stop-home-base' | 'use-this-tab'
-  | 'set-up-model' | 'show-progress' | 'open-playground'
+  | 'set-up-model' | 'show-progress' | 'cloud-fallback'
   | 'pause-indexing' | 'resume-indexing' | 'get-extension';
 
-export interface Segment { id: 'home-base' | 'model' | 'indexing'; text: string; tone: Tone }
+export interface Segment { id: 'home-base' | 'model' | 'indexing' | 'auto-approve'; text: string; tone: Tone }
 
 export interface PopoverRow {
   id: 'home-base' | 'model' | 'indexing' | 'extension';
@@ -30,6 +30,8 @@ export interface StatusInput {
   availability: Pick<AvailabilityState, 'text' | 'setup'>;
   indexing: Pick<IndexingState, 'state' | 'left' | 'done' | 'total' | 'etaMs'>;
   extensionEnabled: boolean;
+  /** Auto-approve, testing mode, is on for any connection on this computer (40 section 13.8.9). */
+  autoApprove?: boolean;
 }
 
 export interface StatusModel {
@@ -152,7 +154,7 @@ function modelRow(a: StatusInput['availability'], segment: Segment): PopoverRow 
       return row(STATUS_POPOVER.modelDownloading);
     case 'unavailable':
     case 'no-api':
-      return row(STATUS_POPOVER.modelUnavailable, { kind: 'open-playground', label: STATUS_POPOVER.openPlayground });
+      return row(STATUS_POPOVER.modelUnavailable, { kind: 'cloud-fallback', label: STATUS_POPOVER.turnOnCloud });
   }
 }
 
@@ -199,7 +201,8 @@ export function statusModel(input: StatusInput): StatusModel {
   const home = homeBaseSegment(input);
   const model = modelSegment(input.availability);
   const indexing = indexingSegment(input.indexing);
-  const segments = [home, model, indexing].filter((s): s is Segment => s !== null);
+  const auto: Segment | null = input.autoApprove ? { id: 'auto-approve', text: STATUS.autoApproveOn, tone: 'amber' } : null;
+  const segments = [home, model, indexing, auto].filter((s): s is Segment => s !== null);
 
   let tone: Tone = 'neutral';
   if (segments.some((s) => s.tone === 'amber')) tone = 'amber';

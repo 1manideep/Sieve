@@ -1,5 +1,6 @@
-// buildStepOption() (11 section 10): the exact outgoing text of one ladder step. Plain code only at share time, on the
-// cached findings; a stale record is scanned in memory first (without waiting for the browser model).
+// buildStepOption() (11 section 10): the exact outgoing text of one ladder step. Plain code only, on the cached
+// findings; a stale record is scanned in memory first (without waiting for the browser model). The share-time Gemini
+// Nano check (shareCheck.ts, 10.7) reads the built text and hands its findings back as extraEntities and extraQuotes.
 import type { DataClass, IndexRecord, LadderStep, SharedImage, StepOption, TraceStep } from '@sieve/shared';
 import { LADDER_STEPS, MAX_PAYLOAD_CHARS } from '@sieve/shared';
 import { ANSWER_MAX_CHARS, REMOVED_SENTENCE } from '../constants';
@@ -12,7 +13,7 @@ import { prepareValidators, runValidators } from '../pii/validators';
 import { redact } from '../redact';
 import { cleanChars } from '../sanitize/chars';
 import { expectedStages, isScanCurrent, knownEntities, memoScan, scanText } from '../scan/scan';
-import { ensureWellFormed, isAbortError, plural, type Range } from '../text';
+import { collapseSpaces, ensureWellFormed, isAbortError, plural, type Range } from '../text';
 import type { BuildStepOptions } from '../types';
 import { answerKeepTypes, cleanAnswer } from './answer';
 import { excerptHeader, locateExcerpt } from './excerpt';
@@ -40,11 +41,15 @@ function unavailable(step: LadderStep, reason: string): StepOption {
   return { step, text: '', chars: 0, redactions: 0, available: false, unavailableReason: reason };
 }
 
-/** S5 for excerpt and full: replaces sentences the patterns score as suspicious, and the cached finding's sentence. */
-export function removeInjectedSentences(text: string, quote: string | undefined): { text: string; count: number } {
+/**
+ * S5 for excerpt and full: replaces sentences the patterns score as suspicious, the cached finding's sentence and the
+ * sentences the share-time Nano check flagged.
+ */
+export function removeInjectedSentences(text: string, quote: string | undefined, more: readonly string[] = []): { text: string; count: number } {
   const ranges: Range[] = [...suspiciousSentences(text)];
-  if (quote) {
-    const at = locateQuote(text, quote);
+  for (const q of [quote, ...more]) {
+    if (!q) continue;
+    const at = locateQuote(text, q);
     if (at) ranges.push(at);
   }
   if (ranges.length === 0) return { text, count: 0 };
@@ -137,16 +142,21 @@ export async function buildStepOption(
 
     // 5. injection
     let removed = 0;
+    const extraQuotes = opts.extraQuotes ?? [];
     if (step === 'answer') {
       if (matchInjectionPatterns(text).suspicious) return unavailable(step, UNAVAILABLE.answerInstruction);
+      const folded = collapseSpaces(text).toLowerCase();
+      if (extraQuotes.some((q) => q.trim() && folded.includes(collapseSpaces(q).toLowerCase()))) return unavailable(step, UNAVAILABLE.answerInstruction);
     } else {
-      const r = removeInjectedSentences(text, rec.injection?.quote);
+      const r = removeInjectedSentences(text, rec.injection?.quote, extraQuotes);
       text = r.text;
       removed = r.count;
     }
 
-    // 6. spans (plain code only): validators plus everything already known about this record
-    const spans = finalizeSpans(text, [...runValidators(text), ...locateEntities(text, knownEntities(rec))]);
+    // 6. spans (plain code only): validators plus everything already known about this record (and, at share time,
+    // what Gemini Nano found in the outgoing text)
+    const known = [...knownEntities(rec), ...(opts.extraEntities ?? [])];
+    const spans = finalizeSpans(text, [...runValidators(text), ...locateEntities(text, known)]);
 
     // 7, 8. answer exemptions, then redaction
     const keepTypes = step === 'answer' && opts.question ? answerKeepTypes(opts.question) : [];

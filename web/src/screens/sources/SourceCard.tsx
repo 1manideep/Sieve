@@ -1,11 +1,12 @@
 // SourceCard (40 section 13.6; F5): one glass card per source with its name, a status dot, the count of items on
 // this computer, progress while indexing, notices and the real connect, disconnect and change actions. Setup step
-// 3 (13.3) reuses it with `compact`. Connect and reauthorize run straight from the click (the Google popup and the
+// 1 (13.3) reuses it with `compact`. Connect and reauthorize run straight from the click (the Google popup and the
 // directory picker need the user gesture).
 import { useId, useRef, useState, type ChangeEvent } from 'react';
 import { Button } from '@/components/Button/Button';
 import { Notice } from '@/components/Notice/Notice';
 import { ProgressBar } from '@/components/ProgressBar/ProgressBar';
+import { useIndexing } from '@/state/indexing';
 import { SOURCES, fillText } from '@/copy/screens-controls';
 import { formatCount } from '@/copy/format';
 import { useSources, type SourceRowView } from '@/state/sources';
@@ -53,7 +54,11 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
   const name = SOURCES.names[kind];
   const connected = kind === 'upload' ? Boolean(row?.connected) || itemCount > 0 : Boolean(row?.connected);
   const paused = connected && Boolean(row?.paused);
-  const progress = row?.progress ?? { done: 0, total: 0 };
+  // The numbers every bar of this source shows come from useIndexing (one throttled, never-backwards value, 20
+  // section 13.4); the row's own progress is the fallback before the indexing state has seen the row.
+  const shown = useIndexing((s) => s.bySource[kind]);
+  const progress = shown ?? row?.progress ?? { done: 0, total: 0 };
+  const fraction = shown ? shown.fraction : progress.total > 0 ? progress.done / progress.total : 0;
   const indexing = connected && !paused && progress.total > 0 && progress.done < progress.total;
   const indexingText = fillText(SOURCES.indexingLabel, { done: formatCount(progress.done), total: formatCount(progress.total) });
 
@@ -117,7 +122,7 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
         <span className={styles.statusRow}>
           {indexing ? (
             <span className={`${kit.status} ${kit.accent}`}>
-              {fillText(SOURCES.indexingPct, { pct: Math.round((progress.done / progress.total) * 100) })}
+              {fillText(SOURCES.indexingPct, { pct: Math.round(fraction * 100) })}
             </span>
           ) : null}
           {status}
@@ -133,7 +138,7 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
 
       {indexing ? (
         <>
-          <ProgressBar value={progress.done / progress.total} label={indexingText} />
+          <ProgressBar value={fraction} label={indexingText} />
           <p className={styles.meta}>{indexingText}</p>
         </>
       ) : null}

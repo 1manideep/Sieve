@@ -7,7 +7,7 @@ import { Icon, type IconName } from '../icons';
 import styles from './MainNav.module.css';
 
 const PRIMARY: readonly { to: string; label: string; icon: IconName; end: boolean }[] = [
-  { to: '/', label: NAV.newAsk, icon: 'pencil', end: true },
+  { to: '/ask', label: NAV.newAsk, icon: 'pencil', end: true },
   { to: '/try', label: NAV.tryComputer, icon: 'monitor', end: false },
 ];
 

@@ -30,11 +30,12 @@ describe('OutcomePanel', () => {
     await expectNoAxeViolations();
   });
 
-  it('model-unavailable: Settings and Try the Playground (real)', async () => {
+  it('model-unavailable: Settings and Set up the on-device model (real); no Playground', async () => {
     renderIn(<OutcomePanel outcome="model-unavailable" variant="real" />);
     expect(screen.getByText("The on-device model isn't available")).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Try the Playground' })).toHaveAttribute('href', '/playground');
+    expect(screen.getByRole('link', { name: 'Set up the on-device model' })).toHaveAttribute('href', '/prepare?back=/');
+    expect(screen.queryByRole('link', { name: /Playground/ })).toBeNull();
     await expectNoAxeViolations();
   });
 

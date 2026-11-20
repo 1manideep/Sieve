@@ -1,5 +1,6 @@
 // The notices above the Ask question (40 section 13.4), in priority order, at most two; and whether the model state
-// blocks "Find on this device" (40 sections 13.4 and 13.2a).
+// blocks "Find on this device" (40 sections 13.4 and 13.2a). No notice sends people to the Playground: everyone uses
+// their own data. On the Ask home the 'indexing' notice gives way to the indexing card; the conversation keeps it.
 import type { NanoAvailability } from '@sieve/shared';
 import type { SetupState } from '@/state/availability';
 import type { IndexingState } from '@/state/indexing';
@@ -29,7 +30,7 @@ export function modelGate(i: Pick<AskNoticeInput, 'text' | 'setup' | 'cloudFallb
   return 'open';
 }
 
-const PREPARE = '/prepare?back=/';
+const PREPARE = '/prepare?back=/ask';
 
 export function askNotices(i: AskNoticeInput): AskNotice[] {
   const out: AskNotice[] = [];
@@ -37,7 +38,7 @@ export function askNotices(i: AskNoticeInput): AskNotice[] {
   if (i.sourcesConnected === false) {
     out.push({
       id: 'empty', tone: 'info', text: ASK_COPY.noticeEmpty,
-      actions: [{ label: ASK_COPY.goToSources, to: '/sources' }, { label: ASK_COPY.tryPlayground, to: '/playground' }],
+      actions: [{ label: ASK_COPY.goToSources, to: '/sources' }],
     });
   }
   const gate = modelGate(i);
@@ -48,7 +49,7 @@ export function askNotices(i: AskNoticeInput): AskNotice[] {
   } else if (gate === 'no-model') {
     out.push({
       id: 'no-model', tone: 'warning', text: ASK_COPY.noticeNoModel,
-      actions: [{ label: ASK_COPY.settings, to: '/settings#cloud' }, { label: ASK_COPY.tryPlayground, to: '/playground' }],
+      actions: [{ label: ASK_COPY.setUpModel, to: PREPARE }, { label: ASK_COPY.settings, to: '/settings#cloud' }],
     });
   } else if ((i.text === 'unavailable' || i.text === 'no-api') && i.cloudFallback) {
     out.push({ id: 'no-model-cloud', tone: 'cloud', text: ASK_COPY.noticeNoModelCloud, actions: [] });

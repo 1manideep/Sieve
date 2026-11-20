@@ -5,7 +5,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { badgeText, expect, notificationIds, STUB_URL, test } from './fixtures';
+import { badgeText, expect, notificationIds, setOpenOnArrival, STUB_URL, test } from './fixtures';
 import { DEPOSIT, STATEMENT } from './previews';
 
 base('release build: http://localhost:5173 gets no channel', async () => {
@@ -39,6 +39,7 @@ test('worker restart: the page reconnects, the badge returns, no second notifica
   const stub = await openStub();
   await stub.connect();
   await stub.waitForStatus('connected');
+  await setOpenOnArrival(sw, false); // notifications, not the popup, so the restart has something to repeat
   await stub.pending([STATEMENT, DEPOSIT]);
   await expect.poll(() => notificationIds(sw)).toHaveLength(2);
   await expect.poll(() => badgeText(sw)).toBe('2');

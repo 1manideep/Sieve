@@ -12,12 +12,12 @@ vi.mock('firebase/app', () => import('@/test/fakes/firebaseApp'));
 vi.mock('firebase/auth', () => import('@/test/fakes/firebaseAuth'));
 vi.mock('@/ai', () => import('@/test/fakes/ai'));
 
-function renderWelcome(path = '/welcome') {
+function renderWelcome(path = '/') {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/welcome" element={<main><WelcomeScreen /></main>} />
-        <Route path="/" element={<p>Ask page</p>} />
+        <Route path="/" element={<main><WelcomeScreen /></main>} />
+        <Route path="/ask" element={<p>Ask page</p>} />
         <Route path="/sources" element={<p>Sources page</p>} />
         <Route path="/playground" element={<p>Playground page</p>} />
       </Routes>
@@ -36,7 +36,8 @@ describe('Welcome', () => {
     expect(screen.getByText(SCREENS.welcome.lead)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open Sieve' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Try on a real computer' })).toHaveAttribute('href', '/try');
-    expect(screen.getByRole('link', { name: WELCOME_COPY.signInNoteLink })).toHaveAttribute('href', '/playground');
+    expect(screen.getByText('Open Sieve signs you in with Google.')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Playground/ })).toBeNull();
     expect(screen.getByRole('img', { name: WELCOME_COPY.sceneLabel })).toBeInTheDocument();
     const numbers = screen.getByRole('list', { name: WELCOME_COPY.numbersLabel });
     for (const n of WELCOME_COPY.numbers) {
@@ -74,7 +75,7 @@ describe('Welcome', () => {
     act(() => {
       useSession.setState({ signInWithGoogle });
     });
-    renderWelcome('/welcome?next=%2Fsources');
+    renderWelcome('/?next=%2Fsources');
     await userEvent.click(screen.getByRole('button', { name: 'Open Sieve' }));
     expect(signInWithGoogle).toHaveBeenCalledOnce();
     expect(await screen.findByText('Sources page')).toBeInTheDocument();
@@ -85,18 +86,32 @@ describe('Welcome', () => {
     act(() => {
       useSession.setState({ signInWithGoogle });
     });
-    renderWelcome('/welcome?next=%2F%2Fevil.example');
+    renderWelcome('/?next=%2F%2Fevil.example');
     await userEvent.click(screen.getByRole('button', { name: 'Open Sieve' }));
     expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
   });
 
-  it('goes to the Playground when sign-in is not possible', async () => {
+  it('stays on Welcome when sign-in fails (the store shows the error toast); never goes to the Playground', async () => {
     const signInWithGoogle = vi.fn(async () => 'error' as const);
     act(() => {
       useSession.setState({ signInWithGoogle });
     });
     renderWelcome();
     await userEvent.click(screen.getByRole('button', { name: 'Open Sieve' }));
-    expect(await screen.findByText('Playground page')).toBeInTheDocument();
+    expect(signInWithGoogle).toHaveBeenCalledOnce();
+    expect(screen.getByRole('heading', { level: 1, name: 'Only what you approve leaves your computer.' })).toBeInTheDocument();
+    expect(screen.queryByText('Playground page')).toBeNull();
+    expect(screen.queryByText('Ask page')).toBeNull();
+  });
+
+  it('a Google user goes straight to Ask, with no second popup', async () => {
+    const signInWithGoogle = vi.fn(async () => 'ok' as const);
+    act(() => {
+      useSession.setState({ kind: 'google', user: { uid: 'u1', email: 'a@example.com', isAnonymous: false }, signInWithGoogle });
+    });
+    renderWelcome();
+    await userEvent.click(screen.getByRole('button', { name: 'Open Sieve' }));
+    expect(await screen.findByText('Ask page')).toBeInTheDocument();
+    expect(signInWithGoogle).not.toHaveBeenCalled();
   });
 });

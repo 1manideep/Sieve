@@ -22,14 +22,14 @@ Paste these into the Developer Dashboard (docs/spec/50-extension.md section 13).
 ```
 Sieve is the approval panel for the Sieve web app (sieve.manideep.info), which lets AI assistants get only what a task needs from your email, files and photos.
 
-When an AI assistant you connected asks Sieve for something, your open Sieve tab finds the answer on your own computer and prepares exactly what would be sent. This extension shows that request in a popup from its toolbar icon, on whatever tab you are on, and can keep it open in Chrome's side panel:
+When an AI assistant you connected asks Sieve for something, your open Sieve tab finds the answer on your own computer and prepares exactly what would be sent. This extension shows that request in a popup from its toolbar icon, on whatever tab you are on, and can keep it open in Chrome's side panel. The popup opens by itself when a request arrives; you can turn that off in its settings. It shows:
 • who is asking and what they asked for
 • the item Sieve found
 • how much to share: the answer only, an excerpt, or the full item
 • the exact text that would be sent, with any warnings
 • Approve or Deny
 
-The extension holds no index and runs no AI models. It talks only to your own Sieve tab on this computer, through Chrome's page-to-extension messaging, so previews never pass through a server. It keeps previews in memory only and stores nothing on disk.
+The extension holds no index and runs no AI models. It talks only to your own Sieve tab on this computer, through Chrome's page-to-extension messaging, so previews never pass through a server. It keeps previews in memory only. The one thing it saves is your choice of whether the popup opens by itself.
 
 Requires the Sieve web app open in a tab. Chrome on desktop.
 ```
@@ -47,8 +47,8 @@ Lets the person approve or deny, from the extension's toolbar popup or Chrome's 
 | Permission | Justification (paste) |
 |---|---|
 | sidePanel | `Lets the person keep the approval panel open next to the current tab ("Keep open on the side" in the popup), so they can review requests and approve or deny them without leaving the page they are on.` |
-| notifications | `Shows a local notice that a request is waiting when Sieve's popup and side panel are closed. The notice names the assistant only, never the request content.` |
-| storage | `Uses chrome.storage.session (memory only, cleared when Chrome closes) to remember which request ids it has already announced, so a service worker restart does not repeat a notice. No request content is stored.` |
+| notifications | `Shows a local notice that a request is waiting when Sieve's popup and side panel are closed and the popup could not open by itself. The notice names the assistant only, never the request content.` |
+| storage | `Uses chrome.storage.session (memory only, cleared when Chrome closes) to remember which request ids it has already announced, so a service worker restart does not repeat a notice. Uses chrome.storage.local for one setting the person chooses (whether the popup opens when a request arrives). No request content is stored.` |
 
 The manifest also declares one keyboard shortcut (`commands`, "Open or close Sieve"); it needs no permission.
 

@@ -125,3 +125,25 @@ export function badgeText(sw: Worker): Promise<string> {
 export function notificationIds(sw: Worker): Promise<string[]> {
   return sw.evaluate(() => chrome.notifications.getAll().then((all) => Object.keys(all)));
 }
+
+/** Writes the setting the popup's switch writes (chrome.storage.local `settings`, 50 section 7.10). */
+export function setOpenOnArrival(sw: Worker, openOnArrival: boolean): Promise<void> {
+  return sw.evaluate((v) => chrome.storage.local.set({ settings: { openOnArrival: v } }), openOnArrival);
+}
+
+/** How many Sieve popups are open right now. */
+export function popupCount(sw: Worker): Promise<number> {
+  return sw.evaluate(async () => (await chrome.runtime.getContexts({ contextTypes: ['POPUP' as chrome.runtime.ContextType] })).length);
+}
+
+/** Opens a focused normal window (the person is looking at Chrome) and waits until Chrome reports it as focused. */
+export async function focusedWindow(sw: Worker): Promise<number> {
+  const id = await sw.evaluate(async () => (await chrome.windows.create({ url: 'about:blank', focused: true, width: 1280, height: 1000 }))?.id ?? -1);
+  await baseExpect
+    .poll(() => sw.evaluate(async () => {
+      const w = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
+      return w.focused ? w.id : -1;
+    }))
+    .toBe(id);
+  return id;
+}

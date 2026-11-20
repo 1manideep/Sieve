@@ -10,7 +10,9 @@
   height: 100%;
   border-radius: var(--radius-pill, 999px);
   background: var(--color-accent, #8AB4F8);
-  transition: width var(--dur-slow) var(--ease-out);
+  /* 600 ms ease-out so progress reads as a flow, not jumps. A literal, not --dur-slow: reduced motion zeroes the
+     motion tokens, and a bar filling in place is not motion, so it keeps its transition. */
+  transition: width 600ms var(--ease-out, cubic-bezier(0.2, 0, 0, 1));
 }
 
 .indeterminate {

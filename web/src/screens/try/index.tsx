@@ -4,10 +4,11 @@
 // seat's screen shows in the 16:10 frame with the lease bar (time left, Full screen, Extend 5 min, End session), or
 // the place in line (polled every 10 s), or the offline copy. Full screen asks the browser for it on the frame; when
 // the browser refuses (or has no API, as on iPhone) the frame covers the window instead. Either way one glass pill at
-// the bottom holds the seat's controls.
+// the bottom holds the seat's controls. When no seat can be had, Open Sieve signs in with Google: Sieve also works on
+// the visitor's own computer, with their own data.
 import { useCallback, useEffect, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from 'react';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
-import { Button, LinkButton } from '@/components/Button/Button';
+import { Button } from '@/components/Button/Button';
 import { Spinner } from '@/components/Spinner/Spinner';
 import {
   HEALTH_FAILURES_TO_HIDE,
@@ -20,6 +21,7 @@ import {
   type SeatGranted,
   type SeatQueued,
 } from '@/components/TryOnRealComputer/broker';
+import { useOpenSieve } from '@/components/useOpenSieve';
 import { SENTENCE, TRY, fillText } from '@/copy/screens-controls';
 import { announce } from '@/state/announcer';
 import styles from './try.module.css';
@@ -149,7 +151,7 @@ export function Component() {
 
 /** GET /health now and every 20 s while `active` (skipped while the tab is hidden). Before the first answer, and
  *  after `key` changes, the rows say "checking". The first check failing says "offline" at once; after a good answer
- *  it takes two failures in a row, as for the button on the Playground. */
+ *  it takes two failures in a row. */
 function useBrokerHealth(active: boolean, key: number): Health {
   const [result, setResult] = useState<{ key: number; health: Health }>({ key: -1, health: CHECKING });
   useEffect(() => {
@@ -287,20 +289,31 @@ interface NextProps {
 
 /** What the visitor can do next, by state. While a seat is open its controls sit under the frame. */
 function Next({ view, health, onAsk, onRetry, firstRef }: NextProps) {
+  const { openSieve: signIn, signingIn } = useOpenSieve();
   const first = (el: HTMLElement | null) => {
     firstRef.current = el;
   };
-  const playground = (variant: 'primary' | 'secondary', isFirst = false) => (
-    <LinkButton to="/playground" variant={variant} size="lg" className={styles.big} ref={isFirst ? first : undefined}>
-      {TRY.openPlayground}
-    </LinkButton>
+  const openSieve = (variant: 'primary' | 'secondary', isFirst = false) => (
+    <Button
+      variant={variant}
+      size="lg"
+      className={styles.big}
+      ref={isFirst ? first : undefined}
+      busy={signingIn}
+      aria-disabled={signingIn || undefined}
+      onClick={() => {
+        if (!signingIn) void signIn();
+      }}
+    >
+      {TRY.openSieve}
+    </Button>
   );
 
   if (view.kind === 'idle' || view.kind === 'requesting') {
     if (view.kind === 'idle' && health.kind === 'down') {
       return (
         <Message text={TRY.offline}>
-          {playground('primary', true)}
+          {openSieve('primary', true)}
           <Button variant="secondary" size="lg" className={styles.big} onClick={onRetry}>
             {TRY.again}
           </Button>
@@ -342,7 +355,7 @@ function Next({ view, health, onAsk, onRetry, firstRef }: NextProps) {
           {full ? (
             <>
               {queue}
-              {playground('secondary')}
+              {openSieve('secondary')}
             </>
           ) : (
             <>
@@ -367,27 +380,27 @@ function Next({ view, health, onAsk, onRetry, firstRef }: NextProps) {
     case 'queued':
       return (
         <Message text={fillText(TRY.queued, { n: view.position, m: view.etaMinutes })} live>
-          {playground('primary', true)}
+          {openSieve('primary', true)}
         </Message>
       );
     case 'offline':
       return (
         <Message text={TRY.offline}>
-          {playground('primary', true)}
+          {openSieve('primary', true)}
           <Button variant="secondary" size="lg" className={styles.big} onClick={onRetry}>
             {TRY.again}
           </Button>
         </Message>
       );
     case 'limited':
-      return <Message text={TRY.limited}>{playground('primary', true)}</Message>;
+      return <Message text={TRY.limited}>{openSieve('primary', true)}</Message>;
     case 'ended':
       return (
         <Message text={TRY.ended}>
           <Button ref={first} variant="primary" size="lg" className={styles.big} onClick={() => onAsk('take')}>
             {TRY.takeSeat}
           </Button>
-          {playground('secondary')}
+          {openSieve('secondary')}
         </Message>
       );
   }

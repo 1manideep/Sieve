@@ -35,10 +35,30 @@ export const onAuthStateChanged = vi.fn((_auth: unknown, callback: (user: FakeUs
   queueMicrotask(() => callback(currentUser));
   return () => undefined;
 });
+/** The access token the fake popup's credential carries (the Gmail fallback reads it). */
+export const FAKE_POPUP_ACCESS_TOKEN = 'ya29.fake-firebase-popup-token';
+
 export class GoogleAuthProvider {
-  setCustomParameters(): void {}
+  scopes: string[] = [];
+  customParameters: Record<string, string> = {};
+  addScope(scope: string): this {
+    this.scopes.push(scope);
+    return this;
+  }
+  setCustomParameters(params: Record<string, string> = {}): this {
+    this.customParameters = params;
+    return this;
+  }
+  /** Reads the credential the fake popups put on their result. */
+  static credentialFromResult(result: { credential?: { accessToken?: string } | null } | null): { accessToken?: string } | null {
+    return result?.credential ?? null;
+  }
 }
 export const signInWithPopup = vi.fn(async () => ({ user: currentUser }));
+export const reauthenticateWithPopup = vi.fn(async (user: FakeUser | null, _provider?: GoogleAuthProvider) => ({
+  user,
+  credential: { accessToken: FAKE_POPUP_ACCESS_TOKEN },
+}));
 export const signInAnonymously = vi.fn(async () => ({ user: currentUser }));
 export const signOut = vi.fn(async () => {
   currentUser = null;

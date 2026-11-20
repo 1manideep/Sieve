@@ -43,7 +43,6 @@ export const NAV = {
   sources: 'Sources',
   seen: 'What has AI seen?',
   settings: 'Settings',
-  playground: 'Playground',
   requestsWaiting: (n: number) => `Requests, ${n} waiting`,
   // The left rail (docs/design/final-flow.md, F3 and F5)
   newAsk: 'New ask',
@@ -51,6 +50,8 @@ export const NAV = {
   control: 'Control',
   menu: 'Menu',
   closeMenu: 'Close the menu',
+  hideMenu: 'Hide menu',
+  showMenu: 'Show menu',
 } as const;
 
 /** The Nano meter card at the bottom of the rail: short words next to "Gemini Nano", the index and the home base. */
@@ -81,7 +82,6 @@ export const PUBLIC_NAV = {
   label: 'Site',
   openSource: 'Open source',
   how: 'How it works',
-  playground: 'Playground',
   tryComputer: 'Try on a real computer',
   github: 'GitHub',
   openSieve: 'Open Sieve',
@@ -95,7 +95,6 @@ export const ACCOUNT = {
   button: 'Account',
   signedInAs: (email: string) => `Signed in as ${email}`,
   settings: 'Settings',
-  playground: 'Playground',
   signOut: 'Sign out',
 } as const;
 
@@ -110,7 +109,6 @@ export const AUTH_ERRORS = {
 export const ROUTE_ERROR = {
   notFoundTitle: "This page isn't here.",
   goToAsk: 'Go to Ask',
-  openPlayground: 'Open the Playground',
   openSieve: 'Open Sieve',
   notFoundLine: 'The address is wrong, or the page moved. Nothing was shared.',
   updatedTitle: 'Sieve was updated',
@@ -140,6 +138,7 @@ export const STATUS = {
   indexingLeft: (left: string) => `Indexing ${left} left`,
   indexingYielding: 'Indexing paused for your question',
   indexingPaused: 'Indexing paused',
+  autoApproveOn: 'Auto-approve on',             // 40 section 13.8.9, a link to Settings
   accessibleName: (segments: string[]) => `Status: ${segments.join(', ')}. Show details.`,
 } as const;
 
@@ -162,7 +161,7 @@ export const STATUS_POPOVER = {
   modelSetupRunning: (pct: number) => `Setting up Gemini Nano: ${pct}%. You can keep using Sieve.`,
   modelDownloading: 'Chrome is setting up Gemini Nano. This can take a few minutes.',
   modelUnavailable:
-    "This Chrome can't run Gemini Nano. Your own data stays unread here unless you turn on cloud fallback. The Playground still works.",
+    "This Chrome can't run Gemini Nano. Your own data stays unread here unless you turn on cloud fallback.",
   indexingRunning: (left: string, eta?: string) =>
     eta ? `Reading ${left} items on this device. About ${eta} left.` : `Reading ${left} items on this device.`,
   indexingYielding: 'Paused while Sieve answers your question. It picks up again on its own.',
@@ -177,7 +176,7 @@ export const STATUS_POPOVER = {
   useThisTab: 'Use this tab instead',
   setItUp: 'Set it up',
   showProgress: 'Show progress',
-  openPlayground: 'Open the Playground',
+  turnOnCloud: 'Turn on cloud fallback',
   pause: 'Pause',
   resume: 'Resume',
   getExtension: 'Get the extension',
@@ -267,7 +266,7 @@ export const MODEL_SETUP_ERRORS = {
   noSpace: 'Chrome needs more free disk space (about 22 GB) to set up the model.',
   needsClick: 'Chrome needs a click to start. Press Try again.',
   network: 'The download stopped. Check your connection and press Try again.',
-  other: "Chrome couldn't set up the model. Try again, or use the Playground, which works without it.",
+  other: "Chrome couldn't set up the model. Try again, or turn on cloud fallback in Settings.",
 } as const;
 
 /** The in-app golden path (40 section 12.3). */

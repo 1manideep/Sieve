@@ -36,10 +36,23 @@ export const RELATED_MIN_COSINE = 0.5;
 // Typos
 export const TYPO_MIN_LEN = 3;
 
-// Background queue
+// Background queue (20 section 13). The lanes run one at a time, in this order, with a rest after each job, so a
+// folder of PDFs never keeps the GPU busy flat out (Nov 20: "Indexing, it's fine if it takes a little time").
 export const LABEL_BATCH_SIZE = 10;
 export const STAGE_RETRY_DELAYS_MS = [2_000, 4_000, 8_000];
-export const COST_PRIOR_SEC = { label: 0.8, caption: 10, embed: 0.015 } as const;   // per item (embed: per chunk)
+// Embeddings first: questions by meaning find new items early (labels at about 0.8 s each would hold the search index
+// back for an hour on a large inbox); ingest already applies the code label and the Health safety net, so safety does
+// not wait for Nano labels.
+export const QUEUE_LANE_ORDER = ['embed', 'label', 'privacy', 'caption'] as const;
+export const NANO_REST_MS = 1_000;                // after every Gemini Nano batch (a label batch, one photo caption)
+export const EMBED_REST_MS = 250;                 // after every embedding batch (EMBED_BATCH texts)
+export const PRIVACY_REST_MS = 100;               // between two items of the privacy scan
+export const CAPTION_SESSION_MAX = 200;           // photo captions per session (about 10 s of GPU each), on power only
+export const URGENT_FLUSH_MS = 3_000;             // a question waits at most this long for just-added items' vectors
+/** The rests and the caption cap the queue reads. Unit tests may change them (web/src/test/setup.ts zeroes the rests). */
+export const QUEUE_PACING = { nanoRestMs: NANO_REST_MS, embedRestMs: EMBED_REST_MS, privacyRestMs: PRIVACY_REST_MS, captionSessionMax: CAPTION_SESSION_MAX };
+// per item (embed: per chunk); privacy: the plain-code checks and the privacy model, an estimate
+export const COST_PRIOR_SEC = { label: 0.8, caption: 10, embed: 0.015, privacy: 0.1 } as const;
 export const COST_EWMA_ALPHA = 0.2;
 export const QUEUE_IDLE_RECHECK_MS = 60_000;
 export const SOURCE_ROW_WRITE_MS = 500;

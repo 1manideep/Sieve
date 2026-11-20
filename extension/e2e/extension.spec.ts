@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import type { Worker } from '@playwright/test';
 import type { Decision, ExtensionToPage } from '@sieve/shared';
 import { deriveExtensionId } from '../scripts/ext-id.mjs';
-import { badgeText, expect, notificationIds, sharedExtensionId, test } from './fixtures';
+import { badgeText, expect, focusedWindow, notificationIds, popupCount, setOpenOnArrival, sharedExtensionId, test } from './fixtures';
 import type { StubPage } from './fixtures';
 import { DEPOSIT, DEPOSIT_ANSWER, DEPOSIT_EXCERPT, LEASE, LEASE_EXCERPT, STATEMENT, variant } from './previews';
 
@@ -85,7 +85,8 @@ test('request and approve', async ({ openStub, openPanel, sw }) => {
   await expect.poll(() => badgeText(sw)).toBe('');
   expect(await decisions(stub)).toHaveLength(1); // exactly one decision
 
-  // Nothing stored: storage.local is empty; storage.session holds only request ids (50 section 16, item 8).
+  // Nothing stored: storage.local is empty until the person changes a setting; storage.session holds only request
+  // ids (50 section 16, item 8).
   const stored = await sw.evaluate(async () => ({
     local: await chrome.storage.local.get(null),
     session: await chrome.storage.session.get(null),
@@ -204,6 +205,7 @@ test('two tabs: both requests listed, each decision goes to its own page', async
 
 test('notification: one per new request while no panel is open, gone after resolved', async ({ openStub, sw }) => {
   const stub = await connected(openStub);
+  await setOpenOnArrival(sw, false); // the notification path; with the setting on, a request opens the popup (below)
   await stub.pending([STATEMENT]);
   await expect.poll(() => notificationIds(sw)).toEqual([`sieve-req-${STATEMENT.requestId}`]);
   await stub.pending([STATEMENT]);
@@ -213,6 +215,62 @@ test('notification: one per new request while no panel is open, gone after resol
   expect(announced).toEqual({ announced: [STATEMENT.requestId] });
   await stub.resolved(STATEMENT.requestId, 'declined');
   await expect.poll(() => notificationIds(sw)).toEqual([]);
+});
+
+test('a new request opens the real popup once; closed, it stays closed for that request (7.7)', async ({ openStub, sw }) => {
+  const stub = await connected(openStub);
+  const win = await focusedWindow(sw);
+  await stub.pending([DEPOSIT, LEASE]); // two at once: one popup
+  await expect.poll(() => panelViews(sw)).toContainEqual({ surface: 'popup', visible: true, windowId: win });
+  expect(await popupCount(sw)).toBe(1);
+  expect(await notificationIds(sw)).toEqual([]);
+  expect(await badgeText(sw)).toBe('2');
+  // The person closes it without deciding.
+  expect(await press(sw, win)).toBe('close');
+  await expect.poll(() => popupCount(sw)).toBe(0);
+  // The page repeats its list, and reloads (the same requests are added again): no popup, no notification.
+  await stub.pending([DEPOSIT, LEASE]);
+  await stub.disconnect();
+  await stub.connect();
+  await stub.waitForStatus('connected');
+  await stub.pending([DEPOSIT, LEASE]);
+  await stub.page.waitForTimeout(500); // asserting an absence: give a wrong open time to happen
+  expect(await popupCount(sw)).toBe(0);
+  expect(await notificationIds(sw)).toEqual([]);
+  // A new request opens it again, showing the new one with the others waiting.
+  await stub.pending([DEPOSIT, LEASE, STATEMENT]);
+  await expect.poll(() => popupCount(sw)).toBe(1);
+  expect(await notificationIds(sw)).toEqual([]);
+  expect(await sw.evaluate(() => chrome.storage.session.get('announced'))).toEqual({
+    announced: [DEPOSIT.requestId, LEASE.requestId, STATEMENT.requestId],
+  });
+  // It never opened the side panel (no gesture): the only page is the popup.
+  expect((await panelViews(sw)).map((v) => v.surface)).toEqual(['popup']);
+});
+
+test('settings: the popup switch turns opening on arrival off, and then a request only notifies', async ({ openStub, openPanel, sw }) => {
+  const stub = await connected(openStub);
+  const page = await openPanel('?surface=popup');
+  await page.getByRole('button', { name: 'Settings' }).click();
+  const toggle = page.getByRole('switch', { name: 'Open when a request arrives' });
+  await expect(toggle).toBeChecked();
+  const axe = await new AxeBuilder({ page }).analyze();
+  expect(axe.violations.map((v) => v.id)).toEqual([]);
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+  await expect.poll(() => sw.evaluate(() => chrome.storage.local.get(null))).toEqual({ settings: { openOnArrival: false } });
+  await page.close();
+  await expect.poll(() => panelViews(sw)).toEqual([]);
+  const win = await focusedWindow(sw);
+  await stub.pending([DEPOSIT]);
+  await expect.poll(() => notificationIds(sw)).toEqual([`sieve-req-${DEPOSIT.requestId}`]);
+  expect(await popupCount(sw)).toBe(0);
+  expect(await badgeText(sw)).toBe('1');
+  // Back on: the next request opens the popup in the focused window.
+  await setOpenOnArrival(sw, true);
+  await stub.pending([DEPOSIT, LEASE]);
+  await expect.poll(() => panelViews(sw)).toContainEqual({ surface: 'popup', visible: true, windowId: win });
+  expect(await notificationIds(sw)).toEqual([`sieve-req-${DEPOSIT.requestId}`]);
 });
 
 test('origin enforcement: 127.0.0.1 gets no channel to the extension', async ({ openStub, openPanel }) => {

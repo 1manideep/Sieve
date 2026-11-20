@@ -88,7 +88,7 @@ export function HowScreen() {
   };
   const back = () => {
     if (location.key !== 'default') navigate(-1);
-    else navigate('/welcome');
+    else navigate('/');
   };
 
   const read = step >= 2 ? '1' : '0';

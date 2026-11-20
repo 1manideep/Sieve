@@ -36,34 +36,39 @@ describe('routes, signed out', () => {
   it('shows the not-found screen for an unknown path, with no axe violations', async () => {
     renderRoute('/no-such-page');
     expect(await screen.findByRole('heading', { level: 1, name: SCREENS.notFound.heading })).toBeInTheDocument();
-    expect(within(screen.getByRole('main')).getByRole('link', { name: ROUTE_ERROR.openSieve })).toHaveAttribute('href', '/playground');
+    expect(within(screen.getByRole('main')).getByRole('button', { name: ROUTE_ERROR.openSieve })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Playground/ })).toBeNull();
     expect(screen.getByRole('contentinfo')).toHaveTextContent(PUBLIC_NAV.footer);
     await waitFor(() => expect(document.title).toBe(TITLES.notFound));
     await expectNoAxeViolations();
   });
 
-  it('shows the welcome screen under the public header', async () => {
-    renderRoute('/welcome');
+  it('shows the landing at the root under the public header', async () => {
+    renderRoute('/');
     expect(await screen.findByRole('heading', { level: 1, name: SCREENS.welcome.heading })).toBeInTheDocument();
     const site = screen.getByRole('navigation', { name: PUBLIC_NAV.label });
     expect(within(site).getAllByRole('link').map((l) => [l.textContent, l.getAttribute('href')])).toEqual([
       [PUBLIC_NAV.how, '/how'],
-      [PUBLIC_NAV.playground, '/playground'],
       [PUBLIC_NAV.tryComputer, '/try'],
       [PUBLIC_NAV.github, 'https://example.com/sieve'],
     ]);
     expect(within(site).getByRole('link', { name: PUBLIC_NAV.github })).toHaveAttribute('target', '_blank');
     const banner = screen.getByRole('banner');
-    expect(within(banner).getByRole('link', { name: PUBLIC_NAV.openSieve })).toHaveAttribute('href', '/playground');
+    // The header's Open Sieve signs in with Google, like the hero button; nothing links to the Playground.
+    expect(within(banner).getByRole('button', { name: PUBLIC_NAV.openSieve })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Playground/ })).toBeNull();
     expect(within(banner).getByText(PUBLIC_NAV.openSource)).toBeInTheDocument();
     await waitFor(() => expect(document.title).toBe(TITLES.welcome));
     await expectNoAxeViolations();
   });
 
-  it('sends the old /landing to /welcome', async () => {
+  it('sends the old /landing and /welcome to the root, keeping the query', async () => {
     const { router } = renderRoute('/landing');
     expect(await screen.findByRole('heading', { level: 1, name: SCREENS.welcome.heading })).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe('/welcome');
+    expect(router.state.location.pathname).toBe('/');
+    const second = renderRoute('/welcome?next=%2Fsources');
+    await waitFor(() => expect(second.router.state.location.pathname).toBe('/'));
+    expect(new URLSearchParams(second.router.state.location.search).get('next')).toBe('/sources');
   });
 
   it('shows How it works without signing in, with the header link marked', async () => {
@@ -83,10 +88,10 @@ describe('routes, signed out', () => {
     await expectNoAxeViolations();
   });
 
-  it('sends a Google-only route to Welcome with the path in next', async () => {
+  it('sends a Google-only route to the landing with the path in next', async () => {
     const { router } = renderRoute('/settings?x=1');
     expect(await screen.findByRole('heading', { level: 1, name: SCREENS.welcome.heading })).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe('/welcome');
+    expect(router.state.location.pathname).toBe('/');
     expect(new URLSearchParams(router.state.location.search).get('next')).toBe('/settings?x=1');
   });
 });
@@ -110,16 +115,18 @@ describe('routes, Google user', () => {
     await expectNoAxeViolations();
   });
 
-  it('sends a Google user from Welcome to Ask', async () => {
-    const { router } = renderRoute('/welcome');
-    await waitFor(() => expect(document.title).toBe(TITLES.ask));
+  it('shows the landing to a signed-in person at the root, and Ask at /ask', async () => {
+    const { router } = renderRoute('/');
+    expect(await screen.findByRole('heading', { level: 1, name: SCREENS.welcome.heading })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/');
-    expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
+    const ask = renderRoute('/ask');
+    await waitFor(() => expect(document.title).toBe(TITLES.ask));
+    expect(ask.router.state.location.pathname).toBe('/ask');
   });
 
   it('offers Ask on the not-found screen', async () => {
     renderRoute('/missing');
     expect(await screen.findByRole('heading', { level: 1, name: SCREENS.notFound.heading })).toBeInTheDocument();
-    expect(within(screen.getByRole('main')).getByRole('link', { name: ROUTE_ERROR.openSieve })).toHaveAttribute('href', '/');
+    expect(within(screen.getByRole('main')).getByRole('link', { name: ROUTE_ERROR.openSieve })).toHaveAttribute('href', '/ask');
   });
 });

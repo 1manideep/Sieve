@@ -30,7 +30,7 @@ export function AccountCard() {
             useSession
               .getState()
               .signOut()
-              .then(() => navigate('/welcome'))
+              .then(() => navigate('/'))
               .catch(console.error);
           }}
         >

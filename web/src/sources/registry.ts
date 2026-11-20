@@ -38,6 +38,19 @@ function wireGmailEvents(db: SieveDb): void {
   });
 }
 
+/** Sign-in errors from an earlier click (the Google sign-in script did not load, a popup was blocked or closed). */
+const CLICK_ERRORS: ReadonlySet<string> = new Set(['gis-load-failed', 'popup-blocked', 'popup-closed']);
+
+/**
+ * The Gmail row at app start. The token lives in memory only, so after a reload there is none: the row asks to sign
+ * in again (Continue). A sign-in error from an earlier click does not outlive the page.
+ */
+export function gmailStartPatch(row: Pick<SourceRow, 'errorCode'>, hasToken: boolean): Partial<SourceRow> {
+  const patch: Partial<SourceRow> = hasToken ? {} : { needsAuth: true };
+  if (row.errorCode && CLICK_ERRORS.has(row.errorCode)) Object.assign(patch, { error: undefined, errorCode: undefined });
+  return patch;
+}
+
 /** Leader: the ingest queue (which runs the privacy lane) for any database; source jobs only for the real one. */
 export async function startBackground(db: SieveDb): Promise<IngestQueue | null> {
   await ready(db);
@@ -65,8 +78,9 @@ export async function startSources(db: SieveDb): Promise<void> {
         const gmail = rows.find((r) => r.kind === 'gmail');
         if (gmail?.account) lastAccount.set(db, gmail.account);
         if (gmail?.connected) {
-          if (!getGmailToken()) await db.sources.update('gmail', { needsAuth: true });
-          else void runGmailSync(db);
+          const patch = gmailStartPatch(gmail, getGmailToken() !== null);
+          if (Object.keys(patch).length > 0) await db.sources.update('gmail', patch);
+          if (getGmailToken()) void runGmailSync(db);
           startGmailTimers(db);
         }
         const folder = rows.find((r) => r.kind === 'folder');
@@ -127,7 +141,10 @@ export async function connectFolder(db: SieveDb): Promise<void> {
   }
 }
 
-/** Inside a click handler. Gmail: a new token for the same account; folder: the permission prompt. */
+/**
+ * Inside a click handler. Gmail: a new token for the same account (Google Identity Services, or the Firebase popup
+ * when the script is not there; either opens inside the click); folder: the permission prompt.
+ */
 export async function reauthorize(db: SieveDb, kind: 'gmail' | 'folder'): Promise<void> {
   if (kind === 'gmail') {
     // the account hint is read from memory so the popup still opens inside the click

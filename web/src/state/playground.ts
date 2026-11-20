@@ -105,7 +105,8 @@ export const usePlayground = create<PlaygroundState>()((set, get) => {
     try {
       const index = await import('@/index');
       const handle = db ?? index.openDb('playground');
-      const record = await index.ingest(handle, raw, 'own');
+      // priority 'high': the visitor is about to ask about it, so the queue makes it searchable first, without its rests
+      const record = await index.ingest(handle, raw, 'own', { priority: 'high' });
       if (mine !== token) return;
       pending = pending.map((p) => (p === item ? { ...p, recordId: record.id, status: 'indexed' as const } : p));
       if (stored.some((s) => s.recordId === record.id)) pending = pending.filter((p) => p.recordId !== record.id);

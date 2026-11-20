@@ -1,5 +1,6 @@
-// First-run setup (`/setup`, 40 section 13.3): four steps, each revisitable. The download in step 1 continues if the
-// person moves on. Gmail in step 3 is fenced (00 D9) by the Sources card it reuses.
+// First-run setup (`/setup`, 40 section 13.3): four steps, each revisitable. Connect first: step 1 is the Gmail and
+// folder cards with live progress, and indexing runs in the background from there. The model download in step 2
+// continues if the person moves on. Gmail in step 1 is fenced (00 D9) by the Sources card it reuses.
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useNavigate } from 'react-router-dom';
@@ -105,11 +106,11 @@ function HomeBaseStep() {
 
   return (
     <>
-      <p className={styles.text}>{SETUP_COPY.step2Body}</p>
+      <p className={styles.text}>{SETUP_COPY.step3Body}</p>
       {done ? (
         <p className={styles.done} role="status">
           <Icon name="check" size={20} />
-          {SETUP_COPY.step2Done}
+          {SETUP_COPY.step3Done}
         </p>
       ) : (
         <form className={styles.form} onSubmit={submit} noValidate>
@@ -141,10 +142,14 @@ function HomeBaseStep() {
   );
 }
 
-function SourcesStep() {
+/** The real index's source rows, live (undefined until read). Waits for the owner check (40 section 6.4). */
+function useSourceRows(): SourceRowView[] | undefined {
   const ownerConflict = useSession((s) => s.ownerConflict);
   const db = useDb('real', !ownerConflict);
-  const rows = useLiveQuery(async () => (db ? ((await tablesOf(db).sources.toArray()) as SourceRowView[]) : []), [db]);
+  return useLiveQuery(async () => (db ? ((await tablesOf(db).sources.toArray()) as SourceRowView[]) : []), [db]);
+}
+
+function SourcesStep({ rows }: { rows: SourceRowView[] | undefined }) {
   const row = (kind: 'gmail' | 'folder') => rows?.find((r) => r.kind === kind);
   // Load the source modules ahead of the click, so the Google popup and the folder picker open inside it.
   useEffect(() => {
@@ -152,11 +157,21 @@ function SourcesStep() {
   }, []);
   return (
     <>
+      <p className={styles.text}>{SETUP_COPY.step1Body}</p>
       <div className={styles.sources}>
-        <SourceCard kind="folder" row={row('folder')} compact />
         <SourceCard kind="gmail" row={row('gmail')} compact />
+        <SourceCard kind="folder" row={row('folder')} compact />
       </div>
-      <p className={styles.note}>{SETUP_COPY.step3Note}</p>
+      <p className={styles.note}>{SETUP_COPY.step1Note}</p>
+    </>
+  );
+}
+
+function ModelStep({ settingUp }: { settingUp: boolean }) {
+  return (
+    <>
+      <ModelSetupPanel embedded backHref="/setup" />
+      {settingUp ? <p className={styles.note}>{SETUP_COPY.step2Note}</p> : null}
     </>
   );
 }
@@ -229,6 +244,8 @@ export function SetupScreen() {
   const navigate = useNavigate();
   const uid = useSession((s) => s.user?.uid);
   const { text, setup } = useAvailability(useShallow((s) => ({ text: s.text, setup: s.setup })));
+  const sourceRows = useSourceRows();
+  const sourcesConnected = sourceRows?.some((r) => r.connected && r.kind !== 'playground') ?? false;
   const [step, setStepState] = useState(1);
   const [moved, setMoved] = useState(false);
   const setStep = (n: number) => {
@@ -237,7 +254,7 @@ export function SetupScreen() {
   };
   const finish = () => {
     markSetupDone(uid);
-    navigate('/');
+    navigate('/ask');
   };
   const back = step > 1 ? (
     <Button variant="secondary" onClick={() => setStep(step - 1)}>
@@ -273,18 +290,18 @@ export function SetupScreen() {
       </div>
 
       {step === 1 ? (
-        <StepCard focusOnMount={moved} n={1} title={SETUP_COPY.step1Title} footer={<>{back}{next(text === 'available' || setup.state === 'done')}</>}>
-          <ModelSetupPanel embedded backHref="/setup" />
+        <StepCard focusOnMount={moved} n={1} title={SETUP_COPY.step1Title} footer={<>{back}{next(sourcesConnected)}</>}>
+          <SourcesStep rows={sourceRows} />
         </StepCard>
       ) : null}
       {step === 2 ? (
-        <StepCard focusOnMount={moved} n={2} title={SETUP_COPY.step2Title} footer={<>{back}<HomeBaseNext onNext={() => setStep(3)} /></>}>
-          <HomeBaseStep />
+        <StepCard focusOnMount={moved} n={2} title={SETUP_COPY.step2Title} footer={<>{back}{next(text === 'available' || setup.state === 'done')}</>}>
+          <ModelStep settingUp={setup.state === 'downloading' || setup.state === 'installing'} />
         </StepCard>
       ) : null}
       {step === 3 ? (
-        <StepCard focusOnMount={moved} n={3} title={SETUP_COPY.step3Title} footer={<>{back}{next(true)}</>}>
-          <SourcesStep />
+        <StepCard focusOnMount={moved} n={3} title={SETUP_COPY.step3Title} footer={<>{back}<HomeBaseNext onNext={() => setStep(4)} /></>}>
+          <HomeBaseStep />
         </StepCard>
       ) : null}
       {step === 4 ? (

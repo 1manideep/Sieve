@@ -33,12 +33,20 @@ describe('RouteError', () => {
     await expectNoAxeViolations();
   });
 
+  it('a missing page: a signed-out person gets Open Sieve, which signs in, and no Playground link', async () => {
+    renderThrowing(new Response('', { status: 404 }));
+    expect(await screen.findByRole('heading', { name: ROUTE_ERROR.notFoundTitle })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: ROUTE_ERROR.openSieve })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Playground/ })).toBeNull();
+    await expectNoAxeViolations();
+  });
+
   it('says nothing was shared after any other error', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     renderThrowing(new Error('boom'));
     expect(await screen.findByRole('heading', { name: ROUTE_ERROR.brokeTitle })).toBeInTheDocument();
     expect(screen.getByText(ROUTE_ERROR.brokeBody)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: ROUTE_ERROR.goToAsk })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: ROUTE_ERROR.goToAsk })).toHaveAttribute('href', '/ask');
     await expectNoAxeViolations();
   });
 });

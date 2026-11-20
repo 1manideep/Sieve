@@ -59,6 +59,10 @@ function stamp(rec: IndexRecord): PrivacyScanStamp {
 
 export const privacyModule = {
   sanitizeIncoming,
+  // 11's privacy model status (the queue's privacy lane waits while it loads): ready, so scans run at once
+  getPrivacyModelStatus: () => ({ state: 'ready' as const }),
+  warmupPrivacyModel: async () => ({ state: 'ready' as const }),
+  onPrivacyModelStatus: (_cb: (s: { state: string }) => void) => () => undefined,
   async expectedStages(_rec: IndexRecord, _data: string, rule: CategoryRule) {
     return { pii: rule === 'never' ? ['validators'] : ['validators', 'model'], injection: ['code'] };
   },

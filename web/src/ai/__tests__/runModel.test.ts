@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetAvailabilityForTests } from '../device/availability';
 import { setLanguageModelForTests } from '../device/languageModel';
 import { setHybridForTests } from '../hybrid';
 import { RETRY_REMINDER, SELECT_SCHEMA } from '../prompts';
@@ -178,5 +179,114 @@ describe('runModel (10 section 16.3)', () => {
     expect(!res.ok && res.error.code).toBe('quota');
     expect(res.trace).toMatchObject({ where: 'cloud', charsSent: 2 });
     expect(res.trace.sdkReported).toBeUndefined();
+  });
+});
+
+describe('cloud refusals: a 4xx other than 429 is never retried', () => {
+  beforeEach(() => resetAiForTests());
+
+  const refusal = (status: number) =>
+    Object.assign(new Error(`AI: Error fetching [${status}] FAILED_PRECONDITION (AI/fetch-error)`), {
+      name: 'FirebaseError', code: 'fetch-error', customErrorData: { status },
+    });
+  const INJECTION_JSON = '{"suspicious":false,"quote":""}';
+  const sampleCheck = (over: Partial<RunModelArgs> = {}): RunModelArgs => ({
+    purpose: 'injection-check', mode: 'PREFER_ON_DEVICE', data: 'sample', prompt: 'Sample email text', priority: 'background',
+    schema: { type: 'object', properties: { suspicious: { type: 'boolean' }, quote: { type: 'string' } }, required: ['suspicious', 'quote'] },
+    ...over,
+  });
+
+  it('a 400 FAILED_PRECONDITION makes one request, and later background calls of that purpose stop before the cloud', async () => {
+    setLanguageModelForTests(undefined);
+    const fake = useHybrid(() => {
+      throw refusal(400);
+    });
+    const first = await runModel(sampleCheck());
+    expect(!first.ok && first.error.code).toBe('unknown');
+    expect(fake.calls).toHaveLength(1);                     // a schema call allows two tries; a refusal uses one
+    // The Playground's privacy lane: one call per sample record on load. Only the first reaches the cloud.
+    for (let i = 0; i < 41; i += 1) {
+      const res = await runModel(sampleCheck({ prompt: `Sample email ${i}` }));
+      expect(res.ok).toBe(false);
+      expect(res.trace).toMatchObject({ where: 'code', charsSent: 0 });
+    }
+    expect(fake.calls).toHaveLength(1);
+    // Another intent still tries once; a question the person asks tries again.
+    await runModel(sampleCheck({ purpose: 'label' }));
+    expect(fake.callsFor('label')).toHaveLength(1);
+    await runModel(sampleCheck({ priority: 'foreground' }));
+    expect(fake.callsFor('injection-check')).toHaveLength(2);
+  });
+
+  it('every 4xx but 429 counts; 429 and 5xx stay retryable', async () => {
+    for (const status of [401, 403, 404]) {
+      resetAiForTests();
+      setLanguageModelForTests(undefined);
+      const fake = useHybrid(() => {
+        throw refusal(status);
+      });
+      await runModel(sampleCheck());
+      await runModel(sampleCheck());
+      expect(fake.calls).toHaveLength(1);
+    }
+    for (const status of [429, 500, 503]) {
+      resetAiForTests();
+      setLanguageModelForTests(undefined);
+      const fake = useHybrid(() => {
+        throw refusal(status);
+      });
+      await runModel(sampleCheck());
+      await runModel(sampleCheck());
+      expect(fake.calls).toHaveLength(2);
+    }
+  });
+
+  it('when the cloud works, every call goes through as before, and a success clears a refusal', async () => {
+    setLanguageModelForTests(undefined);
+    let fail = true;
+    const fake = useHybrid(() => {
+      if (fail) throw refusal(400);
+      return { text: INJECTION_JSON, source: 'in_cloud' };
+    });
+    await runModel(sampleCheck());
+    fail = false;
+    expect((await runModel(sampleCheck({ priority: 'foreground' }))).ok).toBe(true);
+    for (let i = 0; i < 5; i += 1) expect((await runModel(sampleCheck({ prompt: `Sample email ${i}` }))).ok).toBe(true);
+    expect(fake.calls).toHaveLength(7);
+  });
+
+  it('on the device nothing is blocked: the rule only stops cloud-only calls', async () => {
+    setLanguageModelForTests(undefined);
+    const fake = useHybrid(() => {
+      throw refusal(400);
+    });
+    await runModel(sampleCheck());
+    expect(fake.calls).toHaveLength(1);
+    resetAvailabilityForTests();                             // Nano finished setting up
+    useNano('available');
+    const device = useHybrid(() => ({ text: INJECTION_JSON, source: 'on_device' }));
+    const res = await runModel(sampleCheck());
+    expect(device.calls).toHaveLength(1);
+    expect(res.ok).toBe(true);
+    expect(res.trace).toMatchObject({ where: 'device' });
+  });
+});
+
+describe('the Playground load: one cloud request per intent when the cloud refuses', () => {
+  beforeEach(() => resetAiForTests());
+
+  it("the privacy lane's injection checks of 42 sample records reach the cloud once, and plain code still runs", async () => {
+    const { checkInjection } = await import('@/privacy/injection/check');
+    setLanguageModelForTests(undefined);
+    const fake = useHybrid(() => {
+      throw Object.assign(new Error('AI: genai config not found (AI/fetch-error)'), {
+        name: 'FirebaseError', code: 'fetch-error', customErrorData: { status: 400 },
+      });
+    });
+    const findings = [];
+    for (let i = 0; i < 42; i += 1) findings.push((await checkInjection(`Sample email ${i}: the deposit is due on Friday.`, 'sample')).finding);
+    expect(fake.callsFor('injection-check')).toHaveLength(1);
+    expect(fake.calls[0].spec.mode).toBe('ONLY_IN_CLOUD');
+    expect(findings.every((f) => f.suspicious === false && f.by === 'code')).toBe(true);
   });
 });

@@ -2,7 +2,7 @@
 // progress bar. The download only ever starts from the explicit button: its click handler calls startSetup() as its
 // first statement, because Chrome allows the download only on a user gesture.
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
 import { announce } from '@/state/announcer';
 import { useAvailability } from '@/state/availability';
@@ -18,7 +18,7 @@ import styles from './ModelSetupPanel.module.css';
 export interface ModelSetupPanelProps {
   embedded?: boolean;              // Setup step 1: no H1
   backHref?: string;               // where "Continue" and "Back" go
-  variant?: 'page' | 'embedded' | 'compact';   // compact: the Playground's setup strip (13.2a)
+  variant?: 'page' | 'embedded' | 'compact';   // compact: the setup strip on the demo seats' screen (13.2a)
 }
 
 const ANNOUNCE_AT = [25, 50, 75];
@@ -71,7 +71,7 @@ function Fact({ icon, text }: { icon: IconName; text: string }) {
   );
 }
 
-export function ModelSetupPanel({ embedded = false, backHref = '/', variant }: ModelSetupPanelProps) {
+export function ModelSetupPanel({ embedded = false, backHref = '/ask', variant }: ModelSetupPanelProps) {
   const mode = variant ?? (embedded ? 'embedded' : 'page');
   const { text, setup } = useAvailability(useShallow((s) => ({ text: s.text, setup: s.setup })));
   const state = panelState(text, setup.state);
@@ -150,12 +150,7 @@ export function ModelSetupPanel({ embedded = false, backHref = '/', variant }: M
               : fill(MODEL_SETUP_COPY.progress, { pct })}
           </p>
           {stalled ? <p className={styles.line}>{MODEL_SETUP_COPY.finishing}</p> : null}
-          <p className={styles.line}>
-            {MODEL_SETUP_COPY.keepOpen}{' '}
-            <a href="/playground" target="_blank" rel="noopener">
-              {MODEL_SETUP_COPY.openPlaygroundNewTab}
-            </a>
-          </p>
+          <p className={styles.line}>{MODEL_SETUP_COPY.keepOpen}</p>
         </div>
       );
       break;
@@ -220,8 +215,8 @@ export function ModelSetupPanel({ embedded = false, backHref = '/', variant }: M
           <p className={styles.strong}>{MODEL_SETUP_COPY.unavailableTitle}</p>
           <p className={styles.line}>{MODEL_SETUP_COPY.unavailableBody}</p>
           <div className={styles.buttons}>
-            <LinkButton to="/playground" variant="primary">
-              {MODEL_SETUP_COPY.openPlayground}
+            <LinkButton to="/settings#cloud" variant="primary">
+              {MODEL_SETUP_COPY.turnOnCloud}
             </LinkButton>
             {mode === 'page' ? (
               <Button variant="secondary" onClick={go}>
@@ -243,6 +238,7 @@ export function ModelSetupPanel({ embedded = false, backHref = '/', variant }: M
 }
 
 function CompactPanel({ state, pct, error }: { state: ReturnType<typeof panelState>; pct: number; error?: string }) {
+  const { pathname, search } = useLocation();
   switch (state) {
     case 'checking':
       return <p className={styles.compactLine}>{MODEL_SETUP_COPY.checking}</p>;
@@ -299,7 +295,7 @@ function CompactPanel({ state, pct, error }: { state: ReturnType<typeof panelSta
       return (
         <div className={styles.compact}>
           <p className={styles.compactLine}>{MODEL_SETUP_COPY.compactUnavailable}</p>
-          <LinkButton to="/prepare?back=/playground" variant="ghost" size="sm">
+          <LinkButton to={`/prepare?back=${encodeURIComponent(pathname + search)}`} variant="ghost" size="sm">
             {MODEL_SETUP_COPY.compactWhy}
           </LinkButton>
         </div>

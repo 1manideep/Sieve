@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Decision, ExtensionToPage } from '@sieve/shared';
 import type { WorkerToPanel } from '../src/shared/internal';
+import { ARRIVAL_SETTLE_MS } from '../src/sw/arrival';
 import { register } from '../src/sw/register';
 import { createFakeChrome, flush, pageSender, PAGE_SENDER } from './fakeChrome';
-import type { FakeChrome, FakePort } from './fakeChrome';
+import type { FakeChrome, FakeChromeOptions, FakePort } from './fakeChrome';
 import { DEPOSIT, LEASE, STATEMENT, hello, pending, resolved, withId } from './fixtures';
 
 let fc: FakeChrome;
@@ -15,7 +16,11 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-  expect(fc.localCalls).toEqual([]); // storage.local and storage.sync are never called
+  // storage.sync is never called and storage.local is never cleared; storage.local holds the settings key only,
+  // and the worker only reads it (the popup's settings menu writes it).
+  expect(fc.localCalls).toEqual([]);
+  expect(fc.calls).not.toContain('storage.local.set');
+  expect(Object.keys(fc.local).every((k) => k === 'settings')).toBe(true);
   const keys = Object.keys(fc.session);
   expect(keys.every((k) => k === 'announced')).toBe(true);
   const announced = fc.session.announced;
@@ -175,6 +180,29 @@ describe('notifications', () => {
     expect(fc.notifications.get('sieve-req-long')?.message).toBe(`${'A'.repeat(40)} is asking for something. Review it in Sieve.`);
   });
 
+  it('names each request after the link it came through, never a name from an earlier request', async () => {
+    register(fc.api);
+    const page = await connectedPage();
+    const fromClaude = withId(DEPOSIT, 'via-claude', { requester: { kind: 'outside', grantId: 'grant-claude', aiName: 'Claude' } });
+    const fromGemini = withId(LEASE, 'via-gemini', { requester: { kind: 'outside', grantId: 'grant-gemini', aiName: 'Gemini' } });
+    page.postMessage(pending([fromClaude]));
+    await flush();
+    page.postMessage(pending([fromClaude, fromGemini]));
+    await flush();
+    expect(fc.notifications.get('sieve-req-via-claude')?.message).toBe('Claude is asking for something. Review it in Sieve.');
+    expect(fc.notifications.get('sieve-req-via-gemini')?.message).toBe('Gemini is asking for something. Review it in Sieve.');
+    // The same link used from another assistant keeps the link's name: the extension shows what the request carries.
+    const reused = withId(STATEMENT, 'claude-link-in-gemini', { requester: { kind: 'outside', grantId: 'grant-claude', aiName: 'Claude' } });
+    page.postMessage(pending([fromClaude, fromGemini, reused]));
+    await flush();
+    expect(fc.notifications.get('sieve-req-claude-link-in-gemini')?.message).toBe('Claude is asking for something. Review it in Sieve.');
+    page.postMessage(resolved('via-gemini', 'declined'));
+    const panel = fc.connectPanel();
+    const st = lastState(panel);
+    expect(st?.proposals.map((p) => (p.requester.kind === 'outside' ? p.requester.aiName : ''))).toEqual(['Claude', 'Claude']);
+    expect(st?.resolved.map((r) => [r.requestId, r.aiName])).toEqual([['via-gemini', 'Gemini']]);
+  });
+
   it('creates none while a panel is visible, and does not announce the id later', async () => {
     register(fc.api);
     const panel = fc.connectPanel();
@@ -281,6 +309,192 @@ describe('notifications', () => {
   });
 });
 
+describe('opening the popup when a request arrives (50 section 7.7)', () => {
+  const FOCUSED = { id: 3, focused: true };
+
+  it('opens the popup once in the last focused normal window, instead of a notification', async () => {
+    fc = createFakeChrome({ lastFocused: FOCUSED });
+    register(fc.api);
+    const page = await connectedPage();
+    page.postMessage(pending([DEPOSIT]));
+    await flush();
+    expect(fc.lastFocusedQueries).toEqual([{ windowTypes: ['normal'] }]);
+    expect(fc.popups).toEqual([{ windowId: 3 }]);
+    expect(fc.notifications.size).toBe(0);
+    expect(fc.badge).toMatchObject({ text: '1', title: 'Sieve: 1 request waiting' }); // the badge counts it as before
+    expect(fc.session.announced).toEqual([DEPOSIT.requestId]);
+    expect(fc.opened).toEqual([]);
+  });
+
+  it('opens once when several requests arrive together, in one list or back to back', async () => {
+    fc = createFakeChrome({ lastFocused: FOCUSED });
+    register(fc.api);
+    const page = await connectedPage();
+    page.postMessage(pending([DEPOSIT, LEASE]));
+    page.postMessage(pending([DEPOSIT, LEASE, STATEMENT])); // before the popup has said hello
+    await flush();
+    expect(fc.popups).toEqual([{ windowId: 3 }]);
+    expect(fc.notifications.size).toBe(0);
+    expect(fc.session.announced).toEqual([DEPOSIT.requestId, LEASE.requestId, STATEMENT.requestId]);
+  });
+
+  it('does not open again for a request the person closed, even after a worker restart', async () => {
+    fc = createFakeChrome({ lastFocused: FOCUSED });
+    register(fc.api);
+    let page = await connectedPage();
+    page.postMessage(pending([DEPOSIT]));
+    await flush();
+    expect(fc.popups).toHaveLength(1);
+    const popup = fc.connectPanel();
+    popup.postMessage({ type: 'panel/hello', visible: true, windowId: 3, surface: 'popup' });
+    popup.disconnect(); // the person closed it without deciding
+    vi.advanceTimersByTime(ARRIVAL_SETTLE_MS + 1_000);
+    page.postMessage(pending([DEPOSIT])); // the page repeats its list
+    page.disconnect(); // the tab reloads, so the same request is added again
+    page = await connectedPage();
+    page.postMessage(pending([DEPOSIT]));
+    await flush();
+    expect(fc.popups).toHaveLength(1);
+    expect(fc.notifications.size).toBe(0);
+    // A new worker with the same storage.session: still not again. A new request opens it once more.
+    const { session } = fc;
+    fc = createFakeChrome({ lastFocused: FOCUSED, session });
+    register(fc.api);
+    page = await connectedPage();
+    page.postMessage(pending([DEPOSIT]));
+    await flush();
+    expect(fc.popups).toEqual([]);
+    page.postMessage(pending([DEPOSIT, LEASE]));
+    await flush();
+    expect(fc.popups).toEqual([{ windowId: 3 }]);
+    expect(fc.notifications.size).toBe(0);
+  });
+
+  it('after the popup closes, the next new request opens it again; while it shows, nothing else happens', async () => {
+    fc = createFakeChrome({ lastFocused: FOCUSED });
+    register(fc.api);
+    const page = await connectedPage();
+    page.postMessage(pending([DEPOSIT]));
+    await flush();
+    const popup = fc.connectPanel();
+    popup.postMessage({ type: 'panel/hello', visible: true, windowId: 3, surface: 'popup' });
+    page.postMessage(pending([DEPOSIT, LEASE])); // listed in the open popup
+    await flush();
+    expect(fc.popups).toHaveLength(1);
+    expect(fc.notifications.size).toBe(0);
+    popup.disconnect(); // closed at once: its hello ended the settle wait, so nothing is hidden
+    page.postMessage(pending([DEPOSIT, LEASE, STATEMENT]));
+    await flush();
+    expect(fc.popups).toEqual([{ windowId: 3 }, { windowId: 3 }]);
+    expect(fc.notifications.size).toBe(0);
+  });
+
+  it('a popup that never says hello stops counting as shown after the settle wait', async () => {
+    fc = createFakeChrome({ lastFocused: FOCUSED });
+    register(fc.api);
+    const page = await connectedPage();
+    page.postMessage(pending([DEPOSIT]));
+    await flush();
+    vi.advanceTimersByTime(ARRIVAL_SETTLE_MS - 1);
+    page.postMessage(pending([DEPOSIT, LEASE])); // still coming up: counts as shown
+    await flush();
+    expect(fc.popups).toHaveLength(1);
+    expect(fc.notifications.size).toBe(0);
+    vi.advanceTimersByTime(1);
+    page.postMessage(pending([DEPOSIT, LEASE, STATEMENT]));
+    await flush();
+    expect(fc.popups).toHaveLength(2);
+  });
+
+  it('respects the setting: off means only the badge and the notification', async () => {
+    fc = createFakeChrome({ lastFocused: FOCUSED, local: { settings: { openOnArrival: false } } });
+    register(fc.api);
+    const page = await connectedPage();
+    page.postMessage(pending([DEPOSIT]));
+    await flush();
+    expect(fc.calls).toContain('storage.local.get');
+    expect(fc.calls).not.toContain('windows.getLastFocused');
+    expect(fc.popups).toEqual([]);
+    expect([...fc.notifications.keys()]).toEqual([`sieve-req-${DEPOSIT.requestId}`]);
+    expect(fc.badge.text).toBe('1');
+  });
+
+  it('reads the setting at each arrival, so a change applies to the next request', async () => {
+    fc = createFakeChrome({ lastFocused: FOCUSED, local: { settings: { openOnArrival: false } } });
+    register(fc.api);
+    const page = await connectedPage();
+    page.postMessage(pending([DEPOSIT]));
+    await flush();
+    expect(fc.popups).toEqual([]);
+    fc.local.settings = { openOnArrival: true }; // the popup's switch wrote it
+    page.postMessage(pending([DEPOSIT, LEASE]));
+    await flush();
+    expect(fc.popups).toEqual([{ windowId: 3 }]);
+    expect([...fc.notifications.keys()]).toEqual([`sieve-req-${DEPOSIT.requestId}`]);
+  });
+
+  it('a stored value that is not a boolean counts as the default, on', async () => {
+    fc = createFakeChrome({ lastFocused: FOCUSED, local: { settings: { openOnArrival: 'no' } } });
+    register(fc.api);
+    const page = await connectedPage();
+    page.postMessage(pending([DEPOSIT]));
+    await flush();
+    expect(fc.popups).toEqual([{ windowId: 3 }]);
+  });
+
+  it.each<[string, FakeChromeOptions, number]>([
+    ['openPopup rejects (a popup already open, or Chrome refuses)', { openPopup: 'rejects', lastFocused: FOCUSED }, 1],
+    ['no Chrome window has focus (the person is in another app)', { lastFocused: { id: 3, focused: false } }, 0],
+    ['there is no normal window', { lastFocused: null }, 0],
+    ['Chrome before 127 has no openPopup', { openPopup: 'missing', lastFocused: FOCUSED }, 0],
+  ])('falls back to the badge and the notification when %s, and never opens the side panel', async (_name, opts, tries) => {
+    fc = createFakeChrome(opts);
+    register(fc.api);
+    const page = await connectedPage();
+    page.postMessage(pending([DEPOSIT]));
+    await flush();
+    expect(fc.popups).toHaveLength(tries);
+    expect([...fc.notifications.keys()]).toEqual([`sieve-req-${DEPOSIT.requestId}`]);
+    expect(fc.badge.text).toBe('1');
+    // No gesture here: Chrome would refuse sidePanel.open, so the worker never calls it on arrival.
+    expect(fc.opened).toEqual([]);
+    expect(fc.calls).not.toContain('sidePanel.open');
+  });
+
+  it('neither opens nor notifies while a panel is visible', async () => {
+    fc = createFakeChrome({ lastFocused: FOCUSED });
+    register(fc.api);
+    const panel = fc.connectPanel();
+    panel.postMessage({ type: 'panel/hello', visible: true, windowId: 3, surface: 'panel' });
+    const page = await connectedPage();
+    page.postMessage(pending([DEPOSIT]));
+    await flush();
+    expect(fc.popups).toEqual([]);
+    expect(fc.notifications.size).toBe(0);
+    expect(fc.calls).not.toContain('windows.getLastFocused');
+  });
+
+  it('a request answered while the popup was being tried gets no notification', async () => {
+    fc = createFakeChrome({ openPopup: 'rejects', lastFocused: FOCUSED });
+    register(fc.api);
+    const page = await connectedPage();
+    page.postMessage(pending([DEPOSIT, LEASE]));
+    page.postMessage(resolved(DEPOSIT.requestId, 'approved')); // answered in the app meanwhile
+    await flush();
+    expect([...fc.notifications.keys()]).toEqual([`sieve-req-${LEASE.requestId}`]);
+  });
+
+  it('does not open for a request that needs nothing from the person here', async () => {
+    fc = createFakeChrome({ lastFocused: FOCUSED });
+    register(fc.api);
+    const page = await connectedPage();
+    page.postMessage(pending([withId(DEPOSIT, 'nm', { outcome: 'no-match' }), withId(DEPOSIT, 'blk', { outcome: 'blocked-never' })]));
+    await flush();
+    expect(fc.popups).toEqual([]);
+    expect(fc.notifications.size).toBe(0);
+  });
+});
+
 describe('decisions', () => {
   it('posts the decision only to the owner port', async () => {
     register(fc.api);
@@ -371,10 +585,22 @@ describe('panel ports', () => {
     expect(panel.received).toEqual([]);
   });
 
-  it('open-app without a connection opens APP_URL + /requests', async () => {
+  it('open-app without a connection opens the signed-in home, APP_URL + /ask', async () => {
     register(fc.api);
     const panel = fc.connectPanel();
     panel.postMessage({ type: 'panel/open-app' });
+    await flush();
+    expect(fc.created).toEqual([{ url: 'http://localhost:5173/ask' }]);
+  });
+
+  it('open-app for a request, with its tab gone, opens APP_URL + /requests', async () => {
+    register(fc.api);
+    const page = await connectedPage();
+    page.postMessage(pending([DEPOSIT]));
+    page.postMessage(resolved(DEPOSIT.requestId, 'declined'));
+    page.disconnect();
+    const panel = fc.connectPanel();
+    panel.postMessage({ type: 'panel/open-app', requestId: DEPOSIT.requestId }); // "Open the receipt"
     await flush();
     expect(fc.created).toEqual([{ url: 'http://localhost:5173/requests' }]);
   });

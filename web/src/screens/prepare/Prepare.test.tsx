@@ -28,28 +28,29 @@ function renderAt(path: string) {
 describe('Prepare the on-device model', () => {
   it('one card with the setup; Back goes to ?back=', async () => {
     useAvailability.setState({ text: 'downloadable', setup: { state: 'idle' } });
-    renderAt('/prepare?back=/playground');
-    expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/playground');
+    renderAt('/prepare?back=/setup');
+    expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/setup');
     expect(screen.getByRole('heading', { level: 1, name: 'Prepare the on-device model' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Start setup' })).toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
-  it('Back defaults to "/" for Google users and "/playground" otherwise, and never leaves the site', () => {
+  it('Back defaults to "/" for everyone, and never leaves the site', () => {
     useSession.setState({ kind: 'google' });
     const { unmount } = renderAt('/prepare');
-    expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/ask');
     unmount();
     useSession.setState({ kind: 'none' });
     renderAt('/prepare?back=https://evil.example');
-    expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/playground');
+    expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/ask');
   });
 
-  it('unavailable: the requirements and the way to the Playground', async () => {
+  it('unavailable: the requirements and the way to cloud fallback; no Playground', async () => {
     useAvailability.setState({ text: 'no-api', setup: { state: 'idle' } });
     renderAt('/prepare');
     expect(screen.getByText("This Chrome can't run the on-device model")).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open the Playground' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Turn on cloud fallback' })).toHaveAttribute('href', '/settings#cloud');
+    expect(screen.queryByRole('link', { name: /Playground/ })).toBeNull();
     await expectNoAxeViolations();
   });
 });

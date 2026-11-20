@@ -170,7 +170,7 @@ Wait window: the tool call waits for an answer up to `RELAY_WAIT_SECONDS` (contr
 
 ## 6. Decisions already made (do not reopen during implementation)
 
-1. Every share is approved by the person in the hackathon build; no auto-approve.
+1. Every share is approved by the person in the hackathon build; no auto-approve. Amended Nov 20 by the owner, overriding the Nov 15 review for testing: each connection can be put on "Auto-approve answers" for 2 hours, on that computer only, for clean answer-step proposals only, with a receipt for every answer (40 section 13.8.9). Off by default; everything else still waits for the person.
 2. Real data never silently goes to the cloud. On a device without Nano, the person's own data is not processed unless they turn on cloud fallback in Settings, and even then each request asks and shows the exact text. Playground sample data falls back to the cloud automatically and is labelled.
 3. No multi-turn chat sessions on private data; every Nano call is a single prompt assembled by Sieve.
 4. Ladder steps are separate MCP tools, so a Ratchet grant can cap the step by tool name.

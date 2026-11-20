@@ -104,7 +104,8 @@ describe('status popover rows (40 section 8.2)', () => {
       sentence: 'Setting up Gemini Nano: 100%. You can keep using Sieve.', action: { kind: 'show-progress' },
     });
     expect(row(input({ availability: { text: 'downloading' } }), 'model')).toMatchObject({ sentence: STATUS_POPOVER.modelDownloading });
-    expect(row(input({ availability: { text: 'no-api' } }), 'model')).toMatchObject({ action: { kind: 'open-playground' } });
+    expect(row(input({ availability: { text: 'no-api' } }), 'model')).toMatchObject({ action: { kind: 'cloud-fallback', label: 'Turn on cloud fallback' } });
+    expect(row(input({ availability: { text: 'no-api' } }), 'model')?.sentence).not.toMatch(/Playground/);
   });
 
   it('shows indexing with an ETA, progress and Pause, or Resume when paused', () => {

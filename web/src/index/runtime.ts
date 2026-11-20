@@ -28,6 +28,8 @@ export interface QueueHooks {
   cancel(ids: string[]): void;
   pause(): void;
   stop(): Promise<void>;
+  /** Writes the source rows' progress now instead of after SOURCE_ROW_WRITE_MS (a folder walk has just listed its files). */
+  writeRowsNow?(): Promise<void>;
 }
 
 export interface Runtime {
@@ -43,8 +45,9 @@ export interface Runtime {
   /** Stop functions of source jobs and timers for this database (wipeDb, disconnect). */
   stoppers: Set<() => void | Promise<void>>;
   pendingBroadcast: { changed: Set<string>; removed: Set<string>; timer: ReturnType<typeof setTimeout> | null };
-  /** What a source's sync job has discovered and not fetched yet (Sources progress, 20 section 13.4). */
-  syncProgress: Map<SourceKind, { discovered: number; remaining: number; etaMs?: number }>;
+  /** What a source's sync job has discovered and not fetched yet (Sources progress, 20 section 13.4). `listing`: it is
+   * still finding items, so the total may only grow and the card says "so far" (20 section 13.5). */
+  syncProgress: Map<SourceKind, { discovered: number; remaining: number; etaMs?: number; listing?: boolean }>;
 }
 
 const runtimes = new Map<SieveDb, Runtime>();

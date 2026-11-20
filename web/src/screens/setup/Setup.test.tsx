@@ -21,14 +21,15 @@ function renderSetup() {
     <MemoryRouter initialEntries={['/setup']}>
       <Routes>
         <Route path="/setup" element={<main><SetupScreen /></main>} />
-        <Route path="/" element={<p>Ask page</p>} />
+        <Route path="/ask" element={<p>Ask page</p>} />
       </Routes>
     </MemoryRouter>,
   );
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   localStorage.clear();
+  await db.table('sources').clear();
   useSession.setState({ kind: 'google', user: { uid: 'u1', email: 'a@example.com', isAnonymous: false }, deviceId: 'dev-1', ownerConflict: false });
   useAvailability.setState({ text: 'downloadable', setup: { state: 'idle' } });
 });
@@ -37,26 +38,54 @@ afterEach(() => {
 });
 
 describe('Setup', () => {
-  it('step 1: the embedded setup, the stepper text, Skip for now', async () => {
+  it('step 1: connect your data first, with the Gmail and folder cards, the note and Skip for now', async () => {
     renderSetup();
     expect(screen.getByRole('heading', { level: 1, name: 'Set up Sieve' })).toBeInTheDocument();
     expect(screen.getByText('Step 1 of 4')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2, name: 'Prepare the on-device model' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Start setup' })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { level: 1, name: 'Prepare the on-device model' })).toBeNull();
+    expect(screen.getByRole('heading', { level: 2, name: 'Connect your data' })).toBeInTheDocument();
+    expect(screen.getByText('Sieve reads your Gmail and the folders you pick, on this computer only. Mail and files never reach our server.')).toBeInTheDocument();
+    expect(screen.getByText(/Indexing runs in the background on this device/)).toBeInTheDocument();
+    expect(await screen.findAllByRole('article')).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Skip for now' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Next' })).toBeNull();
     // First-run setup has no "Try now" link in its head; the control screens do.
     expect(screen.queryByRole('link', { name: 'Try now' })).not.toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
-  it('step 2: names this computer and makes it the home base; the done state', async () => {
+  it('step 1: Next once a real source is connected', async () => {
+    await db.table('sources').put({ kind: 'folder', connected: true, paused: false, progress: { done: 3, total: 40 }, folderName: 'Documents' });
+    renderSetup();
+    expect(await screen.findByRole('button', { name: 'Next' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Skip for now' })).toBeNull();
+  });
+
+  it('step 2: the embedded model setup, Skip for now, then Next when the model is ready', async () => {
+    renderSetup();
+    await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
+    expect(screen.getByText('Step 2 of 4')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Prepare the on-device model' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Start setup' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 1, name: 'Prepare the on-device model' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toBeInTheDocument();
+    act(() => useAvailability.setState({ text: 'downloadable', setup: { state: 'downloading', fraction: 0.3 } }));
+    expect(screen.getByText('The download keeps going in the background while you finish setup.')).toBeInTheDocument();
+    await expectNoAxeViolations();
+    act(() => useAvailability.setState({ text: 'available', setup: { state: 'done' } }));
+    expect(screen.getByText('Gemini Nano is ready on this computer.')).toBeInTheDocument();
+    expect(screen.queryByText('The download keeps going in the background while you finish setup.')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeInTheDocument();
+  });
+
+  it('step 3: names this computer and makes it the home base; the done state', async () => {
     const makeThisHomeBase = vi.fn(async () => {
       useHomeBase.setState({ homeBaseDeviceId: 'dev-1' });
     });
     useHomeBase.setState({ makeThisHomeBase });
     renderSetup();
     await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
+    expect(screen.getByText('Step 3 of 4')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'Make this computer your home base' })).toHaveFocus();
     const field = screen.getByLabelText('Name this computer');
     await userEvent.clear(field);
@@ -71,17 +100,12 @@ describe('Setup', () => {
     await expectNoAxeViolations();
   });
 
-  it('step 3: the folder and Gmail cards and the note; step 4: push, Connect an assistant, Finish', async () => {
+  it('step 4: push, Connect an assistant, Finish', async () => {
     const setPushEnabled = vi.fn(async () => 'denied' as const);
     useSettings.setState({ setPushEnabled });
     renderSetup();
-    await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
-    expect(screen.getByRole('heading', { level: 2, name: 'Connect a source' })).toBeInTheDocument();
-    expect(screen.getByText(/Indexing runs in the background on this device/)).toBeInTheDocument();
-    expect(screen.getAllByRole('article').length).toBe(2);
-    await expectNoAxeViolations();
-    await userEvent.click(screen.getByRole('button', { name: 'Next' }));
+    for (let i = 0; i < 3; i += 1) await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
+    expect(screen.getByText('Step 4 of 4')).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: 'Get told when an AI asks' })).toBeInTheDocument();
     await userEvent.click(screen.getByLabelText('Push notification when a request is waiting'));
     expect(setPushEnabled).toHaveBeenCalledWith(true);
@@ -96,11 +120,10 @@ describe('Setup', () => {
   it('Back revisits a step; Skip setup marks it done and goes to Ask', async () => {
     renderSetup();
     await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
+    expect(screen.getByText('Step 2 of 4')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByText('Step 1 of 4')).toBeInTheDocument();
-    act(() => useAvailability.setState({ text: 'available' }));
-    expect(screen.getByText('Gemini Nano is ready on this computer.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Next' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Connect your data' })).toHaveFocus();
     await userEvent.click(screen.getByRole('button', { name: 'Skip setup' }));
     expect(localStorage.getItem(setupDoneKey('u1'))).toBe('1');
     expect(screen.getByText('Ask page')).toBeInTheDocument();

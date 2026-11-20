@@ -1,16 +1,19 @@
-// The notices above the Requests list (40 sections 11.4, 11.6 and 13.5; 50 section 8.9; 70 R-MAIL-10).
+// The notices above the Requests list (40 sections 11.4, 11.6, 13.5 and 13.8.9; 50 section 8.9; 70 R-MAIL-10).
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Button, LinkButton } from '@/components/Button/Button';
 import { useDb } from '@/components/dbTables';
 import { Notice } from '@/components/Notice/Notice';
-import { REQUESTS } from '@/copy/screens-controls';
+import { REQUESTS, fillText } from '@/copy/screens-controls';
 import { STATUS_POPOVER } from '@/copy/strings';
 import { MAIL_COPY } from '@/robust/copy';
+import { useAutoApprove } from '@/state/autoApprove';
 import { useGrants } from '@/state/grants';
 import { useHomeBase, type HomeBaseState } from '@/state/homeBase';
 import { useNetwork } from '@/state/network';
 import { useSources } from '@/state/sources';
 import { Fill, Iso } from '../settings/kit/Fill';
+import { formatClock } from '../settings/kit/when';
 import { useSourceRows } from '../sources/sourcesDb';
 import styles from './requests.module.css';
 
@@ -118,6 +121,36 @@ export function RoleBanner({ onMakeHomeBase }: { onMakeHomeBase(): void }) {
     </>
   );
 }
+
+/** "Claude", "Claude and ChatGPT", "Claude, ChatGPT and Gemini". */
+function joinNames(names: string[]): string {
+  return names.length <= 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/** 40 section 13.8.9: while any current connection has auto-approve on, until the last one ends. */
+export function AutoApproveNotice() {
+  const until = useAutoApprove((s) => s.until);
+  const grants = useGrants((s) => s.grants);
+  const on = grants.filter((g) => (g.state === 'active' || g.state === 'expiring') && until[g.id] !== undefined);
+  if (on.length === 0) return null;
+  const time = formatClock(Math.max(...on.map((g) => until[g.id])));
+  return (
+    <Notice tone="warning">
+      <Fill
+        template={REQUESTS.autoApproveNotice}
+        values={{
+          names: <Iso>{joinNames(on.map((g) => g.aiName))}</Iso>,
+          time,
+          stop: <Link to="/settings#ais">{REQUESTS.autoApproveStop}</Link>,
+        }}
+      />
+    </Notice>
+  );
+}
+
+/** Plain text of the notice, for tests and announcements. */
+export const autoApproveNoticeText = (names: string[], time: string) =>
+  fillText(REQUESTS.autoApproveNotice, { names: joinNames(names), time, stop: REQUESTS.autoApproveStop });
 
 /** 40 section 11.6: a request waits for the first click in this tab. */
 export function ClickNotice() {

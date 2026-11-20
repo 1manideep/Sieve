@@ -85,6 +85,10 @@ export interface EngineDeps {
   whenOnline?(fn: () => void): () => void;
   wasDiscarded?(): boolean;
   scheduleFrame?(fn: () => void): void;
+  /** Auto-approve, testing mode (40 section 13.8.9): on, and not expired, for this connection on this computer. */
+  autoApprove?(grantId: string): boolean;
+  /** Marks (or unmarks) a receipt this computer approves automatically, for "Approved automatically" on /seen. */
+  markAutoApproved?(receiptId: string, on: boolean): void;
 }
 
 export interface HomeBaseEngine {
@@ -144,6 +148,24 @@ function reasonForSendBlock(code: SendBlock): DecideResultReason {
   return 'invalid-step';
 }
 
+/**
+ * 40 section 13.8.9: only a clean answer is approved without the person. Ready, the answer step (asked for, or the
+ * cap), the "Share with approval" rule, no warning of any kind (hidden instructions, personal details, cloud, ask
+ * first), and an answer to send. decide() then runs every check a click would.
+ */
+function autoApprovable(req: RelayRequestView, p: Proposal): boolean {
+  const answer = p.options[0];
+  return (
+    p.outcome === 'ready' &&
+    (req.requestedStep === 'answer' || req.maxStep === 'answer') &&
+    p.rule === 'approve' &&
+    p.warnings.length === 0 &&
+    answer?.step === 'answer' &&
+    answer.available &&
+    answer.text.trim() !== ''
+  );
+}
+
 function sourceOf(recordId: string): SourceKind | undefined {
   const s = recordId.split(':')[0];
   return s === 'gmail' || s === 'folder' || s === 'upload' || s === 'playground' ? s : undefined;
@@ -180,6 +202,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
   const runtime = new Map<string, Runtime>();
   const invalidHandled = new Set<string>();
   const stoppedByPerson = new Set<string>();   // Stop on a preparing card: never prepared again by this tab
+  const autoDeciding = new Set<string>();     // approved by auto-approve (40 section 13.8.9), while decide() runs
 
   let unlisten: (() => void) | null = null;
   let offWake: (() => void) | null = null;
@@ -806,11 +829,11 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
   }
 
   async function presentProposal(id: string, proposal: Proposal): Promise<void> {
-    let marked: 'ok' | 'gone';
+    let marked: 'ok' | 'gone' | 'offline';
     try {
       marked = await withRetry(() => deps.requests.markAwaiting(uid, id, deviceId));
     } catch {
-      marked = 'ok';   // still offline: show it; decide() moves the doc to awaiting-person before sending
+      marked = 'offline';   // still offline: show it; decide() moves the doc to awaiting-person before sending
     }
     if (stopped || !entries.has(id)) return;
     if (marked === 'gone') {
@@ -820,6 +843,19 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
       return;
     }
     const e = update(id, { phase: 'awaiting-person', proposal, answerPreview: '', relatedSelected: [], relatedOptions: {}, relatedLoading: [] });
+    if (e && marked === 'ok' && autoApprovable(e.request, proposal) && deps.autoApprove?.(e.request.requester.grantId)) {
+      // 40 section 13.8.9: nothing waits, so no toast and no preview for the extension. The doc is awaiting-person now,
+      // even if the snapshot that says so has not arrived yet.
+      const s = e.request.status;
+      if (s === 'queued' || s === 'claimed') update(id, { request: { ...e.request, status: 'awaiting-person' } });
+      autoDeciding.add(id);
+      const r = await engine.decide({ requestId: id, approved: true, step: 'answer', decidedBy: 'app' });
+      autoDeciding.delete(id);
+      if (r.ok) return;
+      deps.markAutoApproved?.(id, false);
+      if (entries.get(id)?.phase !== 'awaiting-person') return;
+      // Any other failure: it waits for the person as today, and the card says why.
+    }
     publish();
     ensureBridge();
     sendPending();
@@ -1161,6 +1197,8 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
         const finish: FinishInput = input.approved
           ? { status: 'answered', response: payload!, ...firestoreReceipt }
           : { status: 'declined', message: MSG.declined, ...firestoreReceipt };
+        // Marked before the receipt is written, so What has AI seen? never shows it as approved by the person.
+        if (input.approved && autoDeciding.has(id)) deps.markAutoApproved?.(id, true);
         const r = await deps.requests.finishRequest(uid, id, deviceId, finish);
         if (r === 'gone') return ended(DECIDE_ERRORS.expired, 'expired');
         if (playground) await saveLocal(withId);

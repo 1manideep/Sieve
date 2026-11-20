@@ -23,7 +23,17 @@ export interface SourceRow {
   needsAuth?: boolean; error?: string; folderName?: string;
   account?: string; phase?: SourcePhase; errorCode?: SourceErrorCode; skipped?: Partial<Record<SkipReason, number>>; etaMs?: number;
   reconciledAt?: number;
+  // 20 section 13.5: what the source job and the queue work on now, for 40's IndexingCard
+  inventory?: SourceInventory;      // what the last walk or listing found to read, by kind ("7 PDFs, 3 notes, 12 photos")
+  stage?: IndexingStage;            // the work on this source's items now: reading, then the queue's lanes in order
+  stageCount?: number;              // items of this source waiting for that stage (label and caption only)
+  counting?: boolean;               // the source job is still finding items: the total may only grow ("so far")
 }
+
+/** Files a folder walk found to read (or emails a Gmail listing found), by kind. */
+export type SourceInventory = Partial<Record<'pdfs' | 'notes' | 'photos' | 'files' | 'emails', number>>;
+/** Reading (text extraction by the source job), then the queue's lanes in QUEUE_LANE_ORDER. */
+export type IndexingStage = 'reading' | 'label' | 'embed' | 'privacy' | 'caption';
 
 export const SCHEMA_V1 = {
   records: 'id, source, kind, category, date',

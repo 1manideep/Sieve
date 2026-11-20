@@ -57,6 +57,37 @@ describe('walk rules (A-FD-1)', () => {
   });
 });
 
+describe('the inventory (20 section 13.5)', () => {
+  it('the walk lists the files first: the row has the counts by kind and the progress total before any model work', async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 4, 0, 0, 0, 3, 8, 2, 0, 0, 0]);
+    const old = { lastModified: 1_700_000_000_000 };
+    const newest = { lastModified: 1_800_000_000_000 };
+    folder.write('notes.md', '# Notes\nCall the landlord.', old).write('todo.txt', 'buy milk', old).write('chat.json', '{"a": 1}', old)
+      .write('IMG_1.png', png, old).write('IMG_2.png', new Uint8Array([...png, 1]), old).write('IMG_3.heic', 'heic bytes', old)
+      .write('a/rent.pdf', '%PDF-1.7\nRent is due on the 1st.', newest).write('lease.pdf', '%PDF-1.7\n12. Pets. One dog under 40 pounds.', newest);
+    const { aiControl } = await import('../../../../tests/harness/aiMock');
+    const { privacyControl } = await import('../../../../tests/harness/privacyMock');
+    aiControl.reset();
+    privacyControl.reset();
+    const seen: { inventory?: unknown; total?: number; labelCalls: number; scans: number; records: number }[] = [];
+    setPdfExtractor(async (data) => {
+      const row = await db.sources.get('folder');
+      seen.push({ inventory: row?.inventory, total: row?.progress.total, labelCalls: aiControl.labelCalls.length, scans: privacyControl.scans.length, records: await db.records.count() });
+      return { text: new TextDecoder().decode(data).replace(/^%PDF-1\.7\n/, ''), pages: 1, truncated: false };
+    });
+    await connectFolder(db);
+    await scanFolder(db);
+    const first = seen[0]!;
+    expect(first.inventory).toEqual({ pdfs: 2, notes: 2, files: 1, photos: 2 });   // HEIC is skipped, not read
+    expect(first.total).toBe(7);
+    // the PDFs are the newest files, so they are read first: nothing was indexed or sent to a model before
+    expect(first).toMatchObject({ records: 0, labelCalls: 0, scans: 0 });
+    // a rescan with nothing new reads nothing, and says so
+    await scanFolder(db);
+    expect((await db.sources.get('folder'))?.inventory).toEqual({});
+  });
+});
+
 describe('scans', () => {
   it('first scan indexes txt, md, pdf and json; a second scan reads nothing (fast path)', async () => {
     folder.write('notes.md', '# Notes\nCall the landlord.').write('a/lease.pdf', '%PDF-1.7\n12. Pets. One dog under 40 pounds.')

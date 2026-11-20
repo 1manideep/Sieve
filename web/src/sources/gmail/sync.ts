@@ -55,7 +55,7 @@ function boundary(ctl: Ctl): void {
   if (!getGmailToken()) throw new SyncStopped('no-token');
 }
 
-async function listAll(q: string, ctl: Ctl): Promise<{ id: string; threadId: string }[]> {
+async function listAll(q: string, ctl: Ctl, onPage?: (found: number) => void): Promise<{ id: string; threadId: string }[]> {
   const out: { id: string; threadId: string }[] = [];
   let pageToken: string | undefined;
   do {
@@ -63,6 +63,7 @@ async function listAll(q: string, ctl: Ctl): Promise<{ id: string; threadId: str
     const page = await listMessages(q, pageToken, GMAIL_LIST_PAGE, 'background', ctl.signal);
     out.push(...(page.messages ?? []));
     pageToken = page.nextPageToken;
+    onPage?.(out.length);
   } while (pageToken);
   return out;
 }
@@ -135,12 +136,19 @@ export async function backfill(db: SieveDb, ctl: Ctl): Promise<void> {
   const jobStartedAt = Date.now();
   const writer = new RowWriter(db);
   await writer.set({ phase: 'listing' }, true);
-  const listed = await listAll(GMAIL_BACKFILL_QUERY, ctl);
+  // While listing, the total only grows and the card says "so far"; the queue alone writes the row's progress, so
+  // the card never alternates between the fetch count and the index count (20 section 13.4).
+  const stored = await db.records.where('source').equals('gmail').count();
+  const listed = await listAll(GMAIL_BACKFILL_QUERY, ctl, (found) => {
+    rt.syncProgress.set('gmail', { discovered: found, remaining: Math.max(0, found - stored), listing: true });
+    void rt.queue?.writeRowsNow?.();
+  });
   const known = await db.records.bulkGet(listed.map((m) => 'gmail:' + m.id));
   const todo = listed.filter((_, i) => !known[i]);
   let remaining = todo.length;
   rt.syncProgress.set('gmail', { discovered: listed.length, remaining, etaMs: etaMs(remaining, GMAIL_COST.get) });
-  await writer.set({ phase: 'metadata', progress: { done: listed.length - remaining, total: listed.length } }, true);
+  await writer.set({ phase: 'metadata', inventory: { emails: remaining } }, true);
+  await rt.queue?.writeRowsNow?.();
   await runPool(todo, GMAIL_MAX_CONCURRENCY, async (m) => {
     boundary(ctl);
     try {
@@ -151,7 +159,6 @@ export async function backfill(db: SieveDb, ctl: Ctl): Promise<void> {
     }
     remaining--;
     rt.syncProgress.set('gmail', { discovered: listed.length, remaining, etaMs: etaMs(remaining, GMAIL_COST.get) });
-    void writer.set({ progress: { done: listed.length - remaining, total: listed.length } });
   });
   await bodies(db, ctl, writer, account);
   await rt.keyword.flush();
@@ -277,6 +284,12 @@ interface Controller { abort: AbortController; running: Promise<void> | null; ti
 const controllers = new Map<SieveDb, Controller>();
 
 async function rowError(db: SieveDb, e: unknown): Promise<void> {
+  // A listing that stopped half way found nothing final: the card must not keep saying "so far".
+  const rt = getRuntime(db);
+  if (rt.syncProgress.get('gmail')?.listing) {
+    rt.syncProgress.delete('gmail');
+    void rt.queue?.writeRowsNow?.();
+  }
   if (e instanceof SyncStopped) {
     if (e.why === 'no-token') await db.sources.update('gmail', { needsAuth: true, phase: 'idle' });
     else if (e.why === 'paused') await db.sources.update('gmail', { phase: 'idle' });

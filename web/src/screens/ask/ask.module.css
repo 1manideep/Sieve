@@ -26,3 +26,6 @@
 .homeFooter { display: grid; gap: 6px; justify-items: center; text-align: center; }
 .idle { margin: 0; font-size: 14px; color: var(--color-text-muted); }
 .footerLine { margin: 0; font: 400 11px/1.5 var(--font-mono); color: var(--color-text-muted, rgba(255, 255, 255, 0.6)); }
+
+/* F2: the Sources indexing row under the chips, as wide as the prompt card. */
+.indexing { width: 100%; max-width: 850px; min-width: 0; }

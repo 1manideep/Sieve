@@ -14,7 +14,7 @@ export type { IntegrityReport, FreshResult, UnverifiedReason } from './consisten
 
 // 20 section 4: database lifecycle, storage, tabs
 export { clockFor, dataClassOf, openDbNamed, SCHEMA_V1 } from './db';
-export type { BlobRow, SearchRow, TombstoneRow, VectorRow, ConsentRow, SourceRow, RemoveReason } from './db';
+export type { BlobRow, SearchRow, TombstoneRow, VectorRow, ConsentRow, SourceRow, RemoveReason, SourceInventory, IndexingStage } from './db';
 export { ready, wipeDb, closeDb, whenVocabReady } from './lifecycle';
 export { requestPersistence, getStorageStatus, ensureSpace, isQuotaError } from './storage';
 export type { StorageStatus } from './storage';
@@ -41,8 +41,8 @@ export { graphemes, cutGraphemes, emojiNames, withEmojiNames } from './text';
 
 // 20 sections 12 and 13: consent and the one background queue (01 section 11.1)
 export { grantCloudConsent, revokeCloudConsent, hasCloudConsent } from './consent';
-export { startIngestQueue, stopIngestQueue, peekQueue } from './queue/ingestQueue';
-export type { IngestQueue, QueueProgress, PrivacyScanQueue, ScanQueueStatus } from './queue/ingestQueue';
+export { startIngestQueue, stopIngestQueue, peekQueue, setQueueConditions, flushUrgentEmbeds } from './queue/ingestQueue';
+export type { IngestQueue, QueueProgress, PrivacyScanQueue, ScanQueueStatus, QueueConditions } from './queue/ingestQueue';
 
 // 20 section 22.3: photos for sharing and captions
 export { getPhotoBlob, getThumbnailUrl } from '../sources/photos/image';

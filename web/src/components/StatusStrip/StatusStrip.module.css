@@ -61,6 +61,21 @@
 .word.teal { color: var(--color-ok); }
 .word.amber { color: var(--color-warn-text); }
 
+/* "Auto-approve on" (40 section 13.8.9): a link to Settings under the card or the pill. */
+.auto {
+  display: flex;
+  align-items: center;
+  min-height: var(--target-min);
+  margin-top: 8px;
+  padding: 0 14px;
+  border-radius: var(--radius-inner);
+  background: var(--color-warn-tint);
+  color: var(--color-warn-text);
+  font: 500 12px/1.4 var(--font-sans);
+  text-decoration: none;
+}
+.auto:hover { text-decoration: underline; }
+
 .bar { display: block; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
 .barFill { display: block; height: 100%; background: var(--color-accent); transition: width var(--dur-slow) var(--ease-out); }
 

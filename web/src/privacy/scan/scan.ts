@@ -1,7 +1,8 @@
-// The ingest-time scan and its cache (11 section 6, 01 section 11.1). Every model check runs once per item, in 20's
-// background queue, and is cached on the record with versions; share time reads the cache.
+// The ingest-time scan and its cache (11 section 6, 01 section 11.1). The plain-code validators and patterns and the
+// privacy model (Rampart) run once per item, in 20's background queue, and are cached on the record with versions.
+// Gemini Nano does not run here (11 P3, Nov 20): its PII and injection checks run at share time on the text that
+// would leave (steps/shareCheck.ts), and the record's stamp says they are pending.
 import type { CategoryRule, IndexRecord, InjectionFinding, KnownEntity, PiiSpan, PiiStage, ScanStageStamp, TraceStep } from '@sieve/shared';
-import { getNanoAvailability } from '../../ai';
 import { SCAN_MEMO_SIZE, STAGE_VERSIONS } from '../constants';
 import { scanTextHash } from '../hash';
 import { checkInjectionDetailed } from '../injection/check';
@@ -9,7 +10,7 @@ import { patternsVersion } from '../injection/patterns';
 import { getPrivacyModelStatus } from '../model/client';
 import { detectPiiInternal, runPiiStage } from '../pii/detect';
 import { prepareValidators } from '../pii/validators';
-import type { ExpectedStages, ScanNowOptions, ScanOptions, ScanPatch, ScanTaskOptions } from '../types';
+import type { ExpectedStages, NanoPendingStage, PrivacyScanStampWithPending, ScanNowOptions, ScanOptions, ScanPatch, ScanTaskOptions } from '../types';
 
 const PII_STAGES: readonly PiiStage[] = ['validators', 'model', 'nano'];
 const PII_BY: Record<PiiStage, PiiSpan['by']> = { validators: 'validator', model: 'model', nano: 'nano' };
@@ -42,28 +43,19 @@ export function defaultDataClass(record: Pick<IndexRecord, 'source'>): 'own' | '
   return record.source === 'playground' ? 'sample' : 'own';
 }
 
-async function nanoTextAvailable(): Promise<boolean> {
-  try {
-    return (await getNanoAvailability()).text === 'available';
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Which stages should have run on this record on this device (6.2). `never` items get plain code only.
- * `readyModelOnly` (share time): the browser model counts only when it is ready now, since share time never waits for it.
+ * Which stages should have run on this record on this device (6.2): plain code always, the privacy model unless the
+ * rule is `never` (no model reads those items). Gemini Nano is never expected here, for own or sample data: its checks
+ * run at share time on the outgoing text (10.7). `readyModelOnly` (share time): the browser model counts only when it
+ * is ready now, since share time never waits for it. Async for the contract's shape (01 section 11.1).
  */
 export async function expectedStages(record: IndexRecord, data: 'own' | 'sample', rule: CategoryRule, opts: { allowNano?: boolean; readyModelOnly?: boolean } = {}): Promise<ExpectedStages> {
   void record;
+  void data;
   const out: ExpectedStages = { pii: ['validators'], injection: ['code'] };
   if (rule === 'never') return out;
   const model = getPrivacyModelStatus().state;
   if (model === 'ready' || (model !== 'failed' && !opts.readyModelOnly)) out.pii.push('model');
-  if (opts.allowNano === false) return out;
-  const nano = await nanoTextAvailable();
-  if (nano) out.pii.push('nano');
-  if (nano || data === 'sample') out.injection.push('nano');
   return out;
 }
 
@@ -107,10 +99,14 @@ function stamp(version: string, ran: ScanStageStamp['ran'], ms: number): ScanSta
   return { version, ran, ms: Math.max(0, Math.round(ms)), at: Date.now() };
 }
 
-/** The scan (6.1): re-runs only the stages whose stamp is not current; keeps the spans of the others. */
+/**
+ * The scan (6.1): re-runs only the expected stages whose stamp is not current; keeps the spans of the others (a Nano
+ * stamp from before Nov 20 stays while it is current). No Gemini Nano call: `nanoPending` says those checks are left
+ * for share time.
+ */
 export async function scanCore(record: IndexRecord, data: 'own' | 'sample', opts: ScanOptions): Promise<{ patch: ScanPatch; trace: TraceStep[] }> {
   await prepareValidators();
-  const expected = await expectedStages(record, data, opts.rule, { allowNano: opts.allowNano });
+  const expected = await expectedStages(record, data, opts.rule);
   const text = scanText(record);
   const textHash = recordTextHash(record);
   const prev = record.privacyScan && record.privacyScan.textHash === textHash ? record.privacyScan : undefined;
@@ -145,7 +141,7 @@ export async function scanCore(record: IndexRecord, data: 'own' | 'sample', opts
   let headerEntities: KnownEntity[] = (prev?.headerEntities ?? []).filter((e) => kept.has(STAGE_OF_BY[e.by]));
   const header = headerText(record);
   if (rerun.length > 0 && header) {
-    const res = await detectPiiInternal(header, data, { stages: rerun, recordIds: [record.id], signal: opts.signal, allowNano: opts.allowNano }, { waitForModel, priority });
+    const res = await detectPiiInternal(header, data, { stages: rerun, recordIds: [record.id], signal: opts.signal, allowNano: false }, { waitForModel, priority });
     const seen = new Set(headerEntities.map((e) => `${e.type}\u0000${e.text}`));
     for (const s of res.spans) {
       const e: KnownEntity = { text: header.slice(s.start, s.end), type: s.type, by: s.by };
@@ -166,20 +162,21 @@ export async function scanCore(record: IndexRecord, data: 'own' | 'sample', opts
   const nanoCurrent = stampCurrent(prev?.injection.nano, STAGE_VERSIONS.nanoInjection);
   if (codeCurrent && prev?.injection.code) injStamps.code = prev.injection.code;
   if (nanoCurrent && prev?.injection.nano) injStamps.nano = prev.injection.nano;
-  const needNano = expected.injection.includes('nano') && !nanoCurrent;
   let injection: InjectionFinding = record.injection ?? { suspicious: false, by: 'code' };
-  if (!codeCurrent || needNano) {
-    const detail = await checkInjectionDetailed(text, data, {
-      model: needNano, allowNano: opts.allowNano, extraText: record.hiddenRemoved, recordIds: [record.id], signal: opts.signal,
-    });
+  if (!codeCurrent) {
+    const detail = await checkInjectionDetailed(text, data, { model: false, extraText: record.hiddenRemoved, recordIds: [record.id], signal: opts.signal });
     trace.push(detail.trace);
     injStamps.code = stamp(patternsVersion(), 'code', detail.codeMs);
-    if (detail.nanoRan) injStamps.nano = stamp(STAGE_VERSIONS.nanoInjection, detail.nanoWhere ?? 'device', detail.trace.ms - detail.codeMs);
-    const cachedNanoFlag = !needNano && nanoCurrent && record.injection?.by === 'nano' && record.injection.suspicious;
+    const cachedNanoFlag = nanoCurrent && record.injection?.by === 'nano' && record.injection.suspicious;
     injection = cachedNanoFlag && record.injection ? record.injection : detail.finding;
   }
 
-  return { patch: { pii, injection, privacyScan: { textHash, pii: piiStamps, injection: injStamps, headerEntities } }, trace };
+  // Gemini Nano's checks wait for share time, where they read only the text that would leave (10.7). Items under a
+  // `never` rule are never shared, so nothing is pending for them.
+  const nanoPending: NanoPendingStage[] = opts.rule === 'never' ? [] : [...(piiStamps.nano ? [] : ['pii' as const]), ...(injStamps.nano ? [] : ['injection' as const])];
+  const privacyScan: PrivacyScanStampWithPending = { textHash, pii: piiStamps, injection: injStamps, headerEntities };
+  if (nanoPending.length > 0) privacyScan.nanoPending = nanoPending;
+  return { patch: { pii, injection, privacyScan }, trace };
 }
 
 /** 01 section 11.1: the task handler 20's queue runs (data class in opts, default from the record's source). */
@@ -197,7 +194,7 @@ const memo = new Map<string, Promise<{ patch: ScanPatch; trace: TraceStep[] }>>(
 
 /** One scan per record text, shared by parallel callers; an LRU of SCAN_MEMO_SIZE (10.2 step 1). */
 export function memoScan(record: IndexRecord, data: 'own' | 'sample', opts: ScanOptions): Promise<{ patch: ScanPatch; trace: TraceStep[] }> {
-  const key = [record.id, record.version, recordTextHash(record), data, opts.rule, opts.allowNano === false ? 'no-nano' : 'nano'].join('\u0000');
+  const key = [record.id, record.version, recordTextHash(record), data, opts.rule].join('\u0000');
   const hit = memo.get(key);
   if (hit) {
     memo.delete(key);

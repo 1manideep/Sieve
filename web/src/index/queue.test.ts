@@ -11,8 +11,10 @@ import { patchRecord } from './consistency';
 import type { SieveDb } from './db';
 import { getRecord, ingest } from './ingest';
 import { ready } from './lifecycle';
-import { CostTracker, overallEtaMs } from './queue/eta';
-import { startIngestQueue } from './queue/ingestQueue';
+import { getRuntime } from './runtime';
+import { CAPTION_SESSION_MAX, QUEUE_PACING } from './config';
+import { CostTracker, overallEtaMs, restEtaMs } from './queue/eta';
+import { flushUrgentEmbeds, setQueueConditions, startIngestQueue } from './queue/ingestQueue';
 import { search } from './search';
 
 vi.mock('@/ai', async () => (await import('../../../tests/harness/aiMock')).aiModule);
@@ -161,6 +163,226 @@ describe('A-QU-5: ETA', () => {
     for (let i = 0; i < 5; i++) slow.observe(10, 16_000);
     expect(slow.secPerItem).toBeGreaterThan(1.1);
     expect(slow.secPerItem).toBeLessThan(1.6);
-    expect(overallEtaMs({ label: 10, caption: 5, embed: 12 })).toBe(15);
+    // the lanes run one after another, so their times add up (20 section 13.4)
+    expect(overallEtaMs({ label: 10, caption: 5, embed: 12 })).toBe(27);
+    expect(overallEtaMs({ label: 10, caption: 5, embed: 12, privacy: 3 })).toBe(30);
+    QUEUE_PACING.nanoRestMs = 1_000;
+    QUEUE_PACING.embedRestMs = 250;
+    QUEUE_PACING.privacyRestMs = 100;
+    try {
+      // the rests count too: 25 labels are 3 batches, 40 chunks are 3 embed batches, 7 privacy items, 2 photos
+      expect([restEtaMs('label', 25), restEtaMs('embed', 40), restEtaMs('privacy', 7), restEtaMs('caption', 2)]).toEqual([3_000, 750, 700, 2_000]);
+    } finally {
+      QUEUE_PACING.nanoRestMs = 0;
+      QUEUE_PACING.embedRestMs = 0;
+      QUEUE_PACING.privacyRestMs = 0;
+    }
   });
 });
+
+const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 4, 0, 0, 0, 3, 8, 2, 0, 0, 0]);
+const captioned = () => {
+  aiControl.captionImpl = async () => ({ ok: true, value: { caption: 'A gray cat on a windowsill.' }, trace: { kind: 'caption', label: 'x', where: 'device', ms: 1, at: 0, sdkReported: 'on_device' } });
+};
+async function addPhotos(n: number): Promise<string[]> {
+  const { addUploads } = await import('../sources/uploads');
+  const out: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const bytes = new Uint8Array([...PNG, i]);                         // distinct bytes: not a duplicate upload
+    const [up] = await addUploads(db, [nodeFile(bytes, `cat-${i}.png`, { type: 'image/png' })]);
+    if (up?.recordId) out.push(up.recordId);
+  }
+  return out;
+}
+
+describe('20 section 13.5: battery, the captions switch and the session cap', () => {
+  afterEach(() => {
+    setQueueConditions(db, { onBattery: false, batteryOverride: false, captions: true });
+    QUEUE_PACING.captionSessionMax = CAPTION_SESSION_MAX;
+  });
+
+  it('on battery every model lane holds until Resume; the text is still searchable', async () => {
+    setQueueConditions(db, { onBattery: true });
+    const q = startIngestQueue(db);
+    await ingest(db, note(1, 'Battery note about lemons.'), 'own');
+    await q.whenIdle();
+    expect(aiControl.labelCalls).toHaveLength(0);
+    expect(ml.calls).toHaveLength(0);
+    expect(privacyControl.scans).toHaveLength(0);
+    expect(q.progress().find((p) => p.stage === 'label')).toMatchObject({ waiting: 'power', total: 1, done: 0 });
+    expect(q.pendingBySource().get('upload')).toBe(1);
+    expect((await search(db, 'lemons', { live: false })).map((c) => c.recordId)).toContain('upload:n1');
+    setQueueConditions(db, { batteryOverride: true });                 // "press Resume to index anyway"
+    await q.whenIdle();
+    expect(aiControl.labelCalls).toHaveLength(1);
+    expect(privacyControl.scans).toHaveLength(1);
+    expect(q.pendingBySource().get('upload') ?? 0).toBe(0);
+  });
+
+  it('plugging in resumes on its own', async () => {
+    setQueueConditions(db, { onBattery: true });
+    const q = startIngestQueue(db);
+    await ingest(db, note(2, 'Plugged in.'), 'own');
+    await q.whenIdle();
+    expect(aiControl.labelCalls).toHaveLength(0);
+    setQueueConditions(db, { onBattery: false });
+    await q.whenIdle();
+    expect(aiControl.labelCalls).toHaveLength(1);
+    expect(privacyControl.scans).toHaveLength(1);
+  });
+
+  it('captions: off with the switch, on power only (the battery override does not cover them), newest first', async () => {
+    captioned();
+    setQueueConditions(db, { captions: false });
+    const q = startIngestQueue(db);
+    const ids = await addPhotos(2);
+    await q.whenIdle();
+    expect(aiControl.captionCalls).toHaveLength(0);
+    expect(q.progress().find((p) => p.stage === 'caption')).toMatchObject({ waiting: 'off', etaMs: 0 });
+    expect(q.pendingBySource().get('upload') ?? 0).toBe(0);            // a photo waiting only for a caption is not "left"
+    setQueueConditions(db, { captions: true, onBattery: true, batteryOverride: true });
+    await q.whenIdle();
+    expect(aiControl.captionCalls).toHaveLength(0);
+    expect(q.progress().find((p) => p.stage === 'caption')?.waiting).toBe('power');
+    setQueueConditions(db, { onBattery: false });
+    await q.whenIdle();
+    expect(aiControl.captionCalls.map((c) => c.recordId)).toEqual([...ids].reverse());
+  });
+
+  it('at most the session cap of captions', async () => {
+    captioned();
+    expect(CAPTION_SESSION_MAX).toBe(200);
+    QUEUE_PACING.captionSessionMax = 2;
+    const q = startIngestQueue(db);
+    await addPhotos(3);
+    await q.whenIdle();
+    expect(aiControl.captionCalls).toHaveLength(2);
+    expect(q.progress().find((p) => p.stage === 'caption')?.waiting).toBe('limit');
+  });
+
+  it('the source row says what the queue works on, and counts the privacy scan as work left', async () => {
+    await db.sources.put({ kind: 'upload', connected: true, paused: false, progress: { done: 0, total: 0 } });
+    setQueueConditions(db, { onBattery: true });
+    const q = startIngestQueue(db);
+    for (let i = 0; i < 3; i++) await ingest(db, note(10 + i), 'own');
+    await q.whenIdle();
+    await getRuntimeQueue().writeRowsNow?.();
+    // embeddings go first (20 section 13.1), so the card says "Making the search index" (no count)
+    const held = await db.sources.get('upload');
+    expect(held).toMatchObject({ progress: { done: 0, total: 3 }, stage: 'embed' });
+    expect(held?.stageCount).toBeUndefined();
+    let release!: () => void;
+    privacyControl.gate = new Promise<void>((r) => (release = r));   // the privacy scan waits here
+    setQueueConditions(db, { batteryOverride: true });
+    await vi.waitFor(() => expect(privacyControl.scans.length).toBeGreaterThan(0));
+    await getRuntimeQueue().writeRowsNow?.();
+    expect(await db.sources.get('upload')).toMatchObject({ stage: 'privacy', progress: { total: 3 } });
+    expect((await db.sources.get('upload'))!.progress.done).toBeLessThan(3);
+    release();
+    await q.whenIdle();
+    await getRuntimeQueue().writeRowsNow?.();
+    const row = await db.sources.get('upload');
+    expect(row).toMatchObject({ progress: { done: 3, total: 3 } });
+    expect(row?.stage).toBeUndefined();
+  });
+});
+
+describe('20 section 13.5: a question waits for what was just added, 3 s at most', () => {
+  afterEach(() => setQueueConditions(db, { onBattery: false, batteryOverride: false, captions: true }));
+
+  it('resolves once the item added a moment ago has its vectors', async () => {
+    const q = startIngestQueue(db);
+    await q.whenIdle();
+    const rec = await ingest(db, note(70, 'Fresh note about the violin lesson.'), 'own', { priority: 'high' });
+    expect(getRuntime(db).vectors.has(rec.id)).toBe(false);
+    expect(await flushUrgentEmbeds(db)).toBe('done');
+    expect(getRuntime(db).vectors.has(rec.id)).toBe(true);
+    expect((await search(db, 'violin lesson', { live: false })).map((c) => c.recordId)).toContain(rec.id);
+  });
+
+  it('gives up after the bound, so the question searches anyway', async () => {
+    const q = startIngestQueue(db);
+    await q.whenIdle();
+    ml.hold();
+    const rec = await ingest(db, note(71, 'A note the embedder is slow on.'), 'own', { priority: 'high' });
+    const t0 = Date.now();
+    expect(await flushUrgentEmbeds(db, { timeoutMs: 80 })).toBe('timeout');
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(70);
+    expect(Date.now() - t0).toBeLessThan(2_000);
+    ml.release();
+    expect(await flushUrgentEmbeds(db)).toBe('done');
+    expect(getRuntime(db).vectors.has(rec.id)).toBe(true);
+  });
+
+  it('does not wait for bulk work, nor when nothing can run (on battery), nor without a queue', async () => {
+    const q = startIngestQueue(db);
+    await q.whenIdle();
+    ml.hold();
+    await ingest(db, note(72, 'A note from a big sync.'), 'own');     // normal priority: bulk
+    const t0 = Date.now();
+    expect(await flushUrgentEmbeds(db, { timeoutMs: 1_000 })).toBe('done');
+    expect(Date.now() - t0).toBeLessThan(500);
+    ml.release();
+    await q.whenIdle();
+    setQueueConditions(db, { onBattery: true });
+    await ingest(db, note(73, 'Added on battery.'), 'own', { priority: 'high' });
+    await vi.waitFor(() => expect(q.progress().find((p) => p.stage === 'embed')?.waiting).toBe('power'));
+    expect(await flushUrgentEmbeds(db, { timeoutMs: 1_000 })).toBe('skipped');
+    const other = freshDb('real');                                     // a database whose queue runs in another tab
+    expect(await flushUrgentEmbeds(other)).toBe('done');
+    await dropDb(other);
+  });
+
+  it('an abort ends the wait at once', async () => {
+    const q = startIngestQueue(db);
+    await q.whenIdle();
+    ml.hold();
+    await ingest(db, note(74, 'Asked and then stopped.'), 'own', { priority: 'high' });
+    const ctl = new AbortController();
+    const p = flushUrgentEmbeds(db, { timeoutMs: 3_000, signal: ctl.signal });
+    ctl.abort();
+    expect(await p).toBe('timeout');
+    ml.release();
+  });
+});
+
+describe('20 section 13.4: one writer of the row progress', () => {
+  it('done never goes down in a pass, even when a new label re-opens an item for embedding', async () => {
+    await db.sources.put({ kind: 'upload', connected: true, paused: false, progress: { done: 0, total: 0 } });
+    // the model sorts every note as Health: its rule is never, so each finished item needs a new embedding
+    aiControl.labelImpl = async (items) => ({
+      labels: Object.fromEntries(items.map((i) => [i.id, 'Health' as const])),
+      by: Object.fromEntries(items.map((i) => [i.id, 'device' as const])),
+      trace: { kind: 'label', label: 'x', where: 'device', ms: 1, at: 0 },
+    });
+    const q = startIngestQueue(db);
+    const seen: number[] = [];
+    let sampling = true;
+    const sample = async () => {
+      while (sampling) {
+        await getRuntimeQueue().writeRowsNow?.();
+        const r = await db.sources.get('upload');
+        if (r) seen.push(r.progress.done);
+        await new Promise((res) => setTimeout(res, 1));
+      }
+    };
+    const sampler = sample();
+    for (let i = 0; i < 12; i++) await ingest(db, note(40 + i, `Note ${i} about the clinic visit.`), 'own');
+    await q.whenIdle();
+    sampling = false;
+    await sampler;
+    await getRuntimeQueue().writeRowsNow?.();
+    expect(await db.sources.get('upload')).toMatchObject({ progress: { done: 12, total: 12 } });
+    expect(seen.length).toBeGreaterThan(3);
+    for (let i = 1; i < seen.length; i++) {
+      const total = 12;
+      if (seen[i]! < seen[i - 1]! && seen[i - 1]! !== total) throw new Error(`done went down: ${seen.slice(Math.max(0, i - 3), i + 2).join(', ')}`);
+    }
+  });
+});
+
+function getRuntimeQueue() {
+  const hooks = getRuntime(db).queue;
+  if (!hooks) throw new Error('no queue');
+  return hooks;
+}

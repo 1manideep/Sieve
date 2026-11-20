@@ -13,7 +13,7 @@ import {
 import { getNanoAvailability } from './device/availability';
 import { scheduleDevice, setDeviceTrySignal } from './device/scheduler';
 import { getE2EHooks } from './e2e';
-import { mapError } from './errors';
+import { isCloudRefusal, mapError } from './errors';
 import { getHybrid, type ModelCallResult, type ModelSpec, type SdkPart } from './hybrid';
 import { toJpegPart } from './image';
 import { stripFences, validateJson } from './json';
@@ -26,6 +26,19 @@ export { RETRY_REMINDER } from './prompts';
 
 const breaches: { purpose: Purpose; at: number }[] = [];
 const neverAborted = new AbortController().signal;
+
+/**
+ * Cloud refusals (an HTTP 4xx other than 429) by cloud model and purpose, for this page's life. A refusal is never
+ * retried, and once one is known, background calls of that purpose stop before the cloud: without it the
+ * Playground's privacy lane sent one doomed request per sample record on every load. A question the person asks
+ * still tries once, so a fixed project recovers without a reload.
+ */
+const cloudRefusals = new Map<string, ModelError>();
+const refusalKey = (cloudModel: string, purpose: Purpose) => `${cloudModel}|${purpose}`;
+
+export function resetCloudRefusalsForTests(): void {
+  cloudRefusals.clear();
+}
 
 /** Breach-guard hits this session (expected: always empty). */
 export function getPolicyBreaches(): { purpose: Purpose; at: number }[] {
@@ -181,6 +194,8 @@ export async function runModel<T>(args: RunModelArgs): Promise<RunModelResult<T>
   }
 
   const cloudModel = args.purpose === 'draft' ? CLOUD_MODEL_DRAFT : CLOUD_MODEL_FALLBACK;
+  const refused = cloudRefusals.get(refusalKey(cloudModel, args.purpose));
+  if (refused && mode === 'ONLY_IN_CLOUD' && priority === 'background') return stopped(refused);
   const spec: ModelSpec = {
     purpose: args.purpose,
     mode,
@@ -224,6 +239,12 @@ export async function runModel<T>(args: RunModelArgs): Promise<RunModelResult<T>
           callerAborted: args.signal?.aborted === true,
           timeoutMs,
         });
+        if (isCloudRefusal(e)) {
+          // Never retried: the same request gets the same answer.
+          cloudRefusals.set(refusalKey(cloudModel, args.purpose), mapped);
+          error = mapped;
+          break;
+        }
         if (mapped.code === 'bad-output' && tries < maxTries) {
           callParts = withReminder(parts);
           continue;
@@ -235,7 +256,10 @@ export async function runModel<T>(args: RunModelArgs): Promise<RunModelResult<T>
         if (scheduled) setDeviceTrySignal(null);
       }
       source = result.source;
-      if (source === 'in_cloud') cloudSends += 1;
+      if (source === 'in_cloud') {
+        cloudSends += 1;
+        cloudRefusals.delete(refusalKey(cloudModel, args.purpose));
+      }
       if (mode === 'ONLY_ON_DEVICE' && source !== 'on_device') {
         console.error('Sieve policy breach: on-device-only call ran in the cloud', args.purpose);
         breaches.push({ purpose: args.purpose, at: Date.now() });

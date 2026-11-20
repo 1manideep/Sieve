@@ -59,8 +59,7 @@ describe('buildStepOption details', () => {
     const patches = onScanned.mock.calls.map(([p]) => p);
     expect(patches[1]).toBe(patches[0]);
     expect(patches[2]).toBe(patches[0]);
-    const scansOfText = ai.runModel.mock.calls.filter(([a]) => a.purpose === 'pii-check' && String(a.prompt).includes('deposit')).length;
-    expect(scansOfText).toBe(1);
+    expect(ai.runModel).not.toHaveBeenCalled();                        // the scan runs no Gemini Nano (11 section 6.1)
   });
 
   test('a stale scan at question time (allowNano false) makes no model call', async () => {

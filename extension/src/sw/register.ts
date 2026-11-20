@@ -2,7 +2,9 @@
 // it takes the API object as a parameter so unit tests pass a fake. Every listener is added synchronously.
 // The panel page opens as the toolbar popup (manifest action.default_popup); the side panel stays as a second
 // surface ("Keep open on the side"). The shortcut and a notification click open the popup with
-// chrome.action.openPopup() (Chrome 127+) and fall back to the side panel when it is missing or rejects.
+// chrome.action.openPopup() (Chrome 127+) and fall back to the side panel when it is missing or rejects. A new
+// request opens the popup by itself when the setting allows (arrival.ts); that path has no gesture, so it never
+// falls back to the side panel, only to the notification.
 import { HOME_BASE_PORT_NAME, MESSAGE_VERSION } from '@sieve/shared';
 import type { ExtensionToPage } from '@sieve/shared';
 import { ALLOWED_ORIGINS, BUILD_MODE } from '../shared/env';
@@ -10,6 +12,7 @@ import { COMMAND_OPEN_SIEVE, PANEL_PORT_NAME } from '../shared/internal';
 import type { PanelState, Surface, WorkerToPanel } from '../shared/internal';
 import { parsePageMessage, parsePanelMessage } from '../shared/validate';
 import { BADGE_COLOR, BADGE_TEXT_COLOR, badgeFor } from './badge';
+import { canOpenPopup, createArrivalOpener } from './arrival';
 import { openApp } from './focus';
 import { GRACE_MS, Hub, isActionable, MAX_CONNECTIONS } from './hub';
 import { createNotifier, requestIdOfNotification } from './notify';
@@ -69,6 +72,7 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
   api.action.setBadgeBackgroundColor({ color: BADGE_COLOR }).catch(() => {});
   api.action.setBadgeTextColor({ color: BADGE_TEXT_COLOR }).catch(() => {});
   const notifier = createNotifier(api, debug); // reads the announced ids back from storage.session
+  const arrival = createArrivalOpener(api, now);
 
   function safePost(port: chrome.runtime.Port, msg: unknown): void {
     try {
@@ -86,6 +90,11 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
   function anyPanelVisible(): boolean {
     for (const info of panels.values()) if (info.visible) return true;
     return false;
+  }
+
+  function stillWaiting(requestId: string): boolean {
+    const p = hub.find(requestId);
+    return p !== undefined && isActionable(p) && !hub.isInflight(requestId);
   }
 
   function syncBadge(): void {
@@ -185,7 +194,8 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
         const fresh = added
           .map((id) => hub.find(id))
           .filter((p): p is NonNullable<typeof p> => p !== undefined && isActionable(p) && !hub.isInflight(p.requestId));
-        void notifier.onAdded(fresh, anyPanelVisible);
+        // New requests open the popup once (setting on, Chrome 127+, a focused window), else notify (50 section 7.7).
+        void notifier.onAdded(fresh, { panelVisible: anyPanelVisible, open: () => arrival.open(), stillWaiting });
         debug(`pending ${msg.proposals.length}, ${added.length} added, ${removed.length} removed`);
         update();
         return;
@@ -253,6 +263,7 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
           visible: msg.visible,
           ...(msg.windowId !== undefined ? { windowId: msg.windowId } : {}),
         });
+        if (msg.surface === 'popup') arrival.popupConnected();
         safePost(port, { type: 'panel/state', state: hub.view() } satisfies WorkerToPanel);
         return;
       case 'panel/visibility': {
@@ -321,11 +332,6 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
     safePost(port, { type: 'panel/state', state: hub.view() } satisfies WorkerToPanel);
   });
 
-  /** chrome.action.openPopup, when this Chrome has it (127+). */
-  function canOpenPopup(): boolean {
-    return typeof (api.action as Partial<typeof chrome.action>).openPopup === 'function';
-  }
-
   // The shortcut toggles Sieve (50 section 8.9): it closes the popup or side panel showing in that window, or
   // opens the popup. Without openPopup, or when it rejects, it opens the side panel as before. Chrome accepts
   // sidePanel.open() only inside the gesture, so every lookup is synchronous and nothing is awaited before an open.
@@ -343,7 +349,7 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
       if (typeof api.sidePanel.close === 'function') api.sidePanel.close({ windowId }).catch(() => {}); // Chrome 141+
       return 'close';
     }
-    if (canOpenPopup()) {
+    if (canOpenPopup(api)) {
       api.action.openPopup({ windowId }).catch(() => {
         api.sidePanel.open({ windowId }).catch(() => {});
       });
@@ -369,7 +375,7 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
       if (windowId !== undefined) api.sidePanel.open({ windowId }).catch(openTab);
       else openTab();
     };
-    if (canOpenPopup()) api.action.openPopup(windowId !== undefined ? { windowId } : {}).catch(openSide);
+    if (canOpenPopup(api)) api.action.openPopup(windowId !== undefined ? { windowId } : {}).catch(openSide);
     else openSide();
     notifier.clear(requestId);
   });

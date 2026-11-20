@@ -87,6 +87,21 @@ describe('useSettings', () => {
     expect(useSettings.getState().saving.cloudFallbackForOwnData).toBe('saved');
   });
 
+  it('"Describe photos with Gemini Nano": on by default, kept on this device per account, never written to users/{uid}', async () => {
+    window.localStorage.removeItem('sieve.describePhotos.u1');
+    await started();
+    expect(useSettings.getState().describePhotos).toBe(true);
+    await useSettings.getState().setDescribePhotos(false);
+    expect(useSettings.getState()).toMatchObject({ describePhotos: false, saving: { describePhotos: 'saved' } });
+    expect(window.localStorage.getItem('sieve.describePhotos.u1')).toBe('0');
+    expect(updateSetting).not.toHaveBeenCalled();
+    await started();                                                    // a new session reads it back
+    expect(useSettings.getState().describePhotos).toBe(false);
+    useSettings.getState().reset();
+    expect(useSettings.getState().describePhotos).toBe(true);
+    window.localStorage.removeItem('sieve.describePhotos.u1');
+  });
+
   it('push: maps the results, and a refused permission leaves it off', async () => {
     await started();
     Object.defineProperty(window, 'Notification', { configurable: true, value: { requestPermission: vi.fn(async () => 'granted'), permission: 'default' } });

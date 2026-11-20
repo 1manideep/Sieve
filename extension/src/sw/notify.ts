@@ -1,6 +1,7 @@
-// Local notifications and the announced-id set (50 section 7.7). A notification names the assistant only, never
-// the question, the item or any outgoing text. chrome.storage.session key `announced` (request ids only) is the
-// only value the extension ever stores.
+// Local notifications and the announced-id set (50 section 7.7). A request is announced once: by opening the popup
+// when that works, else by a notification. A notification names the assistant only, never the question, the item
+// or any outgoing text. chrome.storage.session key `announced` holds request ids only, so a restarted worker
+// neither repeats a notification nor opens the popup again for a request the person already closed.
 import type { ProposalPreview } from '@sieve/shared';
 import { isRequestId } from '../shared/validate';
 
@@ -36,10 +37,23 @@ export function notificationMessage(aiName: string): string {
 export interface Notifier {
   /** Resolves once the announced set has been read back from storage.session. */
   readonly ready: Promise<void>;
-  /** New actionable previews: announce each one not announced before; notify only when no panel is visible. */
-  onAdded(previews: ProposalPreview[], panelVisible: () => boolean): Promise<void>;
+  /**
+   * New actionable previews: announce the ones not announced before, once. Nothing shows while a panel is visible.
+   * Otherwise `open` (one try for the whole batch) may open the popup; when it does not, each request still
+   * waiting gets a notification. Calls run one after another, so requests that arrive together open one popup.
+   */
+  onAdded(previews: ProposalPreview[], how: AnnounceOptions): Promise<void>;
   clear(requestId: string): void;
   announced(): readonly string[];
+}
+
+export interface AnnounceOptions {
+  /** True while a popup or side panel is showing: it already shows the new request. */
+  panelVisible(): boolean;
+  /** One try at opening the popup; true when it opened. Left out: notifications only. */
+  open?: () => Promise<boolean>;
+  /** Whether a request is still waiting once the popup try is over (it may have been answered meanwhile). */
+  stillWaiting?: (requestId: string) => boolean;
 }
 
 type NotifyApi = Pick<typeof chrome, 'notifications' | 'storage'>;
@@ -66,31 +80,48 @@ export function createNotifier(api: NotifyApi, log: (msg: string) => void = () =
     });
   }
 
+  async function handleAdded(previews: ProposalPreview[], { panelVisible, open, stillWaiting }: AnnounceOptions): Promise<void> {
+    const fresh: ProposalPreview[] = [];
+    for (const p of previews) {
+      if (announced.includes(p.requestId) || fresh.some((f) => f.requestId === p.requestId)) continue;
+      fresh.push(p);
+    }
+    if (fresh.length === 0) return;
+    // Saved before anything opens, so a worker restart mid-open does not open the popup for these again.
+    announced = [...announced, ...fresh.map((p) => p.requestId)].slice(-ANNOUNCED_MAX);
+    save();
+    if (panelVisible()) return;
+    if (open && (await open())) {
+      log(`notify: popup opened for ${fresh.length} new`);
+      return;
+    }
+    if (panelVisible()) return; // the person opened Sieve while the popup was tried
+    for (const p of fresh) {
+      if (stillWaiting && !stillWaiting(p.requestId)) continue;
+      const aiName = p.requester.kind === 'outside' ? p.requester.aiName : 'Sieve';
+      api.notifications
+        .create(notificationId(p.requestId), {
+          type: 'basic',
+          iconUrl: 'icons/icon-128.png',
+          title: NOTIFICATION_TITLE,
+          message: notificationMessage(aiName),
+          priority: 0,
+          requireInteraction: false,
+        })
+        .catch(() => {
+          log('notify: create failed');
+        });
+    }
+  }
+
+  let queue: Promise<void> = ready;
+
   return {
     ready,
-    async onAdded(previews, panelVisible) {
-      await ready;
-      let changed = false;
-      for (const p of previews) {
-        if (announced.includes(p.requestId)) continue;
-        announced = [...announced, p.requestId].slice(-ANNOUNCED_MAX);
-        changed = true;
-        if (panelVisible()) continue;
-        const aiName = p.requester.kind === 'outside' ? p.requester.aiName : 'Sieve';
-        api.notifications
-          .create(notificationId(p.requestId), {
-            type: 'basic',
-            iconUrl: 'icons/icon-128.png',
-            title: NOTIFICATION_TITLE,
-            message: notificationMessage(aiName),
-            priority: 0,
-            requireInteraction: false,
-          })
-          .catch(() => {
-            log('notify: create failed');
-          });
-      }
-      if (changed) save();
+    onAdded(previews, how) {
+      const run = queue.then(() => handleAdded(previews, how));
+      queue = run.catch(() => {});
+      return run;
     },
     clear(requestId) {
       api.notifications.clear(notificationId(requestId)).catch(() => {});

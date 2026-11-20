@@ -43,7 +43,7 @@ beforeEach(async () => {
   useSession.setState({ ownerConflict: false });
   useAvailability.setState({ text: 'available', setup: { state: 'idle' } });
   useSettings.setState({ settings: { ...useSettings.getState().settings, cloudFallbackForOwnData: false } });
-  useIndexing.setState({ state: 'idle', left: 0 });
+  useIndexing.setState({ state: 'idle', pausedBy: undefined, left: 0, done: 0, total: 0, etaMs: undefined, activity: undefined, onBattery: false, batteryOverride: false });
 });
 afterEach(() => {
   act(() => useAskReal.getState().reset());
@@ -89,9 +89,10 @@ describe('Ask', () => {
     renderAsk();
     expect(await screen.findByText('Your private index is empty. Connect Gmail or a folder first.')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Go to Sources' })).toHaveAttribute('href', '/sources');
+    expect(screen.queryByRole('link', { name: 'Try the Playground' })).toBeNull();
     const notice = 'Set up the on-device model once to ask about your own data. It takes about 3 to 4 minutes.';
     expect(screen.getByText(notice)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Set it up' })).toHaveAttribute('href', '/prepare?back=/');
+    expect(screen.getByRole('link', { name: 'Set it up' })).toHaveAttribute('href', '/prepare?back=/ask');
     const find = screen.getByRole('button', { name: 'Ask' });
     expect(find).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByText('Nano · not set up')).toBeInTheDocument();
@@ -119,7 +120,13 @@ describe('Ask', () => {
     expect(modelGate({ text: 'no-api', setup: 'idle', cloudFallback: false })).toBe('no-model');
     expect(modelGate({ text: 'no-api', setup: 'idle', cloudFallback: true })).toBe('open');
     const base = { sourcesConnected: true, setup: 'idle' as const, indexing: 'idle' as const, left: 0 };
-    expect(askNotices({ ...base, text: 'unavailable', cloudFallback: false }).map((n) => n.id)).toEqual(['no-model']);
+    const noModel = askNotices({ ...base, text: 'unavailable', cloudFallback: false });
+    expect(noModel.map((n) => n.id)).toEqual(['no-model']);
+    expect(noModel[0].actions).toEqual([
+      { label: 'Set up the on-device model', to: '/prepare?back=/ask' },
+      { label: 'Settings', to: '/settings#cloud' },
+    ]);
+    expect(askNotices({ ...base, sourcesConnected: false, text: 'available', cloudFallback: false })[0].actions).toEqual([{ label: 'Go to Sources', to: '/sources' }]);
     expect(askNotices({ ...base, text: 'unavailable', cloudFallback: true })[0].text).toBe(
       'No on-device model here. Sieve will ask you before the cloud model reads anything, and show you the exact text.',
     );
@@ -127,6 +134,47 @@ describe('Ask', () => {
       "Indexing on this device: 1,204 items left. Answers can miss what isn't indexed yet. Your question goes first.",
     );
     expect(askNotices({ ...base, sourcesConnected: false, text: 'downloadable', cloudFallback: false, indexing: 'running', left: 3 })).toHaveLength(2);
+  });
+
+  it('indexing (F2): the indexing card under the chips while it runs, in place of the one-line notice', async () => {
+    useIndexing.setState({ state: 'running', left: 1204, done: 296, total: 1500, etaMs: 4 * 60_000 });
+    renderAsk();
+    const card = await screen.findByRole('region', { name: 'Indexing on this device' });
+    expect(within(card).getByRole('progressbar', { name: 'Indexing progress' })).toHaveAttribute('aria-valuetext', 'Indexing 296 of 1,500 items');
+    expect(within(card).getByText(/^296 of 1,500 items · about/)).toBeInTheDocument();
+    expect(within(card).getByText(/Your questions always go first/)).toBeInTheDocument();
+    expect(screen.queryByText(/Indexing on this device: 1,204 items left/)).toBeNull();
+    // The card sits after the chips, inside the home.
+    const chip = screen.getByRole('button', { name: "Landlord's email about the deposit" });
+    expect(chip.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText('Ask a question, or pick an example above. Sieve searches only this device.')).toBeNull();
+    await expectNoAxeViolations();
+    act(() => useIndexing.setState({ state: 'paused', left: 1204 }));
+    expect(screen.getByRole('heading', { level: 2, name: 'Indexing paused' })).toBeInTheDocument();
+    expect(screen.getByText('Resume to finish the index. 1,204 items left.')).toBeInTheDocument();
+    act(() => useIndexing.setState({ state: 'yielding' }));
+    expect(screen.getByText('Paused while Sieve answers your question.')).toBeInTheDocument();
+  });
+
+  it('indexing on battery: the card says so and its Resume indexes anyway for the session (20 section 13.5)', async () => {
+    const user = userEvent.setup();
+    useIndexing.setState({ state: 'paused', pausedBy: 'battery', left: 7, done: 2, total: 9, onBattery: true, batteryOverride: false });
+    renderAsk();
+    const card = await screen.findByRole('region', { name: 'Indexing paused' });
+    expect(within(card).getByText('Paused on battery. Plug in, or press Resume to index anyway.')).toBeInTheDocument();
+    await expectNoAxeViolations();
+    await user.click(within(card).getByRole('button', { name: 'Resume' }));
+    expect(useIndexing.getState().batteryOverride).toBe(true);
+    act(() => useIndexing.setState({ state: 'running', pausedBy: undefined, activity: { stage: 'embed' } }));
+    expect(await within(await screen.findByRole('region', { name: 'Indexing on this device' })).findByText('Making the search index')).toBeInTheDocument();
+  });
+
+  it('indexing: no card when the index is up to date', async () => {
+    renderAsk();
+    expect(await screen.findByText('Ask a question, or pick an example above. Sieve searches only this device.')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Indexing on this device' })).toBeNull();
+    expect(screen.queryByRole('progressbar', { name: 'Indexing progress' })).toBeNull();
+    expect(screen.queryByText('Your index is up to date.')).toBeNull();
   });
 
   it('preparing: Stop replaces Ask; ready (F3): the question bubble, the gate with the exact text, the follow-up pill', async () => {

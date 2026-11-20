@@ -16,6 +16,7 @@ import * as requests from '@/relay/requests';
 import { resilientSnapshot } from '@/relay/resilient';
 import { testRequests } from '@/relay/testRequest';
 import { announce } from '@/state/announcer';
+import { autoApproveOn, markAutoApproved, useAutoApprove } from '@/state/autoApprove';
 import { attachHomeBaseEngine, useHomeBase } from '@/state/homeBase';
 import { useIndexing } from '@/state/indexing';
 import { tables } from '@/state/localDb';
@@ -85,6 +86,7 @@ export async function startGoogleSession(user: SessionUser): Promise<void> {
   // 2. Listeners: settings, grants, blocked items, devices, and the user doc for the home base choice.
   stops.push(useSettings.getState().start(uid));
   stops.push(useGrants.getState().start(uid));
+  stops.push(useAutoApprove.getState().start(uid));
   stops.push(useIndexing.getState().start(db));
 
   // The Realtime Database loads only when this tab becomes the active home base (presence), so a tab that is not the
@@ -163,6 +165,8 @@ export async function startGoogleSession(user: SessionUser): Promise<void> {
       return () => window.removeEventListener('online', h);
     },
     wasDiscarded,
+    autoApprove: (grantId) => autoApproveOn(uid, grantId),
+    markAutoApproved: (receiptId, on) => markAutoApproved(uid, receiptId, on),
   });
   attachHomeBaseEngine(engine);
   running = { uid, engine, stops };

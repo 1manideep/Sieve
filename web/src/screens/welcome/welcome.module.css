@@ -38,7 +38,13 @@
   0%, 100% { opacity: 0.3; }
   50% { opacity: 1; }
 }
-@media (prefers-reduced-motion: reduce) { .star { animation: none; } }
+/* Reduced motion (macOS "Reduce motion" reaches Chrome): nothing moves, but a slow, small fade stays. A change of
+   opacity is not motion, and a still sky reads as broken next to the board. */
+@keyframes twinkleSoft {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.85; }
+}
+@media (prefers-reduced-motion: reduce) { .star { animation-name: twinkleSoft; } }
 
 /* The sphere (640px, masked to a soft circle) with its 1px rim and the inset blue glow, and the constellation. */
 .scene { position: absolute; inset: 0; pointer-events: none; }
@@ -100,7 +106,6 @@
 .lead { margin: 0; max-width: 640px; font-size: clamp(16px, 1.32vw, 19px); line-height: 1.5; color: rgba(255, 255, 255, 0.85); }
 .ctas { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 10px; }
 .note { margin: 0; font-size: 13px; line-height: 1.5; color: var(--color-text-muted); }
-.note a { color: var(--color-link); }
 
 /* The three numbers and the built line. */
 .footer {

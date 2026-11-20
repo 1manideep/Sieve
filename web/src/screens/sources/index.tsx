@@ -1,6 +1,6 @@
 // Sources (40 section 13.6; docs/design/final-flow.md F5): three glass cards in a row, the "Add a source" row, the
 // indexing row above them and the categories below. The index lives only on this device.
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
 import { Button } from '@/components/Button/Button';
 import { SENTENCE, SOURCES } from '@/copy/screens-controls';
@@ -45,6 +45,8 @@ export function Component() {
   const counts = useCategoryCounts(db);
   const sourceCounts = useSourceCounts(db);
   const rules = useSettings((s) => s.settings.categoryRules);
+  const describePhotos = useSettings((s) => s.describePhotos);
+  const photoHelpId = useId();
   const paused = useIndexing((s) => s.state === 'paused');
   const pauseBusy = useSources((s) => s.busy.pause === true);
   const rebuildBusy = useSources((s) => s.busy.rebuild === true);
@@ -80,13 +82,30 @@ export function Component() {
           </>
         }
       />
-      {anyConnected ? <IndexingCard lastSyncAt={lastSyncAt} /> : null}
+      {anyConnected ? <IndexingCard lastSyncAt={lastSyncAt} resume={false} /> : null}
       <section className={styles.sources} aria-label={SOURCES.sourcesLabel}>
         {REAL_SOURCES.map((kind) => (
           <SourceCard key={kind} kind={kind} row={rows?.find((r) => r.kind === kind)} itemCount={sourceCounts?.[kind] ?? 0} />
         ))}
         <p className={`${kit.dashed} ${styles.later}`}>{SOURCES.laterSources}</p>
       </section>
+      <div className={`${kit.glassSm} ${styles.photoSwitch}`}>
+        <label className={styles.switchRow}>
+          <input
+            type="checkbox"
+            role="switch"
+            checked={describePhotos}
+            aria-describedby={photoHelpId}
+            onChange={(e) => {
+              useSettings.getState().setDescribePhotos(e.target.checked).catch(console.error);
+            }}
+          />
+          {SOURCES.describePhotos}
+        </label>
+        <p id={photoHelpId} className={kit.help}>
+          {SOURCES.describePhotosHelp}
+        </p>
+      </div>
       <aside className={styles.aside} aria-label={SOURCES.categoriesLabel}>
         <CategoryList db={db} counts={counts} rules={rules} />
       </aside>

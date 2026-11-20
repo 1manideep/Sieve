@@ -18,7 +18,7 @@ Principles (do not trade these away for speed):
 |---|---|
 | P1 | Nothing in this module ever sends data anywhere. The only outbound call is `runModel` (web/src/ai/) with purpose `pii-check` or `injection-check`. |
 | P2 | Personal details are found on the device only. The Nano `pii-check` always runs `ONLY_ON_DEVICE`, for every data class (decision 8 in 00-overview). |
-| P3 | Model-based checks are expensive (Nano measured at about 4 s per email on Mani's M2), so they run **once per item at ingest**, in a background queue, and are cached on the `IndexRecord`. Share time only reads the cached findings and runs cheap plain-code checks on the exact outgoing text. |
+| P3 | Model checks are split by cost (decision of Nov 20, 2026). The cheap ones (plain-code validators and patterns, and the Rampart model, milliseconds per window) run **once per item at ingest**, in the background queue, and are cached on the `IndexRecord`. Gemini Nano (measured at about 4 s per call on Mani's M2; three calls per item made a folder of 7 PDFs keep a MacBook Pro hot for minutes) runs **only at share time, on the text that would leave**: one injection-check and one pii-check at most per outgoing text, cached on the record (10.7). Indexing may take a little longer; the GPU is used for what is actually shared. |
 | P4 | Fail closed. If a check that guards outgoing text throws, that ladder step is unavailable. A model that is missing or slow is a degradation (fewer detectors), never a silent pass of unchecked text. |
 | P5 | Over-redaction is the lesser failure. When in doubt, hide it. Amounts, dates and times are never treated as personal details (section 5.7). |
 | P6 | What the person sees is what is sent. `StepOption.text` is final; nothing downstream edits it. |
@@ -259,25 +259,27 @@ export type PreparedPhoto = { ok: true; image: SharedImage; removed: string[] } 
 flowchart TD
   RAW["RawItem (html or text)"] --> SAN["sanitizeIncoming: plain code, at ingest"]
   SAN --> REC["IndexRecord.text + hiddenRemoved"]
-  REC --> Q["Privacy scan queue (background, one item at a time)"]
+  REC --> Q["Privacy lane of the background queue (one item at a time, 100 ms apart)"]
   Q --> V["Validators (code)"]
   V --> M["Rampart model (Web Worker, device)"]
-  M --> NP["Nano pii-check (ONLY_ON_DEVICE)"]
   Q --> IP["Injection patterns (code)"]
-  IP --> NI["Nano injection advisory"]
-  NP --> C[("record.pii, record.injection, record.privacyScan")]
-  NI --> C
+  M --> C[("record.pii, record.injection, record.privacyScan (nanoPending)")]
+  IP --> C
   C --> B["buildStepOption at share time"]
   B --> PC["Plain code on the exact outgoing text: validators, known entities, patterns, hidden-leak and verbatim checks"]
-  PC --> SO["StepOption (what the person approves)"]
+  PC --> N["checkOutgoing (10.7): Nano injection-check, then Nano pii-check, on the widest text that may leave"]
+  N --> K[("record.shareChecks: cached by content hash and range")]
+  N --> RB["Findings: buildStepOption again with extraEntities and extraQuotes"]
+  RB --> SO["StepOption (what the person approves)"]
 ```
 
 | Moment | What runs | Cost |
 |---|---|---|
 | Ingest (owner 20 calls) | `sanitizeIncoming` | under 20 ms per email |
-| Background scan queue | validators, Rampart, Nano pii-check, injection patterns, Nano injection advisory | about 8 to 10 s per item, dominated by two Nano calls |
+| Background scan (20's privacy lane) | validators, Rampart, injection patterns; no Gemini Nano | under 0.5 s per item, plus the lane's 100 ms rest |
 | Share time (`buildStepOption`) | plain code only, using the cached findings | under 50 ms per step |
-| Share time, item not yet scanned | `queue.scanNow(id)` first, then as above | one item's scan, about 8 to 10 s |
+| Share time (`checkOutgoing`, 10.7) | Nano injection-check and Nano pii-check on the outgoing text (at most 8,000 characters, one call each) | about 8 s the first time; 0 when the same text was checked before |
+| Share time, item not yet scanned | an in-memory scan first (plain code, the model only if ready), then as above | under 1 s more |
 
 ## 4. `sanitizeIncoming()`
 
@@ -722,6 +724,8 @@ Non-Latin-script names are mostly missed by the model (makers: about 13.7%); Nan
 
 ### 5.5 Nano last pass (`pii/nano.ts`)
 
+Since Nov 20 this pass runs at share time only, on the outgoing text (10.7), with `priority: 'foreground'`; the ingest scan never calls it (6.1). `detectPii` still offers the stage to callers that ask for it.
+
 #### 5.5.1 Call
 
 For each chunk of the text (split at paragraph boundaries into pieces of at most `NANO_CHUNK_CHARS`; a single paragraph longer than that is split at sentence boundaries):
@@ -835,14 +839,17 @@ The filter applies to model and Nano spans. Validator spans are already format-c
 | model, warm, WASM | 150 ms | 1 s | same |
 | model, cold start from cache | 1.5 s | 5 s | none |
 | model, first download | about 37 MB | `MODEL_LOAD_TIMEOUT_MS` | state `failed` |
-| Nano pii-check | about 4 to 6 s (Nano measured about 4 s per short email for the injection check) | `NANO_PII_TIMEOUT_MS` | stage skipped |
-| Nano injection advisory | about 4 s (measured on Mani's M2) | `NANO_INJECTION_TIMEOUT_MS` | code result only |
-| whole background scan | 8 to 10 s | 40 s | the item stays stale and is retried later |
+| whole background scan (validators, Rampart, patterns) | under 0.5 s | 40 s | the item stays stale and is retried later |
 | `buildStepOption`, any step | under 20 ms | 100 ms | none |
+| Nano injection-check, share time, on at most 8,000 characters | about 4 s (measured on Mani's M2) | `NANO_INJECTION_TIMEOUT_MS` | code result only; the row says Nano could not finish |
+| Nano pii-check, share time, on the same text | about 4 to 6 s | `NANO_PII_TIMEOUT_MS` | stage skipped; the row says so |
+| `checkOutgoing` again on the same text (cache hit) | under 5 ms, no model call | none | none |
+
+The split and why (Nov 20): with three Nano calls per item at ingest (pii-check on the text and the header, injection-check on the first and last 12,000 characters), a folder of 7 PDFs cost 20 to 30 s of GPU per PDF before anyone asked anything, while the embedder and Rampart ran in parallel lanes; the machine ran hot. The owner chose "Indexing, it's fine if it takes a little time." So ingest keeps only the checks that cost milliseconds per window, and Nano reads only what would actually leave, once per text. Most items are never shared, so most Nano work is never done.
 
 ## 6. Ingest-time scan and cache
 
-Per the measured Nano cost (about 4 s per call), every model-based check runs once per item, in the background, and is cached on the record. Share time reads the cache.
+The plain-code checks and the Rampart model run once per item, in the background, and are cached on the record. Gemini Nano does not run here (P3): its two checks run at share time on the outgoing text (10.7), and the record's stamp lists them in `privacyScan.nanoPending` so nothing claims they ran. Share time reads the cache.
 
 ### 6.1 `scanRecord()`
 
@@ -858,11 +865,11 @@ Steps:
 2. PII, stage by stage (internal `runPiiStage(stage, text, data, priorSpans)`, the same code `detectPii` uses before its cross-stage merge):
    - `validators`: `runValidators(text)`, then the 5.6 step 1 filters.
    - `model`: worker spans mapped with 5.4.2, then the filters.
-   - `nano`: mask with the current validator and model spans (from this run, or cached ones that are still current), run 5.5, then the filters.
+   - `nano`: not run by the scan (P3). A Nano stamp written before Nov 20 is kept with its spans while it is current.
    `record.pii` stores the three stage lists **unmerged**, concatenated, each span tagged with its stage's `by`. A stage whose stamp is still current (same `textHash`, same version) is not re-run and its spans are kept; a re-run stage replaces exactly the spans with its `by`. Consumers merge at use time (`knownEntities` in 10.2 deduplicates, then `mergeSpans`).
 3. Header: `detectPii(headerText, data, { stages: expected.pii })`, then `headerEntities` = each span's text, type, `by`, score.
-4. Injection: `checkInjection(scanText, data, { model: expected.injection.includes('nano'), extraText: record.hiddenRemoved, recordIds: [record.id], signal })`. Hidden fragments are included on purpose: text hidden from people is the most likely place for an instruction aimed at an AI.
-5. Return `patch = { pii, injection, privacyScan }` with a stamp entry for every stage that ran: `{ version: STAGE_VERSIONS[...], ran, ms, at }` where `ran` is `code` for validators and patterns, `device` for the model, and for Nano `device` or `cloud` from the trace's `sdkReported`.
+4. Injection: `checkInjection(scanText, data, { model: false, extraText: record.hiddenRemoved, recordIds: [record.id], signal })`, plain code only. Hidden fragments are included on purpose: text hidden from people is the most likely place for an instruction aimed at an AI.
+5. Return `patch = { pii, injection, privacyScan }` with a stamp entry for every stage that ran: `{ version: STAGE_VERSIONS[...], ran, ms, at }` where `ran` is `code` for validators and patterns and `device` for the model. Unless the rule is `never` (never shared, so nothing is pending), `privacyScan.nanoPending` lists the Nano stages without a current stamp: `['pii', 'injection']` for every item scanned since Nov 20.
 
 ### 6.2 Freshness
 
@@ -890,12 +897,11 @@ export function cyrb53(str: string, seed = 0): number {
 |---|---|
 | PII `validators`, injection `code` | always |
 | PII `model` | `rule !== 'never'` and model status is not `failed` |
-| PII `nano` | `rule !== 'never'` and `(await getNanoAvailability()).text === 'available'` |
-| injection `nano` | `rule !== 'never'` and (Nano text availability is `available`, or `data === 'sample'`, where `PREFER_ON_DEVICE` may use the cloud) |
+| PII `nano`, injection `nano` | never, for own or sample data (P3): they run at share time (10.7) |
 
 `rule === 'never'` means no model reads the item content (contracts: "blocked before any model reads the item content"), so only plain-code stages run for those items.
 
-`isScanCurrent(record, expected)`: true when `record.privacyScan` exists, its `textHash` equals the current hash, and every expected stage has a stamp whose `version` equals `STAGE_VERSIONS` for it. A stage that is not expected (for example Nano missing on this device) does not make the record stale; when it becomes expected (Nano finishes downloading), the record becomes stale and is re-scanned. Re-runs happen only when the item text, a stage version (prompt or code), or the set of available stages changes.
+`isScanCurrent(record, expected)`: true when `record.privacyScan` exists, its `textHash` equals the current hash, and every expected stage has a stamp whose `version` equals `STAGE_VERSIONS` for it. A stage that is not expected (the model failed on this device) does not make the record stale. Nano availability no longer changes what is expected, so Nano finishing its download re-scans nothing. Re-runs happen only when the item text, a stage version (code), or the model's state changes.
 
 ### 6.3 Background queue (`createPrivacyScanQueue`)
 
@@ -905,8 +911,8 @@ Owner 20 creates one queue per open database (`real` and `playground`) and suppl
 2. Works on one record at a time: `load(id)`, skip if missing, `scanRecord`, `save(id, patch)`, emit status. Errors: log, mark the id as failed for this session, continue.
 3. `scanNow(id, signal)`: if `id` is the running item, await it; else abort the running background item (it goes back to the front of the background queue), scan `id` immediately, save, and return the updated record. Used at share time so the person never waits behind the background queue.
 4. `refreshAll()`: re-run step 1 (call it after a category rule change and when `getNanoAvailability` changes to `available`). While stale records lack an expected-but-unavailable stage, poll `getNanoAvailability()` every 60 s and call `refreshAll()` on a change.
-5. `pause()` / `resume()` (for example while the device is on battery saver; owner 40 decides). `stop()` on sign-out or Playground Reset.
-6. Never runs two Nano calls at once.
+5. `pause()` / `resume()`; the lane also holds on battery with the others (20 section 13.5). `stop()` on sign-out or Playground Reset.
+6. Runs one item at a time, as one lane of 20's serial queue, with `PRIVACY_REST_MS` (100 ms) between items. It makes no Nano call.
 
 New items from ingest are enqueued with `enqueue([id])` by owner 20 right after `ingest()` stores them.
 
@@ -1078,8 +1084,8 @@ runModel<{ suspicious: boolean; quote: string }>({
 
 ### 8.5 When it runs
 
-- At scan time (section 6), with the model, on the record text plus hidden fragments. The result is `record.injection`.
-- At share time, **without** the model: the step builder runs `matchInjectionPatterns` on the exact outgoing text (section 10.2). Share time never calls Nano for injection.
+- At scan time (section 6), plain code only, on the record text plus hidden fragments. The result is `record.injection`.
+- At share time: the step builder runs `matchInjectionPatterns` on the exact outgoing text (section 10.2); then `checkOutgoing` (10.7) runs the Nano advisory once on that text. A flagged sentence it finds in the text is removed from excerpt and full by the same rule as `record.injection.quote`, and the answer is not offered when it contains it.
 
 ## 9. The structural boundary (the real control)
 
@@ -1102,7 +1108,7 @@ These invariants hold whatever the detectors find or miss. Each is enforced by c
 export function buildStepOption(step: LadderStep, parts: { answer?: string; excerpt?: string; full?: string }, record: IndexRecord, data: DataClass, opts?: BuildStepOptions): Promise<StepOption>;
 ```
 
-Owner 10's `prepareProposal` calls it three times (once per step, in any order or in parallel) with the **same** `parts` object: `answer` and `excerpt` from `selectAndAnswer`, `full` usually absent. Before that, it calls `queue.scanNow(record.id)` if `isScanCurrent` is false, and passes the refreshed record.
+Owner 10's `prepareProposal` calls it three times (once per step, in any order or in parallel) with the **same** `parts` object: `answer` and `excerpt` from `selectAndAnswer`, `full` usually absent. A stale record is scanned in memory (step 1). Then it calls `checkOutgoing` (10.7) on the built options, and, when Nano found something, builds the three options once more with `extraEntities` and `extraQuotes`.
 
 ### 10.1 Availability
 
@@ -1143,8 +1149,8 @@ flowchart TD
 2. **Raw text** per step (sections 10.3 to 10.6).
 3. `cleanChars(raw).text` (idempotent; removes anything invisible that a model output might contain).
 4. `shortenLinks(text)`: every URL matching `/\bhttps?:\/\/[^\s<>"')\]]+/gi` or `/\bwww\.[A-Za-z0-9.-]+\.[A-Za-z]{2,}[^\s<>"')\]]*/gi` becomes `[link: host]` (host lower-cased, without `www.`). Reason: link paths carry tracking ids, email addresses and sign-in tokens; a magic sign-in link in a `full` share would hand over account access. Count the replacements.
-5. **Injection.** Answer: if `matchInjectionPatterns(text).suspicious`, unavailable. Excerpt and full: replace every sentence whose pattern score is 2 or more (from `matchInjectionPatterns(text).matches`), and the sentence containing `record.injection.quote` (located with the 60% word-overlap rule from 8.2), with `[removed: a sentence that looked like an instruction to an AI]`. Count the replacements.
-6. **Spans** (plain code only, no model): `runValidators(text)` plus `locateEntities(text, knownEntities(record))` where `knownEntities(record)` = for each `record.pii` span, `{ text: scanText(record).slice(start, end), type, by, score }`, deduplicated, plus `record.privacyScan.headerEntities`. Then `mergeSpans`, `propagateEntities`, `mergeSpans`.
+5. **Injection.** Answer: if `matchInjectionPatterns(text).suspicious`, or the answer contains a sentence in `opts.extraQuotes` (whitespace and case folded), unavailable. Excerpt and full: replace every sentence whose pattern score is 2 or more (from `matchInjectionPatterns(text).matches`), the sentence containing `record.injection.quote` and each sentence of `opts.extraQuotes` (located with the 60% word-overlap rule from 8.2), with `[removed: a sentence that looked like an instruction to an AI]`. Count the replacements.
+6. **Spans** (plain code only, no model): `runValidators(text)` plus `locateEntities(text, [...knownEntities(record), ...opts.extraEntities])` where `knownEntities(record)` = for each `record.pii` span, `{ text: scanText(record).slice(start, end), type, by, score }`, deduplicated, plus `record.privacyScan.headerEntities`. Then `mergeSpans`, `propagateEntities`, `mergeSpans`.
 7. **Answer exemptions** (answer step only, 10.3).
 8. `redact(text, spans, { keepTypes })`.
 9. **Checks:** cap (per step); S4 hidden leak: `norm(s) = s.toLowerCase().replace(/\s+/g, ' ').trim()`; for each fragment `f` in `record.hiddenRemoved` with `norm(f).length >= 12` and not contained in `norm(record.text ?? '')`, the step is unavailable if `norm(text)` contains `norm(f)`; S5 final: excerpt and full unavailable if `matchInjectionPatterns(text).suspicious` is still true.
@@ -1222,9 +1228,39 @@ The place name (`record.photo.place`) is never in any photo text: the full step 
 
 Until CR4 is accepted: the full step for photos is built as above but `text` ends with `[The image itself is not sent over this connection.]` instead of `[Image attached. ...]`, and no image is attached.
 
+### 10.7 The share-time Gemini Nano check (`steps/shareCheck.ts`, Nov 20)
+
+```ts
+export function checkOutgoing(record: IndexRecord, data: 'own' | 'sample', options: readonly StepOption[], parts: { answer?: string; excerpt?: string },
+  opts?: { signal?: AbortSignal; onStart?(kind: 'injection' | 'pii', where: Where): void; onEnd?(kind: 'injection' | 'pii', step: TraceStep): void }): Promise<OutgoingCheck>;
+// OutgoingCheck: { entities: KnownEntity[]; quotes: string[]; trace: TraceStep[]; nanoPii: boolean; ran: number; shareChecks?: ShareCheck[] }
+```
+
+```mermaid
+flowchart TD
+  O["Built options (plain code)"] --> W["Widest offered step: full, else excerpt, else answer (plus the excerpt when full was cut before it)"]
+  W --> K{"record.shareChecks has this key and these versions?"}
+  K -- yes --> R["Use the cached findings: no model call"]
+  K -- no --> I["Nano injection-check on the text (foreground)"]
+  I --> P["Nano pii-check on the text (foreground, ONLY_ON_DEVICE)"]
+  P --> S["shareChecks: newest first, at most SHARE_CHECKS_MAX"]
+  R --> F["entities and quotes"]
+  S --> F
+  F --> B["buildStepOption again with extraEntities and extraQuotes"]
+```
+
+1. **What Nano reads.** Only the text that would leave: the widest available option after the grant's `maxStep` (so an answer-only grant checks the answer alone). When `full` is offered but its text was cut before the excerpt, the excerpt is appended, so every offered text is covered. The text is at most 8,000 characters plus a short excerpt, under `NANO_CHUNK_CHARS`, so each check is one call.
+2. **Cache key.** `contentHash | textHash | range`, where the range is `full`, `excerpt:{start}-{end}` (located in the record text) or `answer:{hash of the cleaned answer}`, joined with `+` for the combined case. Each cached half keeps its stage version (`nano-injection@1`, `nano-pii@1`); a bumped version re-runs that half only. Owner 10 saves `shareChecks` with the version-checked `patchRecord`; a second approve of the same text makes no call.
+3. **Injection-check.** `nanoInjection(text, data, { priority: 'foreground' })`: own data `ONLY_ON_DEVICE`; sample data `PREFER_ON_DEVICE`, so without Nano it may run in the cloud, as the ingest check did before. Own data without Nano: no call. A flag whose quote is not found in the text is ignored (8.2).
+4. **Pii-check.** `runPiiStage('nano', text, { prior: [], priority: 'foreground' })` on the outgoing text, whose known details are already tokens such as `[name]` (the prompt says to skip them). Always `ONLY_ON_DEVICE`; without Nano it is skipped. Found details become `KnownEntity` rows (`by: 'nano'`, one per distinct text and type).
+5. **Rules applied.** The existing ones: entities are located and redacted in every step (answer exemptions still apply); quotes are removed from excerpt and full and block the answer (10.2 step 5); owner 10 adds the `injection` warning with the quote, and `privacyWarnings(record, options, { nanoPii })` drops `pii-check-limited` when Nano's pii-check covered the text.
+6. **Trace.** Two rows, live while they run: running labels "Checking for hidden instructions…" and "Checking for personal details…" (owner 10), with `where` `device`, `cloud` (sample data without Nano) or `code` (skipped or cached). Final labels: `No hidden instructions in the text to share`; `Found a sentence aimed at an AI in the text to share, so Sieve keeps it out`; `No more personal details in the text to share`; `Found and masked {summary} in the text to share`; when skipped: `Gemini Nano is not available, so this check was skipped. ...`; cached: `This exact text was checked before: ...`.
+7. **Nano unavailable.** Nothing runs and nothing is cached; the pipeline behaves as it did when the Nano stages had not run at ingest: plain code, Rampart and the cached findings still apply, and the warning says names and addresses may not all be hidden when the model did not run either.
+8. **Related items.** `buildRelatedOptions` runs the same check on the related item's excerpt and full text, with its own cache entry.
+
 ## 11. Helpers
 
-### 11.1 `privacyWarnings(record, options)`
+### 11.1 `privacyWarnings(record, options, share?)`
 
 Returns, in this order (owner 10 adds them to `Proposal.warnings`; owner 40 may restyle the copy):
 
@@ -1233,7 +1269,7 @@ Returns, in this order (owner 10 adds them to `Proposal.warnings`; owner 40 may 
 | `hidden-text-removed` | `record.hiddenRemoved.length > 0` | `Sieve removed {n} piece(s) of hidden text from this item before any model read it.` |
 | `injection` | `record.injection?.suspicious` | `This item has a sentence that looks like an instruction to an AI. Sieve keeps it out of what is shared.` plus, if there is a quote, ` It says: "{quote, at most 140 characters}"` |
 | `pii-redacted` | any available option has `redactions > 0` | `Sieve hid personal details and links in this text. Check the exact words before you approve.` |
-| `pii-check-limited` (CR3) | neither `pii.model` nor `pii.nano` is stamped on the record's scan | `Names and addresses may not all be hidden: the on-device checks for them were not available.` |
+| `pii-check-limited` (CR3) | neither `pii.model` nor `pii.nano` is stamped on the record's scan, and `share.nanoPii` is not true (Nano's share-time pii-check did not cover the text, 10.7) | `Names and addresses may not all be hidden: the on-device checks for them were not available.` |
 
 Until CR3 is accepted, emit the last row with kind `pii-redacted`.
 
@@ -1249,7 +1285,7 @@ Trace steps for the cached checks, for owner 10 to place in `Proposal.trace`:
 - `kind: 'pii'`: label `Personal details were checked when this item was indexed ({methods}): {summary}`, where `{methods}` lists the stamped stages (`plain code`, `the privacy model on this device`, `Gemini Nano on this device`). `where: 'device'` if the model or Nano stage is stamped, else `code`. `ms` = sum of stamped stage ms.
 - `kind: 'injection'`: label from 8.3 with ` (when this item was indexed)` appended; `where` = `cloud` if the Nano stamp says `cloud`, `device` if it says `device`, else `code`.
 
-At share time `buildStepOption` adds no trace entries; its plain-code work is under 100 ms and is described by these entries plus owner 10's own step list.
+At share time `buildStepOption` adds one plain-code entry per option; `checkOutgoing` adds the two Nano rows of 10.7.
 
 ### 11.4 `clearPrivacyCaches()`
 
@@ -1468,7 +1504,7 @@ Note on AT-STEP-6: the question matches the phone row of the exemption table onl
 | V18 | The PII-check prompt (unmeasured) | run `/dev/privacy` on the corpus; report Nano's added recall and false positives before relying on it in the README |
 | V19 | `navigator.gpu` is exposed in dedicated workers on the demo Chrome | log `'gpu' in navigator` inside the worker |
 | V20 | Rampart on email text (domain shift from chat text) | `/dev/privacy` report on `pii-cases.json` persona emails and the sample inbox |
-| V21 | Measured Nano cost and the background queue | with 30 seed emails rescanned on the demo Mac, the queue finishes and each item takes about 8 to 10 s; adjust budgets in 5.9 to the measured numbers |
+| V21 | Measured cost of the background scan and the share-time check | with 30 seed emails rescanned on the demo Mac, the privacy lane makes no Nano call and each item takes under 0.5 s plus its rest; a first share of the landlord email takes about 8 s for `checkOutgoing` and a second share of the same text 0 calls; adjust budgets in 5.9 to the measured numbers |
 
 ## 16. Contract change requests
 

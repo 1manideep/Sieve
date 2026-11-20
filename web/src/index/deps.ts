@@ -78,6 +78,10 @@ export interface PrivacyScanApi {
   scanRecord(record: IndexRecord, data: 'own' | 'sample', opts: { rule: CategoryRule; signal?: AbortSignal }): Promise<{ patch: ScanPatch; trace: TraceStep[] }>;
   expectedStages(record: IndexRecord, data: 'own' | 'sample', rule: CategoryRule): Promise<ExpectedStages>;
   isScanCurrent(record: IndexRecord, expected: ExpectedStages): boolean;
+  // 11's privacy model status (optional for stand-ins): the privacy lane waits while it loads instead of holding the loop
+  getPrivacyModelStatus?(): { state: 'idle' | 'loading' | 'ready' | 'failed' };
+  warmupPrivacyModel?(): Promise<unknown>;
+  onPrivacyModelStatus?(cb: (s: { state: string }) => void): () => void;
 }
 
 let privacyApi: PrivacyScanApi | null = null;
@@ -87,8 +91,25 @@ let privacyLoading: Promise<PrivacyScanApi | null> | null = null;
 export function loadPrivacyScanApi(): Promise<PrivacyScanApi | null> {
   privacyLoading ??= import('@/privacy')
     .then((ns) => {
-      const p = ns as unknown as Partial<PrivacyScanApi>;
-      privacyApi = typeof p.scanRecord === 'function' && typeof p.expectedStages === 'function' && typeof p.isScanCurrent === 'function' ? (p as PrivacyScanApi) : null;
+      // Read each function once, defensively: a stand-in module may lack the optional model-status ones (and a test
+      // mock throws when a missing export is read).
+      const pick = <K extends keyof PrivacyScanApi>(k: K): PrivacyScanApi[K] | undefined => {
+        try {
+          const f = (ns as unknown as Partial<PrivacyScanApi>)[k];
+          return typeof f === 'function' ? f : undefined;
+        } catch {
+          return undefined;
+        }
+      };
+      const scanRecord = pick('scanRecord');
+      const expectedStages = pick('expectedStages');
+      const isScanCurrent = pick('isScanCurrent');
+      privacyApi = scanRecord && expectedStages && isScanCurrent
+        ? {
+          scanRecord, expectedStages, isScanCurrent,
+          getPrivacyModelStatus: pick('getPrivacyModelStatus'), warmupPrivacyModel: pick('warmupPrivacyModel'), onPrivacyModelStatus: pick('onPrivacyModelStatus'),
+        }
+        : null;
       return privacyApi;
     })
     .catch(() => null);

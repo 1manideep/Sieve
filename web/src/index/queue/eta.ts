@@ -1,7 +1,7 @@
 // Per-item costs and ETAs (20 section 13.4): priors, then an exponentially weighted average of observed time.
-import { COST_EWMA_ALPHA, COST_PRIOR_SEC } from '../config';
+import { COST_EWMA_ALPHA, COST_PRIOR_SEC, EMBED_BATCH, LABEL_BATCH_SIZE, QUEUE_PACING } from '../config';
 
-export type QueueStage = 'label' | 'caption' | 'embed';
+export type QueueStage = 'label' | 'caption' | 'embed' | 'privacy';
 
 export class CostTracker {
   secPerItem: number;
@@ -20,10 +20,30 @@ export class CostTracker {
 }
 
 export function priorCosts(): Record<QueueStage, CostTracker> {
-  return { label: new CostTracker(COST_PRIOR_SEC.label), caption: new CostTracker(COST_PRIOR_SEC.caption), embed: new CostTracker(COST_PRIOR_SEC.embed) };
+  return {
+    label: new CostTracker(COST_PRIOR_SEC.label),
+    caption: new CostTracker(COST_PRIOR_SEC.caption),
+    embed: new CostTracker(COST_PRIOR_SEC.embed),
+    privacy: new CostTracker(COST_PRIOR_SEC.privacy),
+  };
 }
 
-/** The Nano lane's stages add up (one Nano call at a time); the ML lane runs in parallel: the larger lane wins. */
-export function overallEtaMs(eta: Record<QueueStage, number>): number {
-  return Math.max(eta.label + eta.caption, eta.embed);
+/** The rest after each job of a stage, spread over the units still to do (label in batches, embed in batches of chunks). */
+export function restEtaMs(stage: QueueStage, units: number): number {
+  if (units <= 0) return 0;
+  switch (stage) {
+    case 'label':
+      return Math.ceil(units / LABEL_BATCH_SIZE) * QUEUE_PACING.nanoRestMs;
+    case 'caption':
+      return Math.ceil(units) * QUEUE_PACING.nanoRestMs;
+    case 'embed':
+      return Math.ceil(units / EMBED_BATCH) * QUEUE_PACING.embedRestMs;
+    case 'privacy':
+      return Math.ceil(units) * QUEUE_PACING.privacyRestMs;
+  }
+}
+
+/** The lanes run one at a time (label, embed, privacy, caption), so their times add up. */
+export function overallEtaMs(eta: Partial<Record<QueueStage, number>>): number {
+  return (eta.label ?? 0) + (eta.embed ?? 0) + (eta.privacy ?? 0) + (eta.caption ?? 0);
 }

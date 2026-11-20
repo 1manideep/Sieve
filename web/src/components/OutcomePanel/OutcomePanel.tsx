@@ -51,7 +51,7 @@ export function OutcomePanel({ outcome, category, variant, onRetry }: OutcomePan
         actions = (
           <>
             <LinkButton to="/settings#cloud" variant="secondary" size="sm">{OUTCOME_COPY.settings}</LinkButton>
-            <LinkButton to="/playground" variant="secondary" size="sm">{OUTCOME_COPY.tryPlayground}</LinkButton>
+            <LinkButton to="/prepare?back=/" variant="secondary" size="sm">{OUTCOME_COPY.setUpModel}</LinkButton>
           </>
         );
       }

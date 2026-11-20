@@ -1,7 +1,8 @@
-// Not found (40 section 13.10, in the final scheme): black, one sentence, Open Sieve. A Google user goes to Ask,
-// everyone else to the Playground.
+// Not found (40 section 13.10, in the final scheme): black, one sentence, Open Sieve. A Google user goes to Ask;
+// everyone else signs in with Google first.
 import { useDocumentTitle } from '@/app/useDocumentTitle';
-import { LinkButton } from '@/components/Button/Button';
+import { Button, LinkButton } from '@/components/Button/Button';
+import { useOpenSieve } from '@/components/useOpenSieve';
 import { ROUTE_ERROR, SCREENS, TITLES } from '@/copy/strings';
 import { useSession } from '@/state/session';
 import styles from './notFound.module.css';
@@ -9,6 +10,7 @@ import styles from './notFound.module.css';
 export function Component() {
   useDocumentTitle(TITLES.notFound);
   const google = useSession((s) => s.kind === 'google');
+  const { openSieve, signingIn } = useOpenSieve();
   return (
     <div className={styles.page}>
       <div className={`ribbon ${styles.ribbon}`} aria-hidden="true" />
@@ -16,9 +18,15 @@ export function Component() {
       <h1 className={styles.title}>{SCREENS.notFound.heading}</h1>
       <p className={styles.line}>{ROUTE_ERROR.notFoundLine}</p>
       <div className={styles.actions}>
-        <LinkButton to={google ? '/' : '/playground'} variant="primary" size="lg">
-          {ROUTE_ERROR.openSieve}
-        </LinkButton>
+        {google ? (
+          <LinkButton to="/ask" variant="primary" size="lg">
+            {ROUTE_ERROR.openSieve}
+          </LinkButton>
+        ) : (
+          <Button variant="primary" size="lg" busy={signingIn} disabled={signingIn} onClick={() => void openSieve()}>
+            {ROUTE_ERROR.openSieve}
+          </Button>
+        )}
       </div>
     </div>
   );

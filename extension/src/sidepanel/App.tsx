@@ -1,9 +1,10 @@
-// The panel (50 section 8.3; boards F7, F8, F8B): header, one main state, the other waiting requests, footer.
+// The panel (50 section 8.3; boards F7, F8, F8B): header, one main state, the other waiting requests, footer. The
+// header's gear shows the settings block under it (50 section 8.10) when the page has a settings store.
 // Resolved requests show only while selected (the one just decided); there is no list of recent results.
 // The same page is the toolbar popup (400 px wide, as tall as its content up to Chrome's 600 px cap, the main area
 // scrolling after that) and the side panel. A popup closes when it loses focus: decisions are sent at once, the
 // approve animation is only a picture, and a popup that opens again shows the plain result card.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import type { LadderStep, ProposalPreview } from '@sieve/shared';
 import { rejectionCopy } from '../shared/labels';
 import { AlsoWaiting } from './components/AlsoWaiting';
@@ -16,6 +17,7 @@ import { Footer } from './components/Footer';
 import { Header } from './components/Header';
 import { RequestCard } from './components/RequestCard';
 import { ResultCard } from './components/ResultCard';
+import { SettingsMenu } from './components/SettingsMenu';
 import { effectiveStep, optionFor } from './steps';
 import s from './ui.module.css';
 import { usePanelPort } from './usePanelPort';
@@ -36,6 +38,9 @@ export function App({ api }: { api: PanelApi }) {
   const { model, send, select, done } = usePanelPort(api);
   const [chosen, setChosen] = useState<Record<string, LadderStep>>({});
   const [waited, setWaited] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsId = useId();
+  const gearRef = useRef<HTMLButtonElement>(null);
   // The request approved from this panel, with what the card showed, so the approve animation can lift the exact
   // text (board F8B). Approving locks the card, so at most one is ever in flight from here.
   const [approvedHere, setApprovedHere] = useState<ApprovedHere | null>(null);
@@ -128,9 +133,19 @@ export function App({ api }: { api: PanelApi }) {
   }
 
   const showLists = state !== null && state.connection !== 'connecting' && state.connection !== 'disconnected';
+  const settingsStore = api.settings;
+  const closeSettings = () => {
+    setSettingsOpen(false);
+    gearRef.current?.focus();
+  };
   return (
     <div className={`${s.panel} ${surface === 'popup' ? s.popup : ''}`} data-surface={surface}>
-      <Header connection={state ? state.connection : waited ? 'connecting' : null} onClose={() => api.closePanel()} />
+      <Header
+        connection={state ? state.connection : waited ? 'connecting' : null}
+        onClose={() => api.closePanel()}
+        {...(settingsStore ? { settings: { open: settingsOpen, controls: settingsId, onToggle: () => setSettingsOpen((o) => !o) }, gearRef } : {})}
+      />
+      {settingsStore ? <SettingsMenu id={settingsId} open={settingsOpen} store={settingsStore} onClose={closeSettings} /> : null}
       <main className={s.main}>
         {main}
         {showLists ? <AlsoWaiting proposals={others} onSelect={select} /> : null}

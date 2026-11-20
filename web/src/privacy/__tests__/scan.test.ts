@@ -1,4 +1,5 @@
-// AT-SCAN-1 to AT-SCAN-6, plus scanNow and the one-call-at-a-time rule (AT-SCAN-8). The background queue itself
+// AT-SCAN-1 to AT-SCAN-6, plus scanNow and no Gemini Nano call at ingest (11 section 6.1; AT-SCAN-8 moved to
+// shareCheck.test.ts with the Nano calls). The background queue itself
 // (AT-SCAN-7) is 20's (01 section 11.1); scanRecord is the task handler it runs.
 import type { IndexRecord } from '@sieve/shared';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -30,16 +31,16 @@ beforeEach(() => {
 });
 
 describe('scanRecord', () => {
-  test('AT-SCAN-1 a fresh record gets every stage, and spans from each detector', async () => {
+  test('AT-SCAN-1 a fresh record gets plain code and the privacy model; Gemini Nano is left for share time', async () => {
     const { patch, trace: steps } = await scanRecord(record(), 'own', { rule: 'approve' });
-    expect(Object.keys(patch.privacyScan.pii).sort()).toEqual(['model', 'nano', 'validators']);
-    expect(Object.keys(patch.privacyScan.injection).sort()).toEqual(['code', 'nano']);
-    expect(new Set(patch.pii.map((s) => s.by))).toEqual(new Set(['validator', 'model', 'nano']));
-    expect(patch.privacyScan.pii.nano?.ran).toBe('device');
+    expect(Object.keys(patch.privacyScan.pii).sort()).toEqual(['model', 'validators']);
+    expect(Object.keys(patch.privacyScan.injection).sort()).toEqual(['code']);
+    expect(new Set(patch.pii.map((s) => s.by))).toEqual(new Set(['validator', 'model']));
     expect(patch.privacyScan.pii.model?.ran).toBe('device');
+    expect(patch.privacyScan.nanoPending).toEqual(['pii', 'injection']);   // nothing claims Nano ran
     expect(patch.injection).toEqual({ suspicious: false, by: 'code' });
-    expect(steps.length).toBeGreaterThanOrEqual(4);
-    expect(ai.runModel).toHaveBeenCalledTimes(3);                     // pii-check on the text, on the header, injection-check
+    expect(steps.length).toBeGreaterThanOrEqual(3);
+    expect(ai.runModel).not.toHaveBeenCalled();
   });
 
   test('AT-SCAN-2 scanned again: current, zero model calls', async () => {
@@ -54,57 +55,79 @@ describe('scanRecord', () => {
     expect(again.patch.pii).toEqual(first.patch.pii);
   });
 
-  test('AT-SCAN-3 a new injection prompt version re-runs only that stage', async () => {
+  test('AT-SCAN-3 a new pattern version re-runs only that stage', async () => {
     const first = await scanRecord(record(), 'own', { rule: 'approve' });
     const stale = { ...record(), ...first.patch };
-    stale.privacyScan = { ...stale.privacyScan!, injection: { ...stale.privacyScan!.injection, nano: { ...stale.privacyScan!.injection.nano!, version: 'nano-injection@0' } } };
-    ai.runModel.mockClear();
+    stale.privacyScan = { ...stale.privacyScan!, injection: { code: { ...stale.privacyScan!.injection.code!, version: 'patterns@0' } } };
+    expect(isScanCurrent(stale, await expectedStages(stale, 'own', 'approve'))).toBe(false);
+    modelHost.calls.length = 0;
     const again = await scanRecord(stale, 'own', { rule: 'approve' });
-    expect(ai.runModel).toHaveBeenCalledTimes(1);
-    expect(ai.runModel.mock.calls[0]![0].purpose).toBe('injection-check');
-    expect(again.patch.privacyScan.injection.nano?.version).toBe('nano-injection@1');
+    expect(modelHost.calls).toHaveLength(0);
+    expect(again.patch.privacyScan.injection.code?.version).toBe('patterns@1');
+    expect(again.patch.privacyScan.pii.model).toEqual(first.patch.privacyScan.pii.model);   // kept, not re-run
+    expect(ai.runModel).not.toHaveBeenCalled();
   });
 
   test('AT-SCAN-4 changed text re-runs everything', async () => {
     const first = await scanRecord(record(), 'own', { rule: 'approve' });
     const changed = { ...record(), ...first.patch, text: `${TEXT} See you, Jordan.` };
-    ai.runModel.mockClear();
     modelHost.calls.length = 0;
     await scanRecord(changed, 'own', { rule: 'approve' });
-    expect(ai.runModel).toHaveBeenCalledTimes(3);
     expect(modelHost.calls.length).toBeGreaterThanOrEqual(1);
+    expect(ai.runModel).not.toHaveBeenCalled();
   });
 
-  test('AT-SCAN-5 a never item gets plain code only', async () => {
+  test('AT-SCAN-5 a never item gets plain code only, and no Nano check is pending for it', async () => {
     const { patch } = await scanRecord(record(), 'own', { rule: 'never' });
     expect(Object.keys(patch.privacyScan.pii)).toEqual(['validators']);
     expect(Object.keys(patch.privacyScan.injection)).toEqual(['code']);
+    expect(patch.privacyScan.nanoPending).toBeUndefined();
     expect(ai.runModel).not.toHaveBeenCalled();
     expect(modelHost.calls).toHaveLength(0);
   });
 
-  test('AT-SCAN-6 Nano not ready: current without it; stale again once it is available', async () => {
+  test('AT-SCAN-6 Nano availability does not change what the scan expects or runs', async () => {
     ai.getNanoAvailability.mockResolvedValue({ text: 'downloadable', image: 'downloadable' });
     const { patch } = await scanRecord(record(), 'own', { rule: 'approve' });
     const scanned = { ...record(), ...patch };
-    expect(patch.privacyScan.pii.nano).toBeUndefined();
-    expect(patch.privacyScan.injection.nano).toBeUndefined();
     expect(isScanCurrent(scanned, await expectedStages(scanned, 'own', 'approve'))).toBe(true);
     ai.getNanoAvailability.mockResolvedValue({ text: 'available', image: 'available' });
-    expect(isScanCurrent(scanned, await expectedStages(scanned, 'own', 'approve'))).toBe(false);
-    ai.runModel.mockClear();
-    const again = await scanRecord(scanned, 'own', { rule: 'approve' });
-    expect(again.patch.privacyScan.pii.nano).toBeDefined();
-    expect(again.patch.privacyScan.pii.model).toEqual(patch.privacyScan.pii.model);   // kept, not re-run
+    expect(await expectedStages(scanned, 'own', 'approve')).toEqual({ pii: ['validators', 'model'], injection: ['code'] });
+    expect(isScanCurrent(scanned, await expectedStages(scanned, 'own', 'approve'))).toBe(true);
+    expect(ai.runModel).not.toHaveBeenCalled();
   });
 
-  test('sample data may use the cloud for the injection advisory without Nano', async () => {
-    ai.getNanoAvailability.mockResolvedValue({ text: 'unavailable', image: 'unavailable' });
-    const r = record({ id: 'playground:pg-1', source: 'playground' });
-    expect(await expectedStages(r, 'sample', 'approve')).toEqual({ pii: ['validators', 'model'], injection: ['code', 'nano'] });
-    const patch = await scanRecord(r, { rule: 'approve' });                // 01 section 11.1 shape; data from the source
-    expect(patch.privacyScan.injection.nano).toBeDefined();
-    expect(ai.runModel.mock.calls.find(([a]) => a.purpose === 'injection-check')![0].mode).toBe('PREFER_ON_DEVICE');
+  test('the ingest scan makes no Gemini Nano call, for own or sample data, with or without Nano', async () => {
+    const long = `${TEXT}\n\n${'Another paragraph about Jordan. '.repeat(500)}`;
+    for (const nano of ['available', 'unavailable'] as const) {
+      ai.getNanoAvailability.mockResolvedValue({ text: nano, image: nano });
+      clearScanMemo();
+      await scanRecord(record({ text: long }), 'own', { rule: 'approve' });
+      const r = record({ id: 'playground:pg-1', source: 'playground', text: long });
+      expect(await expectedStages(r, 'sample', 'approve')).toEqual({ pii: ['validators', 'model'], injection: ['code'] });
+      const patch = await scanRecord(r, { rule: 'approve' });                // 01 section 11.1 shape; data from the source
+      expect(patch.privacyScan.injection.nano).toBeUndefined();
+      expect(patch.privacyScan.pii.nano).toBeUndefined();
+      expect(patch.privacyScan.nanoPending).toEqual(['pii', 'injection']);
+      await scanNow(record({ text: long }), { rule: 'approve', data: 'own' });
+    }
+    expect(ai.runModel).not.toHaveBeenCalled();
+  });
+
+  test('a Nano stamp from before stays while it is current, with its spans, and is not pending', async () => {
+    const first = await scanRecord(record(), 'own', { rule: 'approve' });
+    const nanoStamp = { version: 'nano-pii@1', ran: 'device' as const, ms: 4000, at: 1 };
+    const legacy: IndexRecord = {
+      ...record(), ...first.patch,
+      pii: [...first.patch.pii, { start: TEXT.indexOf('Jordan'), end: TEXT.indexOf('Jordan') + 6, type: 'name', by: 'nano' }],
+      privacyScan: { ...first.patch.privacyScan, pii: { ...first.patch.privacyScan.pii, nano: nanoStamp }, nanoPending: undefined } as IndexRecord['privacyScan'],
+    };
+    const stale = { ...legacy, privacyScan: { ...legacy.privacyScan!, injection: { code: { ...legacy.privacyScan!.injection.code!, version: 'patterns@0' } } } };
+    const again = await scanRecord(stale, 'own', { rule: 'approve' });
+    expect(again.patch.privacyScan.pii.nano).toEqual(nanoStamp);
+    expect(again.patch.pii.some((x) => x.by === 'nano')).toBe(true);
+    expect(again.patch.privacyScan.nanoPending).toEqual(['injection']);
+    expect(ai.runModel).not.toHaveBeenCalled();
   });
 
   test('the model failing is a skipped stage; the record is current without it', async () => {
@@ -122,24 +145,10 @@ describe('scanRecord', () => {
   });
 
   test('header entities from the sender name and subject', async () => {
-    const r = record({ from: 'Dana Whitfield <dana@x.example>', title: 'Dinner with Jordan' });
+    const r = record({ from: 'Dana Whitfield <dana@x.example>', title: 'Dinner with Priya' });
     const { patch } = await scanRecord(r, 'own', { rule: 'approve' });
-    expect(patch.privacyScan.headerEntities.map((e) => e.text)).toContain('Jordan');
-    expect(knownEntities({ ...r, ...patch }).some((e) => e.text === 'Jordan')).toBe(true);
-  });
-
-  test('AT-SCAN-8 never two model calls in flight', async () => {
-    let inFlight = 0;
-    let max = 0;
-    ai.runModel.mockImplementation(async (args: { purpose: string }) => {
-      inFlight++;
-      max = Math.max(max, inFlight);
-      await new Promise((r) => setTimeout(r, 5));
-      inFlight--;
-      return args.purpose === 'pii-check' ? { ok: true, value: { items: [] }, trace } : { ok: true, value: { suspicious: false, quote: '' }, trace };
-    });
-    await scanRecord(record({ text: `${TEXT}\n\n${'Another paragraph about Jordan. '.repeat(500)}` }), 'own', { rule: 'approve' });
-    expect(max).toBe(1);
+    expect(patch.privacyScan.headerEntities.map((e) => e.text)).toContain('Priya');
+    expect(knownEntities({ ...r, ...patch }).some((e) => e.text === 'Priya')).toBe(true);
   });
 });
 

@@ -38,6 +38,7 @@ export const PHOTO_MAX_BYTES = 600_000;
 export const INJECTION_QUOTE_MAX_CHARS = 200;
 export const WARNING_QUOTE_MAX_CHARS = 140;
 export const SCAN_MEMO_SIZE = 16;                     // in-memory scans kept for share time (10.2 step 1)
+export const SHARE_CHECKS_MAX = 4;                    // share-time Nano results kept per record, newest first (10.7)
 export const QUOTE_OVERLAP_MIN = 0.6;                 // 8.2 step 4 and 10.4 step 5
 
 // outgoing text tokens and notes

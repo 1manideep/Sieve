@@ -37,7 +37,12 @@ export interface CheckInjectionOptions {
   allowNano?: boolean;               // false behaves like model: false
 }
 
-export interface ScanPatch { pii: PiiSpan[]; injection: InjectionFinding; privacyScan: PrivacyScanStamp }
+/** The Gemini Nano checks the ingest scan leaves for share time (11 section 6.1, Nov 20). */
+export type NanoPendingStage = 'pii' | 'injection';
+/** The record's scan stamp with `nanoPending`: no stamp claims a Nano stage ran until one did. */
+export interface PrivacyScanStampWithPending extends PrivacyScanStamp { nanoPending?: NanoPendingStage[] }
+
+export interface ScanPatch { pii: PiiSpan[]; injection: InjectionFinding; privacyScan: PrivacyScanStampWithPending }
 
 export interface BuildStepOptions {
   maxStep?: LadderStep;              // default 'full'
@@ -46,14 +51,16 @@ export interface BuildStepOptions {
   rule?: CategoryRule;               // used only if buildStepOption must scan the record itself; default 'approve'
   signal?: AbortSignal;
   onScanned?: (patch: ScanPatch) => void;  // called when buildStepOption had to scan the record itself
-  allowNano?: boolean;               // default true; the pipeline passes false at question time (10 CR-5)
+  allowNano?: boolean;               // kept for callers; scans never run Gemini Nano now (6.1)
+  extraEntities?: KnownEntity[];     // share time: personal details Gemini Nano found in the outgoing text (10.7)
+  extraQuotes?: string[];            // share time: sentences Gemini Nano flagged as aimed at an AI (10.7)
 }
 
 /** Options of a scan. Background scans wait for the browser model; share-time scans never do (5.4.5). */
 export interface ScanOptions {
   rule: CategoryRule;
   signal?: AbortSignal;
-  allowNano?: boolean;               // default true
+  allowNano?: boolean;               // kept for callers; the scan never runs Gemini Nano (6.1, Nov 20)
   priority?: 'foreground' | 'background';   // default 'background'
   waitForModel?: boolean;            // default true for scanRecord, false for scanNow and buildStepOption
 }

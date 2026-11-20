@@ -11,7 +11,7 @@ The design follows the measurements Mani took on an M2 with 16 GB, Chrome 157, r
 | A1 | Every model call goes through `runModel()`. Every call is one user message built by Sieve. `startChat` is banned by lint. | Decision 3; one place for policy, budget, errors and trace. |
 | A2 | Firebase AI Logic routes every call: each call is a `GenerativeModel.generateContent` or `generateContentStream` on a hybrid model. On-device inference runs through Sieve's own `ChromeAdapter` (`SieveDeviceAdapter`), passed to the public `GenerativeModel` constructor. | The SDK's built-in adapter creates a new Prompt API session for every call (measured about 2 s), cannot abort an on-device prompt, and has no warm sessions. A custom adapter keeps the SDK's routing and its `inferenceSource` report (decision 9) and adds warm sessions, `AbortSignal` and streaming. |
 | A3 | Sieve always supplies an adapter, so the SDK never meets the "no adapter" case. | In `@firebase/ai` 3.1.0, `callCloudOrDevice` runs in the cloud when no adapter exists, even for `ONLY_ON_DEVICE`, and the built-in adapter is only created when `window.LanguageModel` exists. Without A3, own data could silently go to the cloud on a browser without the Prompt API. |
-| A4 | Question time makes exactly one Nano call: `selectAndAnswer`, streamed. The only exception is a chosen item that `verifyFresh` reports deleted or changed, which allows one re-run (12.3 step 12a). Labels, keywords, captions, the injection advisory and the Nano PII pass run once per item in the background enrichment queue (section 11), which writes only through the version-checked path (contracts section 10, invariant 6). | Measured: about 4 s fixed cost per call; select and answer over 4 emails 8.9 to 11 s. |
+| A4 | Question time makes one Nano call to pick and answer: `selectAndAnswer`, streamed. The only exception is a chosen item that `verifyFresh` reports deleted or changed, which allows one re-run (12.3 step 12a). Since Nov 20 the share step adds at most two more, on the text that would leave: the injection advisory and the Nano PII pass (11 section 10.7), cached on the item so the same text is never checked twice. Labels, keywords and captions run once per item in the background queue (section 11; 20 section 13), which writes only through the version-checked path (contracts section 10, invariant 6). | Measured: about 4 s fixed cost per call; select and answer over 4 emails 8.9 to 11 s. Moving the two privacy calls to share time (Nov 20): a folder of 7 PDFs had cost 20 to 30 s of GPU per PDF at ingest. |
 | A5 | One device call at a time. Foreground calls (questions, drafts, live captions) preempt background calls: the background prompt is aborted through its `AbortSignal` and re-queued at the front. | Review note (b); measured cost makes waiting for a background batch (6 to 9 s) unacceptable. |
 | A6 | One warm base session per purpose (system prompt already loaded), created after the first user gesture. Each call clones the base, prompts once, destroys the clone. | Review note (c); create is about 2 s, clone keeps the system prompt; a clone never carries a previous call's content, so calls stay single-turn. |
 | A7 | Nano answers from passages (the best chunk of each candidate, from vector search), not whole items. The excerpt is chosen by plain code from the record text after Nano answers, so it is verbatim by construction; code then checks that the facts in the answer appear in it. | Decision 12 and review note (d): fewer prompt tokens, one short output, no non-verbatim excerpts. |
@@ -996,10 +996,12 @@ Prototype results for approved "Your deposit was $1,200, paid on March 3." and i
 
 11-privacy-pipeline owns the `injection-check` and `pii-check` prompts and calls `runModel` with them. What `runModel` guarantees them:
 - `pii-check` runs only on the device, for every data class (policy row 3).
-- Both default to `priority: 'background'`. They are called from the enrichment queue (section 11), never at question time (decision 12; CR-5 adds `allowNano: false` for question-time calls).
+- Both default to `priority: 'background'`. Since Nov 20 they are called only at share time, by 11's `checkOutgoing` on the outgoing text, with `priority: 'foreground'`; the background queue never calls them (11 section 10.7). `allowNano: false` (CR-5) still keeps them out of the in-memory scan at question time.
 - They should pass `dataChars`, `label`, and their own `validate`. Their trace kinds are `injection` and `pii`.
 
 ## 11. Background enrichment (`pipeline/enrich.ts`)
+
+As built, the enrichment loop below is 20's one background queue (20 section 13; `startEnrichment` re-exports `startIngestQueue`). Since Nov 20 it runs its lanes one at a time, in the order embed, label, privacy, caption (embeddings first, so questions by meaning find new items early; ingest already applies the code label and the Health safety net), and rests after every job: 250 ms after an embed batch, 1,000 ms after a Nano batch (a label batch or one caption), 100 ms between privacy items. Before a question's retrieval the pipeline waits up to 3 s for just-added items' embeddings (20 section 13.5). On battery (`navigator.getBattery`) the model lanes hold until the machine is plugged in or the person presses Resume for the session; captions run only on power, newest first, at most 200 per session, and only while the Sources switch "Describe photos with Gemini Nano" is on. The privacy lane runs 11's plain-code and Rampart checks only: the `injection` and `pii` tasks below moved to share time (11 section 10.7). The table and loop below are the original design, kept for the task rules.
 
 All per-item model work happens here, once per item, newest first, while no question is running (decision 12, review note (a) and (b)). `ingest()` (20) stores an item with plain-code results only: `category = codeLabel(...)`, `categoryBy: 'code'`, validator PII spans, hidden text removed, vectors. This queue then upgrades it.
 
@@ -1051,7 +1053,7 @@ Status: `left` counts records needing any task (recounted after each batch); `yi
 
 The Playground seeds ship with every mark set (`by: 'seed'`), so nothing runs for them; only files and test emails a visitor adds are enriched, on the device only.
 
-Cost on the measured M2: labels about 0.8 s per item in batches of 10, so 1,000 items take about 15 minutes of idle time; injection about 4 s per item and captions 7 to 12 s per photo run after all labels. Spike check S9 measures throughput in a hidden tab.
+Cost on the measured M2: labels about 0.8 s per item in batches of 10, so 1,000 items take about 15 minutes of idle time, plus a 1 s rest per batch; captions 7 to 12 s per photo run last, on power only. The Nano injection and PII checks no longer run here (about 8 s per item before Nov 20); they run once per shared text. Spike check S9 measures throughput in a hidden tab.
 
 ## 12. Pipeline: from question to proposal (`web/src/pipeline/`)
 
@@ -1179,7 +1181,8 @@ State: `trace: TraceStep[]`, `warnings: Warning[]`. Every exit builds a `Proposa
     - `step === 'excerpt'` and no excerpt: unavailable, "Sieve couldn't find the exact lines that hold this answer."
     - `opt.text === ''`: unavailable, "Nothing to share at this step."
     - `opt.chars > MAX_PAYLOAD_CHARS`: unavailable, "This is more than Sieve sends at once (8,000 characters)."
-    - Push one step: `opt.trace` when 11 provides it (CR-5), else a code step "Masked {r} personal details on this device" or "No personal details to mask". Any redactions: warning `pii-redacted`.
+    - Push one step: `opt.trace` when 11 provides it (CR-5), else a code step "Masked {r} personal details on this device" or "No personal details to mask".
+15a. The share-time Nano check (11 section 10.7, Nov 20): `checkOutgoing(rec, recordDataClass(rec), options, parts, { signal, onStart, onEnd })` on the enforced options. Two live rows: "Checking for hidden instructions…" (`kind: 'injection'`) and "Checking for personal details…" (`kind: 'pii'`), each started with where it runs (`device`, `cloud` for sample data without Nano, `code` when skipped or cached) and ended with 11's step. At most one injection-check and one pii-check, `priority: 'foreground'`; none when the same text was checked before. A new result is saved with `patchRecord(db, rec.id, rec.version, { shareChecks })`. When Nano found names or a flagged sentence, the three options are built again with `extraEntities` and `extraQuotes` and enforced again. Then: any redactions give warning `pii-redacted`; a flagged sentence gives warning `injection` with its quote (unless the item already had one); `privacyWarnings(rec, options, { nanoPii })`.
 16. Related: `relatedFor(db, rec.id, lookup)`, filtered exactly as step 5, without `rec.id`, at most `RELATED_MAX`. A throw gives `[]` (logged).
 17. Outcome `ready` with `item = { recordId, title, kind, category, date, from }`.
 
@@ -1244,7 +1247,7 @@ Ticking a related item adds it to the outgoing text at the chosen step. No model
 4. `answer`: unavailable, "Related items can be shared as an excerpt or the full item."
 5. `excerpt`: range = the candidate's `chunk`, else `bestWindow(body, proposal.question, EXCERPT_MAX_CHARS)`, snapped to sentences and cut to `EXCERPT_MAX_CHARS`; `opt = await buildStepOption('excerpt', { excerpt }, rec, recordDataClass(rec))`; text `header + '\n' + opt.text`.
 6. `full`: `buildStepOption('full', { full: recordBody(rec) }, rec, ...)`; text `header + '\n' + opt.text`.
-7. Apply the step-15 checks (maxStep, empty, over cap); `chars = text.length`.
+7. Apply the step-15 checks (maxStep, empty, over cap); `chars = text.length`. Before the header is added, the step-15a check runs on the related item's excerpt and full texts (its own cache entry); findings rebuild both, and its trace rows are added to the options' `trace`.
 
 `composeOutgoingText(options) = options.map((o) => o.text).join('\n\n')`. 40 and `finalizeDecision` both use it, so the text the person sees is the text that is sent.
 

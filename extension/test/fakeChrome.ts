@@ -91,6 +91,11 @@ export interface FakeChromeOptions {
   /** 'ok' (the default, Chrome 127+), 'rejects', or 'missing' (Chrome before 127: no action.openPopup). */
   openPopup?: 'ok' | 'rejects' | 'missing';
   session?: Record<string, unknown>;
+  /** chrome.storage.local, where only the `settings` key may ever be written. */
+  local?: Record<string, unknown>;
+  /** What windows.getLastFocused({ windowTypes: ['normal'] }) gives; null rejects. Default: a window that does not
+   *  have focus (the person is in another app), so a new request notifies unless a test gives focus. */
+  lastFocused?: { id?: number; focused: boolean } | null;
   version?: string;
 }
 
@@ -99,7 +104,10 @@ export function createFakeChrome(opts: FakeChromeOptions = {}) {
   const badge = { text: '', title: '', color: '', textColor: '' };
   const notifications = new Map<string, FakeNotification>();
   const session: Record<string, unknown> = opts.session ?? {};
+  const local: Record<string, unknown> = opts.local ?? {};
+  /** Calls that must never happen: storage.local remove or clear, and anything on storage.sync. */
   const localCalls: string[] = [];
+  const lastFocusedQueries: unknown[] = [];
   const opened: { windowId?: number; tabId?: number }[] = [];
   const popups: { windowId?: number }[] = [];
   const behaviors: unknown[] = [];
@@ -109,9 +117,9 @@ export function createFakeChrome(opts: FakeChromeOptions = {}) {
   const created: { url?: string }[] = [];
 
   const log = (name: string) => calls.push(name);
-  const local = (name: string) => () => {
+  const forbidden = (name: string) => () => {
     localCalls.push(name);
-    return Promise.reject(new Error('storage.local must never be called'));
+    return Promise.reject(new Error(`${name} must never be called`));
   };
 
   const sidePanel: Record<string, unknown> = {
@@ -206,8 +214,21 @@ export function createFakeChrome(opts: FakeChromeOptions = {}) {
           return Promise.resolve();
         },
       },
-      local: { get: local('get'), set: local('set'), remove: local('remove'), clear: local('clear') },
-      sync: { get: local('sync.get'), set: local('sync.set') },
+      local: {
+        get: (key?: string | null) => {
+          log('storage.local.get');
+          if (key === null || key === undefined) return Promise.resolve({ ...local });
+          return Promise.resolve(key in local ? { [key]: JSON.parse(JSON.stringify(local[key])) } : {});
+        },
+        set: (items: Record<string, unknown>) => {
+          log('storage.local.set');
+          Object.assign(local, JSON.parse(JSON.stringify(items)));
+          return Promise.resolve();
+        },
+        remove: forbidden('local.remove'),
+        clear: forbidden('local.clear'),
+      },
+      sync: { get: forbidden('sync.get'), set: forbidden('sync.set') },
     },
     tabs: {
       update: (tabId: number, props: unknown) => {
@@ -230,6 +251,12 @@ export function createFakeChrome(opts: FakeChromeOptions = {}) {
       getCurrent: () => {
         log('windows.getCurrent');
         return Promise.resolve({ id: 1 });
+      },
+      getLastFocused: (query?: unknown) => {
+        log('windows.getLastFocused');
+        lastFocusedQueries.push(query);
+        const win = opts.lastFocused === undefined ? { id: 1, focused: false } : opts.lastFocused;
+        return win === null ? Promise.reject(new Error('No last-focused window')) : Promise.resolve({ ...win });
       },
     },
     commands: {
@@ -263,7 +290,9 @@ export function createFakeChrome(opts: FakeChromeOptions = {}) {
     badge,
     notifications,
     session,
+    local,
     localCalls,
+    lastFocusedQueries,
     opened,
     popups,
     behaviors,
@@ -289,7 +318,7 @@ export function pageSender(changes: Partial<FakeSender> = {}): FakeSender {
   return { ...PAGE_SENDER, ...changes };
 }
 
-/** Lets pending promise callbacks run (storage reads, commands.getAll). */
-export async function flush(times = 10): Promise<void> {
+/** Lets pending promise callbacks run (storage reads, commands.getAll, the popup try on arrival). */
+export async function flush(times = 30): Promise<void> {
   for (let i = 0; i < times; i++) await Promise.resolve();
 }

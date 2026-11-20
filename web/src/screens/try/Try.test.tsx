@@ -8,6 +8,7 @@ import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { HEALTH_POLL_MS, QUEUE_POLL_MS, SEAT_BROKER_URL } from '@/components/TryOnRealComputer/broker';
 import { TRY, fillText } from '@/copy/screens-controls';
 import { useAnnouncer } from '@/state/announcer';
+import { useSession } from '@/state/session';
 import axe from 'axe-core';
 import { Component, formatLeft } from './index';
 
@@ -47,7 +48,7 @@ function renderTry() {
   const router = createMemoryRouter(
     [
       { path: '/try', element: <main><Component /></main> },
-      { path: '/playground', element: <main><p>playground</p></main> },
+      { path: '/ask', element: <main><p>Ask page</p></main> },
     ],
     { initialEntries: ['/try'] },
   );
@@ -161,7 +162,7 @@ describe('/try', () => {
     expect(fetchMock).toHaveBeenCalledWith(`${SEAT_BROKER_URL}/seat/L1/end`, expect.objectContaining({ method: 'POST', credentials: 'include' }));
     expect(screen.queryByTitle(TRY.viewerTitle)).not.toBeInTheDocument();
     expect(screen.getByText(TRY.ended)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: TRY.openPlayground })).toHaveAttribute('href', '/playground');
+    expect(screen.getByRole('button', { name: TRY.openSieve })).toBeInTheDocument();
     // The rows ask the broker again once the session is over.
     expect(fetchMock.mock.calls.filter(([url]) => String(url) === `${SEAT_BROKER_URL}/health`)).toHaveLength(2);
     expect(screen.getByRole('button', { name: TRY.takeSeat })).toHaveFocus();
@@ -178,7 +179,7 @@ describe('/try', () => {
     expect(seatTexts()).toEqual([`${fillText(TRY.seatName, { n: 1 })}${TRY.seatInUse}`, `${fillText(TRY.seatName, { n: 2 })}${TRY.seatInUse}`]);
     expect(screen.getByText(TRY.allInUse)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: TRY.takeSeat })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: TRY.openPlayground })).toHaveAttribute('href', '/playground');
+    expect(screen.getByRole('button', { name: TRY.openSieve })).toBeInTheDocument();
     await expectNoAxeViolations();
     await user.click(screen.getByRole('button', { name: TRY.joinQueue }));
     await flush();
@@ -305,7 +306,7 @@ describe('/try', () => {
     const queued = fillText(TRY.queued, { n: 2, m: 6 });
     expect(screen.getByRole('status')).toHaveTextContent(queued);
     expect(screen.getByText(queued)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: TRY.openPlayground })).toHaveAttribute('href', '/playground');
+    expect(screen.getByRole('button', { name: TRY.openSieve })).toBeInTheDocument();
     await expectNoAxeViolations();
 
     expect(seatTexts()).toEqual([`${fillText(TRY.seatName, { n: 1 })}${TRY.seatInUse}`, `${fillText(TRY.seatName, { n: 2 })}${TRY.seatInUse}`]);
@@ -345,7 +346,7 @@ describe('/try', () => {
     await arriveAndTake(user);
     expect(screen.getByText(TRY.offline)).toBeInTheDocument();
     expect(seatTexts()[0]).toBe(`${fillText(TRY.seatName, { n: 1 })}${TRY.seatOffline}`);
-    expect(screen.getByRole('link', { name: TRY.openPlayground })).toHaveAttribute('href', '/playground');
+    expect(screen.getByRole('button', { name: TRY.openSieve })).toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
@@ -357,11 +358,36 @@ describe('/try', () => {
     expect(screen.getByText(TRY.offline)).toBeInTheDocument();
   });
 
-  it('explains the per-browser cap', async () => {
+  it('explains the per-browser cap; Open Sieve signs in with Google and goes to Ask, never to the Playground', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const signInWithGoogle = vi.fn(async () => {
+      useSession.setState({ kind: 'google', user: { uid: 'u1', email: 'a@example.com', isAnonymous: false } });
+      return 'ok' as const;
+    });
+    useSession.setState({ kind: 'none', user: null, signInWithGoogle });
     serve(health(), route('POST', '/seat', () => reply({ error: 'limit' }, 429)));
     await arriveAndTake(user);
     expect(screen.getByText(sentence(TRY.limited))).toBeInTheDocument();
+    expect(TRY.limited).toMatch(/your own computer with your own data/);
+    expect(screen.queryByRole('link', { name: /Playground/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: TRY.openSieve }));
+    await flush();
+    expect(signInWithGoogle).toHaveBeenCalledOnce();
+    expect(screen.getByText('Ask page')).toBeInTheDocument();
+    useSession.setState({ kind: 'none', user: null });
+  });
+
+  it('stays on /try when sign-in fails', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const signInWithGoogle = vi.fn(async () => 'error' as const);
+    useSession.setState({ kind: 'none', user: null, signInWithGoogle });
+    serve(health(), route('POST', '/seat', () => reply({ error: 'limit' }, 429)));
+    await arriveAndTake(user);
+    await user.click(screen.getByRole('button', { name: TRY.openSieve }));
+    await flush();
+    expect(signInWithGoogle).toHaveBeenCalledOnce();
+    expect(screen.getByRole('heading', { level: 1, name: TRY.heading })).toBeInTheDocument();
+    expect(screen.queryByText('Ask page')).toBeNull();
   });
 
   it('formats the time left as mm:ss', () => {

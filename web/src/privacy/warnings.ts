@@ -3,7 +3,8 @@ import type { IndexRecord, StepOption, Warning } from '@sieve/shared';
 import { WARNING_QUOTE_MAX_CHARS } from './constants';
 import { cutGraphemes, plural } from './text';
 
-export function privacyWarnings(record: IndexRecord, options: readonly StepOption[]): Warning[] {
+/** `share.nanoPii`: Gemini Nano's personal-details check read the outgoing text at share time (10.7). */
+export function privacyWarnings(record: IndexRecord, options: readonly StepOption[], share: { nanoPii?: boolean } = {}): Warning[] {
   const out: Warning[] = [];
   const hidden = record.hiddenRemoved.length;
   if (hidden > 0) {
@@ -18,7 +19,7 @@ export function privacyWarnings(record: IndexRecord, options: readonly StepOptio
     out.push({ kind: 'pii-redacted', message: 'Sieve hid personal details and links in this text. Check the exact words before you approve.' });
   }
   const stages = record.privacyScan?.pii ?? {};
-  if (!stages.model && !stages.nano) {
+  if (!stages.model && !stages.nano && !share.nanoPii) {
     out.push({ kind: 'pii-check-limited', message: 'Names and addresses may not all be hidden: the on-device checks for them were not available.' });
   }
   return out;

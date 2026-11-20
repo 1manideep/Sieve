@@ -1,11 +1,13 @@
-// Related items (10 section 12.8): ticking one adds it to the outgoing text at the chosen step. No model runs.
+// Related items (10 section 12.8): ticking one adds it to the outgoing text at the chosen step. The only model work is
+// the share-time Gemini Nano check of its outgoing text (11 section 10.7), cached on the item like the main item's.
 import { LADDER_STEPS, MAX_PAYLOAD_CHARS } from '@sieve/shared';
-import type { IndexRecord, LadderStep, Proposal, StepOption } from '@sieve/shared';
+import type { IndexRecord, KnownEntity, LadderStep, Proposal, StepOption } from '@sieve/shared';
 import { EXCERPT_MAX_CHARS, bestWindow, recordBody, sentences, snapToSentences } from '@/ai';
 import { getRecord, verifyFresh, type SieveDb } from '@/index';
-import { buildStepOption } from '@/privacy';
+import { buildStepOption, checkOutgoing } from '@/privacy';
 import { formatDate, UNAVAILABLE } from './copy';
 import { DecisionError } from './errors';
+import { patchRecordIfCurrent } from './optional';
 import { recordDataClass, stepIndex, unavailableOption, unavailableOptions } from './steps';
 
 export { composeOutgoingText } from './steps';
@@ -51,10 +53,20 @@ export async function buildRelatedOptions(input: {
   range = capRange(body, snapToSentences(body, { start: Math.max(0, range.start), end: Math.min(body.length, range.end) }), EXCERPT_MAX_CHARS);
   const excerpt = rec.kind === 'photo' ? body : body.slice(range.start, range.end).trim();
 
-  const [excerptOpt, fullOpt] = await Promise.all([
-    excerpt ? buildStepOption('excerpt', { excerpt }, rec, data, shared) : Promise.resolve(unavailableOption('excerpt', UNAVAILABLE.empty)),
-    buildStepOption('full', { full: body }, rec, data, shared),
-  ]);
+  const buildBoth = (extra: { extraEntities?: KnownEntity[]; extraQuotes?: string[] } = {}) =>
+    Promise.all([
+      excerpt ? buildStepOption('excerpt', { excerpt }, rec, data, { ...shared, ...extra }) : Promise.resolve(unavailableOption('excerpt', UNAVAILABLE.empty)),
+      buildStepOption('full', { full: body }, rec, data, { ...shared, ...extra }),
+    ]);
+  let [excerptOpt, fullOpt] = await buildBoth();
+
+  // The same share-time Nano check as the main item (11 section 10.7), on this item's outgoing text.
+  const check = await checkOutgoing(rec, data, [excerptOpt, fullOpt], { excerpt }, input.signal ? { signal: input.signal } : {});
+  if (check.shareChecks) void patchRecordIfCurrent(db, rec, { shareChecks: check.shareChecks } as Partial<IndexRecord>);
+  if (check.entities.length > 0 || check.quotes.length > 0) [excerptOpt, fullOpt] = await buildBoth({ extraEntities: check.entities, extraQuotes: check.quotes });
+  const withCheck = (opt: StepOption): StepOption => (opt.available && check.trace.length > 0 ? { ...opt, trace: [...(opt.trace ?? []), ...check.trace] } : opt);
+  excerptOpt = withCheck(excerptOpt);
+  fullOpt = withCheck(fullOpt);
 
   const finish = (step: LadderStep, opt: StepOption): StepOption => {
     if (stepIndex(step) > stepIndex(proposal.maxStep)) return unavailableOption(step, UNAVAILABLE.maxStep(proposal.requester.aiName, proposal.maxStep));

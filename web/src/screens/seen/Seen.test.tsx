@@ -6,6 +6,7 @@ import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import type { Receipt } from '@sieve/shared';
 import { CONSOLE, SEEN, fillText } from '@/copy/screens-controls';
 import { useAudit } from '@/state/audit';
+import { markAutoApproved } from '@/state/autoApprove';
 import { DEFAULT_RECEIPT_FILTERS, useReceipts, type ReceiptsState } from '@/state/receipts';
 import { useRecords, type RecordMeta } from '@/state/records';
 import { useSession } from '@/state/session';
@@ -296,5 +297,16 @@ describe('What has AI seen?', () => {
     await expectNoAxeViolations();
     await user.click(screen.getByRole('button', { name: SEEN.tryAgain }));
     expect(useAudit.getState().check).toHaveBeenCalledOnce();
+  });
+
+  it('shows "Approved automatically" on receipts this computer approved with auto-approve (40 section 13.8.9)', () => {
+    markAutoApproved('uid-1', 'r1');
+    setReceipts([delivered, receipt({ id: 'r9', requestId: 'r9' })]);
+    renderSeen();
+    const [auto, manual] = receiptRows();
+    expect(within(auto).getByText(SEEN.byAuto)).toBeInTheDocument();
+    expect(within(auto).queryByText(SEEN.byApp)).not.toBeInTheDocument();
+    expect(within(manual).getByText(SEEN.byApp)).toBeInTheDocument();
+    window.localStorage.clear();
   });
 });

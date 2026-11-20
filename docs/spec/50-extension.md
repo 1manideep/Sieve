@@ -11,7 +11,7 @@ The extension is a thin approval panel (00 decision 6). It lets the person appro
 It does:
 - Accept a long-lived port from the Sieve web app tab (the home base) and from other Sieve app tabs, on this computer only.
 - Keep the latest list of `ProposalPreview` objects in memory.
-- Show a badge count on the toolbar icon and a local notification when a new request waits.
+- Show a badge count on the toolbar icon when a new request waits, and open its toolbar popup by itself while Chrome has focus (setting "Open when a request arrives", default on); when the popup cannot open, show a local notification instead (section 7.7).
 - Show the request, the ladder with the exact outgoing text for each step, warnings, and Approve / Deny in the side panel.
 - Send the person's `Decision` back to the tab that owns the request, with `decidedBy: 'extension'`.
 - Focus or open the Sieve tab ("Open Sieve").
@@ -56,7 +56,9 @@ Every API below was read on the official Chrome or Playwright documentation on N
 | `MessageSender.origin` (Chrome 80+), `url`, `tab`, `frameId`. `Port.sender` is present on ports passed to `onConnectExternal`. | The worker checks `origin`, `frameId === 0` and `tab` on every external port. |
 | An extension cannot send a message to a web page that did not open a channel. Messages are JSON-serialized, max 64 MiB. | The page always opens the port. All payloads are plain JSON. |
 | Service worker: stopped after 30 s of inactivity; events and extension API calls reset the timer (Chrome 110). Since Chrome 114, "sending a message with long-lived messaging keeps the service worker alive" and "opening a port no longer resets the timers". Globals are lost when the worker stops. | The page sends a keepalive message every 20 s while connected (section 6.5). The worker can be stopped at any time; the page reconnects and re-sends the full list, so the worker never needs to persist previews. |
-| `chrome.storage.session` is in memory only, "will not be persisted to disk", cleared on browser restart and on extension reload, update or disable, 10 MB, not exposed to content scripts by default; needs the `"storage"` permission. | Used only for the list of request ids already announced, so a worker restart does not repeat a notification. No content is stored. |
+| `chrome.storage.session` is in memory only, "will not be persisted to disk", cleared on browser restart and on extension reload, update or disable, 10 MB, not exposed to content scripts by default; needs the `"storage"` permission. | Used only for the list of request ids already announced, so a worker restart neither repeats a notification nor opens the popup again. No content is stored. |
+| `chrome.storage.local` persists across restarts and needs the same `"storage"` permission. (Added Nov 20.) | Used only for the `settings` key: booleans the person sets in the popup (section 7.10). Never request content, names or ids. |
+| `chrome.action.openPopup()` is available to every extension from Chrome 127 and opens the popup in the given window. The e2e suite shows it works from the service worker without a user gesture, for the window that has focus. (Added Nov 20.) | A new request opens the popup by itself (section 7.7), only in the last focused normal window while it has focus. `sidePanel.open()` still needs a gesture, so it is never the fallback on arrival. |
 | `chrome.action.setBadgeText` (empty string clears; about 4 characters fit), `setBadgeBackgroundColor`, `setBadgeTextColor` (Chrome 110+), `setTitle`. No permission needed. `onClicked` does not fire if the action has a popup. | No popup. Badge shows the waiting count; the title explains it. |
 | `chrome.notifications` needs the `"notifications"` permission; `create()` with `type: 'basic'` needs `iconUrl`, `title`, `message`; `iconUrl` may be a packaged resource; `onClicked`, `clear()`. On macOS `imageUrl` and button icons are not shown. | One basic notification per new request, packaged icon, no buttons, no image. |
 | MV3 CSP for extension pages cannot be relaxed below `script-src 'self' 'wasm-unsafe-eval'; object-src 'self';`. All code must be bundled; remote code is rejected by the Web Store. | Strict CSP (section 4), everything bundled, fonts included as files. |
@@ -189,6 +191,7 @@ export const BUILD_MODE = __BUILD_MODE__;
 export const APP_URL = __APP_URL__;                 // 'http://localhost:5173' in dev, else 'https://sieve.manideep.info'
 export const ALLOWED_ORIGINS = __ALLOWED_ORIGINS__; // must equal the origins of the manifest matches for that mode
 export const REQUESTS_PATH = '/requests';           // Requests screen route (40). Change here if 40 names it differently.
+export const HOME_PATH = '/ask';                    // the signed-in home, Ask (40, route map of Nov 20); '/' is the public landing
 ```
 
 `vite.config.ts` sets these with `define`, from the mode passed by `build.mjs`. A unit test checks that `ALLOWED_ORIGINS` for each mode equals the origins derived from that mode's manifest `matches`.
@@ -500,7 +503,9 @@ The badge is global (no `tabId`), colour `#B91C1C` with white text, matching the
   });
   ```
   `aiName` is `requester.aiName`, cut to 40 characters. The notification never includes the question, the item or any outgoing text, the same rule as the push notification in the design ("A request is waiting", never what is in it).
-- Add the id to the announced set, stored as `chrome.storage.session` key `announced` (array of request ids, newest last, at most 200). This is the only value the extension ever stores. It lets a restarted worker skip ids it already announced.
+- Add the id to the announced set, stored as `chrome.storage.session` key `announced` (array of request ids, newest last, at most 200). It lets a restarted worker skip ids it already announced. Ids are saved before the popup is tried, so a worker restart never opens the popup again for a request the person already closed.
+- **Open on arrival (added Nov 20, `sw/arrival.ts`).** Before any notification, the worker makes one try at opening the popup for all the ids of that `sieve/pending` together. It tries only when no panel is visible, `chrome.action.openPopup` exists (Chrome 127+), and the setting `openOnArrival` (section 7.10, read from `chrome.storage.local` at each arrival) is on. It asks `api.windows.getLastFocused({ windowTypes: ['normal'] })` and calls `api.action.openPopup({ windowId })` only if that window has `focused: true`: a popup in a Chrome the person is not looking at would hide the notification they need. If it opens, no notification is created (the badge is set as always). If anything fails (setting off, no `openPopup`, no focused window, the promise rejects, for example because a popup is already open), the notifications above are created as before, for the ids still waiting. It never calls `sidePanel.open()` on arrival: there is no gesture, and Chrome would refuse it.
+- **Open once.** Arrivals are handled one after another. After a popup opens, further new ids count as shown until that popup says hello (at most `ARRIVAL_SETTLE_MS`, 2 s), so requests that arrive together or back to back open one popup. From the popup's hello on, its port says whether it is showing; once the person closes it, the next new request opens it again. An id already announced (the person closed the popup, the page re-sent its list, the tab reloaded, or the worker restarted) never opens it again.
 - Clear `sieve-req-<id>` when the id is removed from the union or resolved.
 - `notifications.onClicked(id)`: if it starts with `sieve-req-`, call `api.sidePanel.open({ windowId })` synchronously in the handler, where `windowId` is `hub.owner(requestId)?.windowId ?? hub.homeBaseConn()?.windowId`. If there is no window id, or the promise rejects (the click may not count as a user gesture; see section 17), call `focus.openApp(api, hub, postTo, requestId)` instead. Then clear the notification.
 - Known overlap: if the person also enabled push notifications on this computer (Settings, 40), one request can produce both a push notice and this one. 40's Settings copy next to the push toggle says: "If you use the Sieve extension on this computer, you can leave this off."
@@ -522,15 +527,25 @@ export async function openApp(
     postTo(conn.id, { type: 'sieve/open-app', version: MESSAGE_VERSION, ...(requestId ? { requestId } : {}) });
     return;
   }
-  await api.tabs.create({ url: `${APP_URL}${REQUESTS_PATH}` });
+  await api.tabs.create({ url: `${APP_URL}${requestId ? REQUESTS_PATH : HOME_PATH}` });
 }
 ```
 
-None of these calls needs the `tabs` permission (it only gates reading a tab's URL, title and icon). The extension never reads tab URLs.
+With no tab to focus, a request (a notification click, "Open the receipt") opens the Requests screen, and anything else ("Open Sieve" in the footer, the disconnected state's button) opens the signed-in home, `APP_URL + '/ask'` (route map of Nov 20: `/` is the public landing). None of these calls needs the `tabs` permission (it only gates reading a tab's URL, title and icon). The extension never reads tab URLs.
+
+### 7.10 Settings (`src/shared/settings.ts`, added Nov 20)
+
+One `chrome.storage.local` key, `settings`, holds the person's choices as booleans. Today there is one:
+
+| Field | Default | Meaning |
+|---|---|---|
+| `openOnArrival` | `true` | Open the popup when a new request arrives (section 7.7). Off: only the badge and the notification. |
+
+`parseSettings` reads field by field; a missing key, a non-object or a non-boolean field takes the default, and a failed read gives the defaults. The popup's settings block (section 8.10) writes it; the worker only reads it, at each arrival, so a change applies to the next request with no message. Nothing else is ever written to `storage.local`, and `storage.sync` is never called.
 
 ## 8. Side panel
 
-**Surface change (Nov 20):** the toolbar icon now opens this page as the action popup (`action.default_popup: "sidepanel/index.html"`), 400 px wide and as tall as its content up to Chrome's 600 px cap, the main area scrolling after that. The side panel stays as a second surface: "Keep open on the side" in the popup's footer opens it, and the side panel hides that button. The worker sets `openPanelOnActionClick: false`; the shortcut and a notification click call `chrome.action.openPopup()` and fall back to the side panel (then, for a notification, the Sieve tab). `minimum_chrome_version` is 127 for `openPopup`. `panel/hello` carries `surface: 'popup' | 'panel'` (the page checks `chrome.extension.getViews({ type: 'popup' })`). A popup closes when it loses focus: the decision is already sent, and a page that opens shows the newest result decided here as the plain card, never the animation.
+**Surface change (Nov 20):** the toolbar icon now opens this page as the action popup (`action.default_popup: "sidepanel/index.html"`), 400 px wide and as tall as its content up to Chrome's 600 px cap, the main area scrolling after that. The side panel stays as a second surface: "Keep open on the side" in the popup's footer opens it, and the side panel hides that button. The worker sets `openPanelOnActionClick: false`; the shortcut and a notification click call `chrome.action.openPopup()` and fall back to the side panel (then, for a notification, the Sieve tab). A new request opens the popup by itself while Chrome has focus, unless the person turned that off in the popup's settings (sections 7.7, 7.10 and 8.10). `minimum_chrome_version` is 127 for `openPopup`. `panel/hello` carries `surface: 'popup' | 'panel'` (the page checks `chrome.extension.getViews({ type: 'popup' })`). A popup closes when it loses focus: the decision is already sent, and a page that opens shows the newest result decided here as the plain card, never the animation.
 
 React 18.3 + TypeScript + CSS Modules, the same stack as `web/`, so components and tests look the same. Fonts are bundled from `@fontsource/inter` (400, 500, 600) and `@fontsource/space-grotesk` (600, 700), both SIL Open Font License. No Google Fonts link: the CSP forbids remote fonts and it would tell Google when the panel opens.
 
@@ -789,11 +804,24 @@ The side panel page, on `panel/close`, calls `window.close()`, which closes the 
 
 **Showing the shortcut**: on start the service worker reads the binding with `chrome.commands.getAll()` and includes it in `sieve/hello-ack` (`shortcut?: string`, empty when unset; contract change below). The app shows it where it helps: the Requests screen ("Tip: press {shortcut} to answer from the side panel"), the push or notification text ("A request is waiting. Press {shortcut} to open Sieve."), and Settings › Notifications and devices, with a link to `chrome://extensions/shortcuts` to change it. When the binding is empty: "Set a shortcut in chrome://extensions/shortcuts".
 
-**What the shortcut cannot do**: Chrome never lets an extension open its side panel by itself, so the panel cannot pop open when a request arrives. The badge and the notification say a request is waiting; the shortcut (or a click on the icon) opens it.
+**What the shortcut cannot do**: Chrome never lets an extension open its side panel by itself, so the side panel cannot pop open when a request arrives. Since Nov 20 the toolbar popup can (Chrome 127+, section 7.7): it opens by itself while Chrome has focus, and otherwise the badge and the notification say a request is waiting and the shortcut (or a click on the icon) opens it.
 
 **Acceptance tests** (Playwright with the unpacked extension, section 14): (a) the manifest declares `open-sieve` with both suggested keys; (b) dispatching the command opens the panel for the active window; (c) the handler calls `sidePanel.open` before any awaited call (unit test with the fake `chrome`, asserting call order); (e) toggle: with the panel open in the window, the command sends `panel/close` and the panel closes; a second press reopens it; with the panel open in another window only, the command opens one in this window; (d) `hello-ack` carries the binding from `commands.getAll()`, and an empty binding shows the "Set a shortcut" text in the app.
 
 **Verify at implementation**: (1) Control+Shift+S on macOS and Alt+Shift+S on Windows and Linux are free in current Chrome; pick another pair if not. (2) `sidePanel.open()` succeeds from `commands.onCommand` in the Chrome version on the demo Mac (docs list keyboard shortcuts among the allowed gestures). (3) Whether `_execute_action` plus `openPanelOnActionClick: true` would also work; the custom command above does not depend on it. (4) Whether the target Chrome has `chrome.sidePanel.close()`; if so, close from the service worker with it; otherwise keep the panel's `window.close()`, and check it closes the side panel rather than doing nothing.
+
+### 8.10 Settings block (added Nov 20)
+
+A gear button (`aria-label="Settings"`, `aria-expanded`, `aria-controls`) sits left of the close button in the header, in the popup and in the side panel. It shows and hides a block under the header (`<section aria-label="Settings">`, kept in the page with `hidden` so the stored value is loaded before it opens). Escape inside the block closes it and puts focus back on the gear.
+
+| Element | Text |
+|---|---|
+| Gear button | `Settings` (label and tooltip) |
+| Switch (`<input type="checkbox" role="switch">`) | `Open when a request arrives` |
+| Line under it (`aria-describedby`) | `Sieve opens its popup by itself when a new request comes in. When this is off, you get the badge and a notification.` |
+| Save failed (`role="alert"`, the switch goes back) | `Couldn't save this setting. Try again.` |
+
+The switch is disabled until the stored value is read, then writes `{ openOnArrival }` to `chrome.storage.local` key `settings` (section 7.10). Only the newest save may change the switch, so quick presses never flicker back. The page gets the store through `PanelApi.settings`; without one (tests) there is no gear.
 
 ## 9. The decision message
 
@@ -829,7 +857,7 @@ else panelPort.postMessage({ type: 'panel/decide-rejected', requestId: msg.reque
 | An XSS bug on sieve.manideep.info sends fake previews | It could show fake requests, but the extension renders them as text, sends decisions only back to that same page, and opens nothing but `APP_URL`. It cannot read data or make the extension send anything elsewhere. The web app's own CSP (40) is the main defence. |
 | Message flooding or oversized messages | Size, count and length limits (section 6.6); 5 invalid messages disconnect the port; at most 8 connections. |
 | A notification shown on a shared screen | Names the assistant only, never the content. |
-| Previews kept after use | Previews live only in the worker's memory and the open panel. `chrome.storage.session` holds request ids only. Nothing is written to disk. Closing Chrome wipes everything. |
+| Previews kept after use | Previews live only in the worker's memory and the open panel. `chrome.storage.session` holds request ids only. The only thing written to disk is the `settings` booleans in `chrome.storage.local`. Closing Chrome wipes everything else. |
 | Remote code | None. All code is bundled; CSP `script-src 'self'`; `lint-dist` fails the build on remote script URLs, `eval`, `new Function`, `importScripts`, `fetch`, `XMLHttpRequest`, `WebSocket` and `EventSource`. |
 | A malicious dependency update | Exact versions pinned in `package-lock.json`; `npm audit --omit=dev` run before each release zip. |
 
@@ -838,8 +866,8 @@ else panelPort.postMessage({ type: 'panel/decide-rejected', requestId: msg.reque
 | Permission | Needed for | Not used for |
 |---|---|---|
 | `sidePanel` | The approval panel next to any tab | |
-| `notifications` | One local notice per new request when the panel is closed | Content of any kind |
-| `storage` | `chrome.storage.session` key `announced` (request ids) so a restarted worker does not repeat a notice | Previews, settings, anything on disk (`storage.local` and `storage.sync` are never called) |
+| `notifications` | One local notice per new request when the panel is closed and the popup could not open | Content of any kind |
+| `storage` | `chrome.storage.session` key `announced` (request ids) so a restarted worker does not repeat a notice or reopen the popup; `chrome.storage.local` key `settings` (booleans, section 7.10) | Previews, names, request ids or any content on disk (`storage.sync` is never called) |
 
 No host permissions, no `tabs`, no `scripting`, no content scripts.
 
@@ -1075,7 +1103,7 @@ Permission justifications:
 |---|---|
 | sidePanel | `Shows the approval panel next to the current tab, so the person can review a request and approve or deny it without leaving the page they are on.` |
 | notifications | `Shows a local notice that a request is waiting when the side panel is closed. The notice names the assistant only, never the request content.` |
-| storage | `Uses chrome.storage.session (memory only, cleared when Chrome closes) to remember which request ids it has already announced, so a service worker restart does not repeat a notice. No request content is stored.` |
+| storage | `Uses chrome.storage.session (memory only, cleared when Chrome closes) to remember which request ids it has already announced, so a service worker restart does not repeat a notice. Uses chrome.storage.local for one setting the person chooses (whether the popup opens when a request arrives). No request content is stored.` |
 
 Remote code: "No, I am not using remote code."
 
@@ -1105,17 +1133,18 @@ Privacy policy URL: `https://sieve.manideep.info/privacy` (the page is defined i
 
 ### 14.1 Unit and component tests (Vitest)
 
-Environment: `node` for `test/*.test.ts`, `jsdom` for `test/*.test.tsx` (per-file `// @vitest-environment jsdom`, or two Vitest projects; 60 section 3.5 sets the convention). `test/fakeChrome.ts` provides a minimal in-memory `chrome` with: `runtime.{id, getManifest, getURL, onConnect, onConnectExternal, lastError}`, a `FakePort` (paired ends, `sender`, `postMessage` delivering a JSON round trip, `disconnect`), `action.{setBadgeText, setBadgeBackgroundColor, setBadgeTextColor, setTitle, getBadgeText}`, `notifications.{create, clear, getAll, onClicked, onClosed}`, `sidePanel.{setPanelBehavior, open}`, `storage.session.{get, set}` plus a `storage.local` spy that fails the test if called, `tabs.{update, create}`, `windows.update`. Fake timers via `vi.useFakeTimers()`.
+Environment: `node` for `test/*.test.ts`, `jsdom` for `test/*.test.tsx` (per-file `// @vitest-environment jsdom`, or two Vitest projects; 60 section 3.5 sets the convention). `test/fakeChrome.ts` provides a minimal in-memory `chrome` with: `runtime.{id, getManifest, getURL, onConnect, onConnectExternal, lastError}`, a `FakePort` (paired ends, `sender`, `postMessage` delivering a JSON round trip, `disconnect`), `action.{setBadgeText, setBadgeBackgroundColor, setBadgeTextColor, setTitle, getBadgeText}`, `notifications.{create, clear, getAll, onClicked, onClosed}`, `sidePanel.{setPanelBehavior, open}`, `storage.session.{get, set}`, `storage.local.{get, set}` in memory (the tests check it only ever holds `settings`, and `remove`, `clear` and `storage.sync` fail the test), `tabs.{update, create}`, `windows.{update, getCurrent, getLastFocused}` (by default the last focused window has no focus, so a request notifies unless a test gives it focus). Fake timers via `vi.useFakeTimers()`.
 
 | File | Cases |
 |---|---|
 | `validate.test.ts` | Valid hello, pending (0, 1, 20 entries), resolved pass and return only known fields. Rejected, table-driven: wrong version; unknown type; 21 proposals; duplicate ids in one list; options of length 2 or out of order; option text over `MAX_PAYLOAD_CHARS`; `step: 'everything'`; bad `requestId` characters; `requester.kind: 'outside'` without `grantId`; category not in `CATEGORIES`; warning message over 300 chars; message over 512 KB; non-object; arrays where objects are expected. |
 | `hub.test.ts` | Union with two connections (home base first, dedupe by id, ownership); `added` / `removed`; `actionableCount` counts `ready` and `needs-cloud-consent` only and excludes in-flight; decide: success builds the exact `Decision`; each failure reason; deny allowed for `no-match`; resolved creates entries with `decidedHere` true or false; removing the owner turns in-flight into `lost`; prune at 10 minutes and 20 entries; connection state per section 7.5. |
-| `register.test.ts` | External port rejected for wrong name, wrong origin, `frameId: 1`, no `tab`, 9th connection; no hello in 5 s disconnects; 5 invalid messages disconnect; hello gets `hello-ack` with the manifest version; pending sets badge text and title per section 7.6; one notification per new actionable id; none when a panel is visible; announced ids survive a simulated restart (new `register` with the same `storage.session`) and are not re-announced; notification cleared on resolved and on removal; decision posted only to the owner port with `decidedBy: 'extension'`, `itemIds: []`, no `step` on deny; `panel/decide-rejected` on bad step; `markSlow` after 15 s; notification click calls `sidePanel.open` with the owner's window id, and falls back to `tabs.update` + `windows.update` when it rejects; `openApp` without a connection calls `tabs.create` with `APP_URL + REQUESTS_PATH`; `storage.local` never called; `storage.session` only ever holds `announced` with id-shaped strings. |
+| `register.test.ts` | External port rejected for wrong name, wrong origin, `frameId: 1`, no `tab`, 9th connection; no hello in 5 s disconnects; 5 invalid messages disconnect; hello gets `hello-ack` with the manifest version; pending sets badge text and title per section 7.6; one notification per new actionable id; none when a panel is visible; announced ids survive a simulated restart (new `register` with the same `storage.session`) and are not re-announced; notification cleared on resolved and on removal; decision posted only to the owner port with `decidedBy: 'extension'`, `itemIds: []`, no `step` on deny; `panel/decide-rejected` on bad step; `markSlow` after 15 s; notification click calls `sidePanel.open` with the owner's window id, and falls back to `tabs.update` + `windows.update` when it rejects; `openApp` without a connection calls `tabs.create` with `APP_URL + HOME_PATH` (`/ask`), and with a request id `APP_URL + REQUESTS_PATH`; each request is named after its own link; open on arrival (7.7): one popup in the focused window per arrival and none for a request already announced (also after a restart), setting off or not a boolean, every fallback (rejects, no focus, no window, no `openPopup`) notifies and never calls `sidePanel.open`, nothing while a panel is visible, no notice for a request answered meanwhile; the worker never writes `storage.local`, which only ever holds `settings`; `storage.session` only ever holds `announced` with id-shaped strings. |
 | `badge.test.ts` | Every row of the section 7.6 table, including 99 and 100. |
 | `manifest.test.ts` | Source manifest: MV3; permissions exactly the three; no `host_permissions`, `content_scripts`, `web_accessible_resources`; `externally_connectable` matches exactly the two entries and has no `ids`; CSP string exactly as section 4.1; `description` at most 132 chars; `minimum_chrome_version` "116"; every icon path exists in `public/`. Transform: release drops localhost; store drops `key`; version comes from package.json. `ALLOWED_ORIGINS` per mode equals the origins of that mode's matches. |
 | `ext-id.test.ts` | `deriveExtensionId(manifest.key) === EXTENSION_ID`; a known test vector (generate one key with openssl during implementation, record its Chrome-reported ID from `chrome://extensions`, and keep that pair as the fixture). |
-| `sidepanel.test.tsx` | Renders each state from fixtures (connecting, disconnected, empty, request ready, each non-ready outcome, sending, slow, each result); default step selection rules; unavailable steps disabled with reason; selecting Excerpt changes the outgoing text to exactly `options[1].text`; Approve sends `panel/decide` with the selected step; Deny sends `approved: false`; ask-first and never tags; clean tag shown only without injection or hidden-text warnings; keyboard navigation in the radiogroup skips disabled steps; live region text; axe (from `axe-core`) finds no violations in each state. |
+| `sidepanel.test.tsx` | Renders each state from fixtures (connecting, disconnected, empty, request ready, each non-ready outcome, sending, slow, each result); default step selection rules; unavailable steps disabled with reason; selecting Excerpt changes the outgoing text to exactly `options[1].text`; Approve sends `panel/decide` with the selected step; Deny sends `approved: false`; ask-first and never tags; clean tag shown only without injection or hidden-text warnings; keyboard navigation in the radiogroup skips disabled steps; live region text; the settings gear and switch (8.10: default on, saves, Escape, failed save, newest save wins); axe (from `axe-core`) finds no violations in each state. |
+| `settings.test.ts` | `parseSettings` defaults per field; read failure gives the defaults; write merges under the one key and rejects when the write fails. |
 | `bridge.test.ts` (in `web/src/relay/`) | With an injected fake runtime and ticker: `unsupported` when no runtime; hello then pending after ack; publish while connected sends once; tick re-sends the list; `not-installed` when the port drops with `lastError` before ack; reconnect at 0 s after a drop, then the backoff sequence; `resolved` sent before the next pending; `onDecision` handler receives decisions; `toPreview` drops `related`, `trace`, `recordId`, `from` and `createdAt` and omits undefined optionals. |
 
 ### 14.2 End-to-end tests (Playwright, unpacked extension)
@@ -1186,10 +1215,12 @@ The side panel cannot be opened by clicking the toolbar in automation, so tests 
 | Invalid messages ignored | `raw({ type: 'sieve/pending', version: 2, ... })` and a preview with `step: 'everything'` change nothing; 5 invalid messages disconnect the stub (`status === 'disconnected'`). |
 | Disconnect | Stub closes its page; panel shows `Sieve isn't open` within 3 s; badge `''`. |
 | Two tabs | Two stub pages, each with one different preview; panel lists both (one in Also waiting); approving each sends the decision only to its own page. |
-| Notification | After a new preview with the panel tab closed, `sw.evaluate(() => chrome.notifications.getAll())` contains `sieve-req-<id>`; after `resolved` it is gone. A second identical `pending` does not create a second notification. |
+| Notification | With the setting off, after a new preview with the panel tab closed, `sw.evaluate(() => chrome.notifications.getAll())` contains `sieve-req-<id>`; after `resolved` it is gone. A second identical `pending` does not create a second notification. |
+| Open on arrival | In a focused window, two new previews open one real popup (`runtime.getContexts` POPUP is 1) and no notification. Closed, it stays closed when the page repeats its list or reconnects; a third, new preview opens it again. No side panel opens. |
+| Settings switch | In the popup layout, the gear shows the switch, on; turning it off writes `{ settings: { openOnArrival: false } }`; then a new preview gives a notification and no popup; turned back on, the next one opens the popup. |
 | Origin enforcement | The stub loaded from `http://127.0.0.1:5173` has no `chrome.runtime.connect` (or its connection is refused); the panel stays at `Sieve isn't open`. |
 | No CSP violations | The panel page records `securitypolicyviolation` events and console errors; both lists are empty after every test. |
-| Nothing stored | After the approve test: `chrome.storage.local.get(null)` is `{}`; `chrome.storage.session.get(null)` has only `announced`, and every value matches the request id pattern. |
+| Nothing stored | After the approve test: `chrome.storage.local.get(null)` is `{}` (nobody changed a setting); `chrome.storage.session.get(null)` has only `announced`, and every value matches the request id pattern. |
 
 ### 14.3 Manual checklist on the demo Mac (real Chrome, real side panel)
 
@@ -1230,7 +1261,7 @@ Run after WP5 and WP6 are merged on `dev`, with the `dev` build loaded unpacked 
 5. Approve sends exactly one `sieve/decision` to the owning page with `decidedBy: 'extension'`, the selected step, `itemIds: []`; deny sends no `step`.
 6. A step that is unavailable or above `maxStep` can never be sent (UI disabled, worker rejects, page rejects).
 7. Messages from a non-allowed origin, a child frame, the wrong port name, or with an invalid shape never change the panel.
-8. After any test, `storage.local` is empty and `storage.session` holds only request ids.
+8. After any test, `storage.local` holds nothing but the `settings` key with booleans, and `storage.session` holds only request ids.
 9. `lint-dist` passes on all three builds; the panel logs no CSP violations.
 10. On the demo Mac (14.3), a real relay request is approved from the side panel without leaving the assistant's tab, and the assistant receives only the approved text.
 11. The Web Store submission is made by Nov 24 with the listing, privacy and test-instruction text from section 13.

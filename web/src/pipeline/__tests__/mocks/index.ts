@@ -22,6 +22,7 @@ export const getPhotoBlob = vi.fn(async (_db: SieveDb, _id: string): Promise<Blo
 export const fakeQueue = { start: vi.fn() } as unknown as IngestQueue & { start: ReturnType<typeof vi.fn> };
 export const startIngestQueue = vi.fn((_db: SieveDb): IngestQueue => fakeQueue);
 export const clockFor = vi.fn((_db: SieveDb): number => Date.now());
+export const flushUrgentEmbeds = vi.fn(async (_db: SieveDb, _o?: unknown): Promise<'done' | 'timeout' | 'skipped'> => 'done');
 export const openDb = vi.fn();
 export const ingest = vi.fn();
 
@@ -39,6 +40,7 @@ export function resetIndexMock(list: IndexRecord[] = []): void {
   fakeQueue.start.mockReset();
   startIngestQueue.mockReset().mockImplementation(() => fakeQueue);
   clockFor.mockReset().mockImplementation(() => Date.now());
+  flushUrgentEmbeds.mockReset().mockImplementation(async () => 'done');
 }
 
 export function cand(recordId: string, matchedBy: Candidate['matchedBy'] = 'vector', chunk?: { start: number; end: number }): Candidate {

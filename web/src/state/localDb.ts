@@ -13,7 +13,15 @@ export interface SourceRowLike {
   needsAuth?: boolean;
   error?: string;
   folderName?: string;
+  // 20 section 13.5: what the source job and the background queue work on now
+  inventory?: Partial<Record<InventoryKind, number>>;
+  stage?: IndexingStage;
+  stageCount?: number;
+  counting?: boolean;
 }
+
+export type InventoryKind = 'pdfs' | 'notes' | 'photos' | 'files' | 'emails';
+export type IndexingStage = 'reading' | 'label' | 'embed' | 'privacy' | 'caption';
 
 export interface ConsentRowLike { recordId: string; cloudAllowedAt: number }
 

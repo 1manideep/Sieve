@@ -22,6 +22,8 @@ export interface ReceiptListProps {
   receipts: ReceiptView[];
   meta: Record<string, RecordMeta | null>;
   now?: number;
+  /** Receipt ids this computer approved automatically (40 section 13.8.9): "Approved automatically". */
+  autoApproved?: ReadonlySet<string>;
 }
 
 function titleOf(meta: Record<string, RecordMeta | null>, id: string | undefined): string {
@@ -70,7 +72,7 @@ function WhoLine({ receipt, variant }: { receipt: ReceiptView; variant: ReceiptL
 }
 
 /** The Step cell: the step that left (or the category that stopped it), then who decided and the status. */
-function StepCell({ receipt, meta }: { receipt: ReceiptView; meta: Record<string, RecordMeta | null> }) {
+function StepCell({ receipt, meta, auto }: { receipt: ReceiptView; meta: Record<string, RecordMeta | null>; auto: boolean }) {
   const aiName = receipt.requester.aiName;
   let main: ReactNode = null;
   if (isShared(receipt) || receipt.status === 'expired') {
@@ -85,7 +87,7 @@ function StepCell({ receipt, meta }: { receipt: ReceiptView; meta: Record<string
   if (receipt.status === 'declined') by = SEEN.byDeclined;
   else if (receipt.decidedBy === 'rule') by = SEEN.byRule;
   else if (receipt.decidedBy === 'extension') by = SEEN.byExtension;
-  else if (receipt.decidedBy === 'app') by = SEEN.byApp;
+  else if (receipt.decidedBy === 'app') by = auto ? SEEN.byAuto : SEEN.byApp;
 
   let status: string | undefined;
   switch (receipt.status) {
@@ -119,7 +121,7 @@ function StepCell({ receipt, meta }: { receipt: ReceiptView; meta: Record<string
   );
 }
 
-export function ReceiptList({ variant, receipts, meta, now: nowProp }: ReceiptListProps) {
+export function ReceiptList({ variant, receipts, meta, now: nowProp, autoApproved }: ReceiptListProps) {
   const [mountedAt] = useState(() => Date.now());
   const now = nowProp ?? mountedAt;
   const [confirming, setConfirming] = useState<ReceiptView | null>(null);
@@ -176,7 +178,7 @@ export function ReceiptList({ variant, receipts, meta, now: nowProp }: ReceiptLi
                     <bdi>{r.requester.aiName}</bdi>
                   </td>
                   <td role="cell" className={styles.cellStep}>
-                    <StepCell receipt={r} meta={meta} />
+                    <StepCell receipt={r} meta={meta} auto={autoApproved?.has(r.id) === true} />
                   </td>
                   <td role="cell" className={styles.cellChars}>
                     <span className={styles.charsNumber} aria-hidden="true">

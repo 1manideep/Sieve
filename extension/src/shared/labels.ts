@@ -37,6 +37,12 @@ export const COPY = {
   receiptDeclined: 'Receipt saved: declined',
   stepUnavailable: "That step isn't available for this request.",
   openReceipt: 'Open the receipt',
+  settings: {
+    button: 'Settings',
+    openOnArrival: 'Open when a request arrives',
+    openOnArrivalHint: 'Sieve opens its popup by itself when a new request comes in. When this is off, you get the badge and a notification.',
+    saveFailed: "Couldn't save this setting. Try again.",
+  },
 } as const;
 
 /** The result heading after an approval from this panel (board F8B): "Sent 41 characters to Gemini CLI". The name

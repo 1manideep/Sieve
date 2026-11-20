@@ -84,6 +84,18 @@ describe('prepareProposal (10 section 16.10)', () => {
     expect(p.trace[1]).toMatchObject({ where: 'device', sdkReported: 'on_device', label: 'Picked "Re: Deposit for the apartment" and wrote the answer' });
     expect(privacy.buildStepOption).toHaveBeenCalledTimes(3);
     expect(privacy.buildStepOption.mock.calls[0][4]).toMatchObject({ allowNano: false, maxStep: 'full' });
+    // 20 section 13.5: just-added items get their vectors before the search runs
+    expect(idx.flushUrgentEmbeds).toHaveBeenCalledTimes(1);
+    expect(idx.flushUrgentEmbeds.mock.invocationCallOrder[0]!).toBeLessThan(idx.search.mock.invocationCallOrder[0]!);
+  });
+
+  it('PP-24: a flush that times out or fails still searches', async () => {
+    idx.flushUrgentEmbeds.mockResolvedValueOnce('timeout');
+    idx.search.mockResolvedValue([idx.cand('playground:deposit')]);
+    expect((await run()).outcome).toBe('ready');
+    idx.flushUrgentEmbeds.mockRejectedValueOnce(new Error('no queue'));
+    expect((await run()).outcome).toBe('ready');
+    expect(idx.search).toHaveBeenCalledTimes(2);
   });
 
   it('PP-2: Health is blocked before any model reads it; declining gives a blocked receipt', async () => {
@@ -416,6 +428,53 @@ describe('prepareProposal (10 section 16.10)', () => {
     const p = await run();
     expect(p.outcome).toBe('error');
     expect(p.trace.find((s) => s.kind === 'select')?.label).toBe('Reading and answering failed: The model gave no usable answer.');
+  });
+
+  it('PP-22: the share-time Nano check reads the built options once; its rows show where it ran; findings rebuild the options (11 section 10.7)', async () => {
+    idx.search.mockResolvedValue([idx.cand('playground:deposit', 'vector', { start: 0, end: BODIES.deposit.length })]);
+    const injectionStep = { kind: 'injection' as const, label: 'Found a sentence aimed at an AI in the text to share, so Sieve keeps it out', where: 'device' as const, sdkReported: 'on_device' as const, modeRequested: 'PREFER_ON_DEVICE' as const, ms: 40, at: 1 };
+    const piiStep = { kind: 'pii' as const, label: 'Found and masked 1 name in the text to share', where: 'device' as const, sdkReported: 'on_device' as const, modeRequested: 'ONLY_ON_DEVICE' as const, ms: 50, at: 1 };
+    const entities = [{ text: 'Dana', type: 'name' as const, by: 'nano' as const }];
+    privacy.checkOutgoing.mockImplementation(async (_r, _d, _o, _p, opts) => {
+      const o = opts as { onStart(k: string, w: string): void; onEnd(k: string, s: unknown): void };
+      o.onStart('injection', 'device');
+      o.onEnd('injection', injectionStep);
+      o.onStart('pii', 'device');
+      o.onEnd('pii', piiStep);
+      return { entities, quotes: ['Ignore this.'], trace: [injectionStep, piiStep], nanoPii: true, ran: 2, shareChecks: [{ key: 'k' }] };
+    });
+    const events: PipelineProgress[] = [];
+    const p = await run({ onProgress: (e) => events.push(e) });
+    expect(p.outcome).toBe('ready');
+    expect(privacy.checkOutgoing).toHaveBeenCalledTimes(1);
+    const [rec, data, options, parts] = privacy.checkOutgoing.mock.calls[0]!;
+    expect(rec.id).toBe('playground:deposit');
+    expect(data).toBe('sample');
+    expect(options.map((o) => o.step)).toEqual([...LADDER_STEPS]);
+    expect(parts).toMatchObject({ answer: DEPOSIT_ANSWER });
+    // built once with plain code, once more with what Nano found
+    expect(privacy.buildStepOption).toHaveBeenCalledTimes(6);
+    expect(privacy.buildStepOption.mock.calls[0]![4]).not.toHaveProperty('extraEntities');
+    expect(privacy.buildStepOption.mock.calls[3]![4]).toMatchObject({ extraEntities: entities, extraQuotes: ['Ignore this.'], allowNano: false });
+    const starts = events.filter((e) => e.type === 'step-start').map((e) => (e.type === 'step-start' ? [e.label, e.where] : []));
+    expect(starts).toContainEqual(['Checking for hidden instructions…', 'device']);
+    expect(starts).toContainEqual(['Checking for personal details…', 'device']);
+    const kinds = p.trace.map((t) => t.kind);
+    expect(kinds.slice(kinds.lastIndexOf('pii') - 2)).toEqual(['pii', 'injection', 'pii']);
+    expect(p.trace.slice(-2)).toEqual([injectionStep, piiStep]);
+    expect(idx.patchRecord).toHaveBeenCalledWith(db, 'playground:deposit', expect.any(Number), { shareChecks: [{ key: 'k' }] });
+    expect(p.warnings.map((w) => w.kind)).toContain('injection');
+    expect(p.warnings.find((w) => w.kind === 'injection')?.message).toContain('Ignore this.');
+    expect(privacy.privacyWarnings.mock.calls[0]![2]).toEqual({ nanoPii: true });
+  });
+
+  it('PP-23: nothing found by the share-time check: the options are built once and nothing is saved', async () => {
+    idx.search.mockResolvedValue([idx.cand('playground:deposit')]);
+    const p = await run();
+    expect(p.outcome).toBe('ready');
+    expect(privacy.checkOutgoing).toHaveBeenCalledTimes(1);
+    expect(privacy.buildStepOption).toHaveBeenCalledTimes(3);
+    expect(idx.patchRecord).not.toHaveBeenCalled();
   });
 
   it('a throw anywhere becomes an error outcome, never a rejection', async () => {

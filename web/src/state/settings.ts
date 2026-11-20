@@ -16,25 +16,39 @@ export const PLAYGROUND_SETTINGS: Settings = { ...DEFAULT_SETTINGS };   // fixed
 
 export const SAVED_MS = 2000;   // "Saved" shows for 2 s
 
-export type SaveKey = 'defaultStep' | 'cloudFallbackForOwnData' | 'pushEnabled' | `rule:${Category}`;
+export type SaveKey = 'defaultStep' | 'cloudFallbackForOwnData' | 'pushEnabled' | 'describePhotos' | `rule:${Category}`;
+/** The Sources switch "Describe photos with Gemini Nano" (20 section 13.5). It is about this computer's own work, so
+ * it is kept on this device for the account, not in users/{uid} (whose rules allow only the four shared settings). */
+export const DESCRIBE_PHOTOS_KEY = (uid: string) => `sieve.describePhotos.${uid}`;
 export interface SettingsState {
   status: 'idle' | 'loading' | 'ready' | 'error';
   settings: Settings;                                     // DEFAULT_SETTINGS until the first snapshot
+  describePhotos: boolean;                                // default on; this device only
   saving: Partial<Record<SaveKey, 'saving' | 'saved' | 'queued' | 'error'>>;
   start(uid: string): () => void;                         // onSnapshot(doc(db, 'users', uid))
   setCategoryRule(category: Category, rule: CategoryRule): Promise<void>;
   setDefaultStep(step: LadderStep): Promise<void>;
   setCloudFallback(on: boolean): Promise<void>;
+  setDescribePhotos(on: boolean): Promise<void>;
   /** Registers or removes push (10.6). 'dismissed': the person closed the prompt; leave the box off silently (13.8.7). */
   setPushEnabled(on: boolean): Promise<'ok' | 'unsupported' | 'denied' | 'dismissed' | 'error'>;
   reset(): void;
 }
 
-const initial = (): Pick<SettingsState, 'status' | 'settings' | 'saving'> => ({
+const initial = (): Pick<SettingsState, 'status' | 'settings' | 'describePhotos' | 'saving'> => ({
   status: 'idle',
   settings: { ...DEFAULT_SETTINGS, categoryRules: { ...DEFAULT_SETTINGS.categoryRules } },
+  describePhotos: true,
   saving: {},
 });
+
+function readDescribePhotos(uid: string): boolean {
+  try {
+    return window.localStorage.getItem(DESCRIBE_PHOTOS_KEY(uid)) !== '0';
+  } catch {
+    return true;
+  }
+}
 
 let currentUid: string | undefined;
 const savedTimers = new Map<SaveKey, ReturnType<typeof setTimeout>>();
@@ -91,7 +105,7 @@ export const useSettings = create<SettingsState>()((set, get) => {
 
     start(uid) {
       currentUid = uid;
-      set({ status: 'loading' });
+      set({ status: 'loading', describePhotos: readDescribePhotos(uid) });
       let stop: (() => void) | null = null;
       let cancelled = false;
       void Promise.all([import('@/app/services/userDoc'), import('@/relay/resilient')])
@@ -132,6 +146,18 @@ export const useSettings = create<SettingsState>()((set, get) => {
 
     setCloudFallback: (on) =>
       write('cloudFallbackForOwnData', 'settings.cloudFallbackForOwnData', on, (s) => ({ ...s, cloudFallbackForOwnData: on })),
+
+    async setDescribePhotos(on) {
+      set({ describePhotos: on });
+      const uid = currentUid;
+      if (!uid) return;
+      try {
+        window.localStorage.setItem(DESCRIBE_PHOTOS_KEY(uid), on ? '1' : '0');
+        mark('describePhotos', 'saved');
+      } catch {
+        mark('describePhotos', 'error');
+      }
+    },
 
     async setPushEnabled(on) {
       const uid = currentUid;

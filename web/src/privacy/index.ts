@@ -24,7 +24,9 @@ export { INJECTION_CHECK_SYSTEM } from './injection/nano';
 export { PII_CHECK_SYSTEM } from './pii/nano';
 export { PII_CHECK_SCHEMA, INJECTION_CHECK_SCHEMA } from './schemas';
 
-// Share-time helpers (11 sections 10 and 11)
+// Share-time helpers (11 sections 10 and 11), with the share-time Gemini Nano check (10.7)
+export { checkOutgoing, outgoingForCheck, shareCheckKey, SHARE_CHECK_LABELS } from './steps/shareCheck';
+export type { OutgoingCheck, OutgoingCheckOptions, ShareCheck, ShareCheckedRecord } from './steps/shareCheck';
 export { preparePhotoForShare } from './steps/photo';
 export { privacyWarnings } from './warnings';
 export { privacyTraceFor } from './trace';
@@ -52,6 +54,8 @@ export type {
   KnownEntity,
   PiiStage,
   PrivacyScanStamp,
+  PrivacyScanStampWithPending,
+  NanoPendingStage,
   ScanStageStamp,
   SharedImage,
 } from './types';

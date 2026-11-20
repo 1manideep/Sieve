@@ -123,7 +123,7 @@ describe('usePlayground', () => {
 
   it('ingests a file as the visitor\'s own data and lists it', async () => {
     await usePlayground.getState().addFiles([new File(['hello'], 'note.txt', { type: 'text/plain' })]);
-    expect(ingest).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ source: 'upload', kind: 'document', title: 'note.txt' }), 'own');
+    expect(ingest).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ source: 'upload', kind: 'document', title: 'note.txt' }), 'own', { priority: 'high' });
     expect(usePlayground.getState().added.at(-1)).toMatchObject({ name: 'note.txt', status: 'indexed' });
   });
 

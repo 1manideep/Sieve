@@ -8,6 +8,8 @@ import type { ProposalPreview } from '@sieve/shared';
 import { PANEL_PORT_NAME } from '../shared/internal';
 import type { DecideRejection, PanelState, PanelToWorker, ResolvedEntry, Surface, WorkerToPanel } from '../shared/internal';
 import { newRequestAnnouncement, requesterName, resultCopy } from '../shared/labels';
+import { readSettings, writeSettings } from '../shared/settings';
+import type { SettingsStore } from './components/SettingsMenu';
 import { detectSurface } from './surface';
 
 export const RECONNECT_MS = [250, 1_000, 2_000, 5_000] as const;
@@ -25,6 +27,8 @@ export interface PanelApi {
   surface?: Surface;
   /** Opens the side panel in this window (the popup's "Keep open on the side"); rejects when Chrome refuses. */
   openSidePanel?: () => Promise<void>;
+  /** The extension settings (chrome.storage.local); without it the header shows no settings gear. */
+  settings?: SettingsStore;
 }
 
 export function chromePanelApi(): PanelApi {
@@ -45,6 +49,10 @@ export function chromePanelApi(): PanelApi {
       const id = windowId ?? (await getWindowId());
       if (id === undefined) throw new Error('no window');
       await chrome.sidePanel.open({ windowId: id });
+    },
+    settings: {
+      read: () => readSettings(chrome.storage.local),
+      write: (change) => writeSettings(chrome.storage.local, change),
     },
   };
 }

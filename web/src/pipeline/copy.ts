@@ -23,6 +23,9 @@ export const RUNNING = {
   retrieve: 'Searching this device…',
   fresh: 'Checking the item is still there…',
   pii: 'Masking personal details on this device…',
+  // 11 section 10.7: Gemini Nano reads the text that would leave, once per text (cached on the item)
+  injectionCheck: 'Checking for hidden instructions…',
+  piiCheck: 'Checking for personal details…',
   draft: 'Drafting in the cloud from the approved text…',
   selectDevice: (records: Pick<IndexRecord, 'kind'>[]) => `Reading ${countNoun(records)} on this device…`,
   selectCloudSample: (records: Pick<IndexRecord, 'kind'>[]) => {

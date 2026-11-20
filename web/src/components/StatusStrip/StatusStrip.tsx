@@ -1,12 +1,14 @@
 // Status strip and its popover (40 section 8). Driven by useNetwork, useHomeBase, useAvailability and useIndexing.
 // layout="card" is the Nano meter at the bottom of the rail (docs/design/final-flow.md, F3): the same button and
-// popover, drawn as a card with "Gemini Nano · ready", the index row and a thin progress bar.
+// popover, drawn as a card with "Gemini Nano · ready", the index row and a thin progress bar. While auto-approve is
+// on for any connection (40 section 13.8.9), "Auto-approve on" shows under it as a link to Settings.
 import { useEffect, useId, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
 import { env } from '@/app/env';
 import { defaultDeviceLabel } from '@/app/deviceId';
-import { RAIL, STATUS_POPOVER } from '@/copy/strings';
+import { RAIL, STATUS, STATUS_POPOVER } from '@/copy/strings';
+import { useAutoApprove } from '@/state/autoApprove';
 import { useAvailability } from '@/state/availability';
 import { useHomeBase } from '@/state/homeBase';
 import { useIndexing } from '@/state/indexing';
@@ -86,7 +88,8 @@ export function StatusStrip({ extensionEnabled = Boolean(env.extensionId), layou
   const indexing = useIndexing(
     useShallow((s) => ({ state: s.state, left: s.left, done: s.done, total: s.total, etaMs: s.etaMs })),
   );
-  const model = statusModel({ online, homeBase, availability, indexing, extensionEnabled });
+  const autoApprove = useAutoApprove((s) => Object.keys(s.until).length > 0);
+  const model = statusModel({ online, homeBase, availability, indexing, extensionEnabled, autoApprove });
   const card = layout === 'card';
 
   const [open, setOpen] = useState(false);
@@ -138,9 +141,9 @@ export function StatusStrip({ extensionEnabled = Boolean(env.extensionId), layou
         setOpen(false);
         navigate('/prepare');
         break;
-      case 'open-playground':
+      case 'cloud-fallback':
         setOpen(false);
-        navigate('/playground');
+        navigate('/settings#cloud');
         break;
       case 'pause-indexing':
         useSources.getState().setPaused(true).catch(report);
@@ -211,6 +214,11 @@ export function StatusStrip({ extensionEnabled = Boolean(env.extensionId), layou
           </>
         )}
       </button>
+      {autoApprove ? (
+        <Link to="/settings#ais" className={styles.auto}>
+          {STATUS.autoApproveOn}
+        </Link>
+      ) : null}
       {open ? (
         <div id={popoverId} className={card ? `${styles.popover} ${styles.popoverUp}` : styles.popover} role="dialog" aria-labelledby={headingId}>
           <h2 id={headingId} ref={headingRef} tabIndex={-1} className={styles.heading}>

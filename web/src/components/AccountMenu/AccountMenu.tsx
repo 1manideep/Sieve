@@ -1,4 +1,5 @@
-// Account menu (40 section 7.3): a 44px circle button and a menu with arrow-key navigation.
+// Account menu (40 section 7.3): a circle button with the Google photo (the first letter when there is none, or it
+// does not load) and a menu with arrow-key navigation.
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ACCOUNT } from '@/copy/strings';
@@ -20,6 +21,9 @@ export function AccountMenu() {
 
   const name = user?.displayName || user?.email || '';
   const initial = name.trim().charAt(0).toUpperCase() || '?';
+  // The photo that failed to load, so a new account's photo is tried again.
+  const [brokenPhoto, setBrokenPhoto] = useState<string | null>(null);
+  const photo = user?.photoURL && user.photoURL !== brokenPhoto ? user.photoURL : null;
 
   const close = (returnFocus: boolean) => {
     setOpen(false);
@@ -28,12 +32,11 @@ export function AccountMenu() {
 
   const items: Item[] = [
     { label: ACCOUNT.settings, run: () => navigate('/settings') },
-    { label: ACCOUNT.playground, run: () => navigate('/playground') },
     {
       label: ACCOUNT.signOut,
       run: () => {
         signOut()
-          .then(() => navigate('/welcome'))
+          .then(() => navigate('/'))
           .catch((error: unknown) => console.error(error));
       },
     },
@@ -109,7 +112,20 @@ export function AccountMenu() {
         onClick={() => (open ? close(false) : openAt(0))}
         onKeyDown={onButtonKeyDown}
       >
-        <span aria-hidden="true">{initial}</span>
+        {photo ? (
+          <img
+            className={styles.photo}
+            src={photo}
+            alt=""
+            width={36}
+            height={36}
+            referrerPolicy="no-referrer"
+            draggable={false}
+            onError={() => setBrokenPhoto(photo)}
+          />
+        ) : (
+          <span aria-hidden="true">{initial}</span>
+        )}
       </button>
       {open ? (
         <div className={styles.panel} onKeyDown={onMenuKeyDown}>

@@ -63,7 +63,7 @@ function renderSettings(path = '/settings') {
   const router = createMemoryRouter(
     [
       { path: '/settings', element: <main><Component /></main> },
-      { path: '/welcome', element: <main><p>welcome page</p></main> },
+      { path: '/', element: <main><p>welcome page</p></main> },
     ],
     { initialEntries: [path] },
   );
@@ -364,7 +364,7 @@ describe('Settings', () => {
     expect(within(card).getByText('Signed in as person@example.com')).toBeInTheDocument();
     await user.click(within(card).getByRole('button', { name: SETTINGS.signOut }));
     expect(signOut).toHaveBeenCalledOnce();
-    await waitFor(() => expect(router.state.location.pathname).toBe('/welcome'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'));
   });
 
   it('deletes the account only after DELETE is typed, with a live checklist (AT-30)', async () => {

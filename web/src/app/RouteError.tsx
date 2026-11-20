@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { isRouteErrorResponse, useRouteError } from 'react-router-dom';
 import { Button, LinkButton } from '@/components/Button/Button';
 import { Logo } from '@/components/Logo/Logo';
+import { useOpenSieve } from '@/components/useOpenSieve';
 import { ROUTE_ERROR, SHELL } from '@/copy/strings';
 import { useSession } from '@/state/session';
 import styles from './RouteError.module.css';
@@ -26,19 +27,20 @@ export function RouteError() {
   const error = useRouteError();
   const google = useSession((s) => s.kind === 'google');
   const kind = classifyRouteError(error);
+  const { openSieve, signingIn } = useOpenSieve();
 
   useEffect(() => {
     if (kind !== 'not-found') console.error(error);
   }, [error, kind]);
 
   const homeLink = google ? (
-    <LinkButton to="/" variant="primary">
+    <LinkButton to="/ask" variant="primary">
       {ROUTE_ERROR.goToAsk}
     </LinkButton>
   ) : (
-    <LinkButton to="/playground" variant="primary">
-      {ROUTE_ERROR.openPlayground}
-    </LinkButton>
+    <Button variant="primary" busy={signingIn} disabled={signingIn} onClick={() => void openSieve()}>
+      {ROUTE_ERROR.openSieve}
+    </Button>
   );
 
   return (
@@ -73,7 +75,7 @@ export function RouteError() {
               <Button variant="primary" onClick={reload}>
                 {ROUTE_ERROR.reload}
               </Button>
-              <LinkButton to="/" variant="secondary">
+              <LinkButton to="/ask" variant="secondary">
                 {ROUTE_ERROR.goToAsk}
               </LinkButton>
             </div>

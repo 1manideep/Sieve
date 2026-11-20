@@ -1,16 +1,18 @@
 // prepareProposal (10 section 12): from a question to a Proposal the person approves. Retrieval, then rules (before
-// any model reads anything), then exactly one Nano call (one more only when the chosen item was deleted or changed at
-// its source), then plain-code excerpts and privacy steps. Never rejects: failures are outcomes.
+// any model reads anything), then one Nano call to pick and answer (one more only when the chosen item was deleted or
+// changed at its source), then plain-code excerpts and privacy steps, then the share-time Gemini Nano check of the
+// text that would leave (11 section 10.7: one injection-check and one pii-check at most, cached on the item). Never
+// rejects: failures are outcomes.
 import { LADDER_STEPS, MAX_PAYLOAD_CHARS, MAX_QUESTION_CHARS, RELATED_MAX } from '@sieve/shared';
 import type {
-  Candidate, Category, CategoryRule, IndexRecord, Proposal, ProposalOutcome, StepOption, TraceKind, TraceStep, Warning, Where,
+  Candidate, Category, CategoryRule, IndexRecord, KnownEntity, Proposal, ProposalOutcome, StepOption, TraceKind, TraceStep, Warning, Where,
 } from '@sieve/shared';
 import {
   CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, codeTrace, deriveExcerpt, fitPassages, getNanoAvailability, hasFreshConsent,
   recordBody, selectAndAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
 } from '@/ai';
-import { clockFor, getRecord, parseQuestion, relatedFor, removeRecord, search, type SieveDb } from '@/index';
-import { buildStepOption, privacyWarnings } from '@/privacy';
+import { clockFor, flushUrgentEmbeds, getRecord, parseQuestion, relatedFor, removeRecord, search, type SieveDb } from '@/index';
+import { buildStepOption, checkOutgoing, privacyWarnings } from '@/privacy';
 import { forgetCloudConsentRequest, rememberCloudConsentRequest } from './consent';
 import { LABELS, RUNNING, UNAVAILABLE, WARNINGS, WHERE_PHRASE } from './copy';
 import { answerStillHolds, confirmFresh, type FreshResult } from './fresh';
@@ -267,6 +269,17 @@ async function prepare(run: Run): Promise<Proposal> {
   // 4. Retrieve.
   if (run.aborted) return run.stopped();
   const retrieveId = run.start('retrieve', RUNNING.retrieve, 'code');
+  // 4a. An item added a moment ago gets its vectors first (20 section 13.5): the queue's just-added embeddings are
+  // flushed, 3 s at most; on a timeout (or with nothing to wait for) the search runs as it is.
+  try {
+    await flushUrgentEmbeds(db, input.signal ? { signal: input.signal } : {});
+  } catch {
+    // no queue in this module (a stand-in index): search at once
+  }
+  if (run.aborted) {
+    run.end(retrieveId, codeTrace('retrieve', LABELS.stopped, 0));
+    return run.finish('error');
+  }
   const t0 = performance.now();
   let cands: Candidate[];
   try {
@@ -467,43 +480,73 @@ async function prepare(run: Run): Promise<Proposal> {
   run.push(indexTimeLabelStep(rec));
   run.push(indexTimeInjectionStep(rec));
 
-  // 15. The three options: the exact outgoing texts, built by the privacy pipeline (no Nano at question time).
+  // 15. The three options: the exact outgoing texts, built by the privacy pipeline with plain code. The scan of a
+  // stale record never runs Nano (allowNano: false); Nano reads the built text in 15a.
   if (run.aborted) return run.stopped();
   const piiId = run.start('pii', RUNNING.pii, 'code');
   const p0 = performance.now();
   const parts = { answer, excerpt: excerpt || undefined, full: recordBody(rec) };
   const photo = rec.kind === 'photo' ? await photoBlobFor(db, rec.id) : undefined;
+  const data = recordDataClass(rec);
   let scanSaved = false;
-  const built = await Promise.all(
-    LADDER_STEPS.map((step) =>
-      buildStepOption(step, parts, rec, recordDataClass(rec), {
-        maxStep: input.maxStep,
-        question: lookup,
-        rule,
-        allowNano: false,
-        ...(photo ? { photo } : {}),
-        ...(input.signal ? { signal: input.signal } : {}),
-        onScanned: (patch) => {
-          if (scanSaved) return;
-          scanSaved = true;
-          void patchRecordIfCurrent(db, rec, patch);
-        },
-      }),
-    ),
-  );
-  const options = LADDER_STEPS.map((step, i) => enforceOption(step, built[i], { maxStep: input.maxStep, aiName, hasExcerpt: !!excerpt }));
+  const buildAll = async (extra: { extraEntities?: KnownEntity[]; extraQuotes?: string[] } = {}): Promise<StepOption[]> => {
+    const built = await Promise.all(
+      LADDER_STEPS.map((step) =>
+        buildStepOption(step, parts, rec, data, {
+          maxStep: input.maxStep,
+          question: lookup,
+          rule,
+          allowNano: false,
+          ...extra,
+          ...(photo ? { photo } : {}),
+          ...(input.signal ? { signal: input.signal } : {}),
+          onScanned: (patch) => {
+            if (scanSaved) return;
+            scanSaved = true;
+            void patchRecordIfCurrent(db, rec, patch);
+          },
+        }),
+      ),
+    );
+    return built;
+  };
+  const enforceAll = (built: StepOption[]) => LADDER_STEPS.map((step, i) => enforceOption(step, built[i], { maxStep: input.maxStep, aiName, hasExcerpt: !!excerpt }));
+  const built = await buildAll();
+  let options = enforceAll(built);
   const optionTraces = built.flatMap((o) => o.trace ?? []);
-  const maxRedactions = Math.max(0, ...options.filter((o) => o.available).map((o) => o.redactions));
   const piiMs = Math.round(performance.now() - p0);
   if (optionTraces.length) {
     run.end(piiId, optionTraces[0]);
     for (const t of optionTraces.slice(1)) run.push(t);
   } else {
-    run.end(piiId, codeTrace('pii', LABELS.masked(maxRedactions), piiMs));
+    run.end(piiId, codeTrace('pii', LABELS.masked(Math.max(0, ...options.filter((o) => o.available).map((o) => o.redactions))), piiMs));
   }
+
+  // 15a. Gemini Nano on the text that would leave (11 section 10.7): "Checking for hidden instructions" and "Checking
+  // for personal details", each with where it ran. What it finds is masked or removed in every step by plain code.
+  if (run.aborted) return run.stopped();
+  const rows: Partial<Record<'injection' | 'pii', string>> = {};
+  const check = await checkOutgoing(rec, data, options, parts, {
+    ...(input.signal ? { signal: input.signal } : {}),
+    onStart: (kind, where) => {
+      rows[kind] = run.start(kind, kind === 'injection' ? RUNNING.injectionCheck : RUNNING.piiCheck, where);
+    },
+    onEnd: (kind, step) => {
+      const id = rows[kind];
+      if (id) run.end(id, step);
+      else run.push(step);
+    },
+  });
+  if (check.shareChecks) void patchRecordIfCurrent(db, rec, { shareChecks: check.shareChecks } as Partial<IndexRecord>);
+  if (check.entities.length > 0 || check.quotes.length > 0) {
+    if (run.aborted) return run.stopped();
+    options = enforceAll(await buildAll({ extraEntities: check.entities, extraQuotes: check.quotes }));
+  }
+  const maxRedactions = Math.max(0, ...options.filter((o) => o.available).map((o) => o.redactions));
   if (maxRedactions > 0) run.warn(WARNINGS.piiRedacted());
+  if (check.quotes.length > 0 && !rec.injection?.suspicious) run.warn(WARNINGS.injection(check.quotes[0]));
   // 11 section 11.1: the privacy pipeline's own warnings, for kinds the pipeline has not already worded (pii-check-limited).
-  for (const w of privacyWarnings(rec, options)) if (!run.warnings.some((x) => x.kind === w.kind)) run.warn(w);
+  for (const w of privacyWarnings(rec, options, { nanoPii: check.nanoPii })) if (!run.warnings.some((x) => x.kind === w.kind)) run.warn(w);
 
   // 16. Related items, filtered exactly like the main item.
   let related: Candidate[] = [];

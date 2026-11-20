@@ -62,6 +62,15 @@ test.describe('Playground states', () => {
     await expect(page.getByText(/Possible instruction aimed at an AI|Hidden text removed before any model read it/).first()).toBeVisible();
     await expect(page.getByTestId('outgoing-text')).not.toContainText('bank statement');
     expect((await cloudCalls(page)).some((c) => /ignore your instructions/i.test(c.prompt))).toBe(false);
+    // Indexing the email ran no Gemini Nano privacy check (11 section 6.1); the question ran one injection-check and
+    // one pii-check on its outgoing text, on the device (10.7).
+    const calls = await seamCalls(page);
+    const firstQuestion = calls.findIndex((c) => c.purpose === 'select-answer');
+    expect(firstQuestion).toBeGreaterThanOrEqual(0);
+    expect(calls.slice(0, firstQuestion).some((c) => c.purpose === 'injection-check' || c.purpose === 'pii-check')).toBe(false);
+    const checks = calls.slice(firstQuestion).filter((c) => c.purpose === 'injection-check' || c.purpose === 'pii-check');
+    expect(checks.map((c) => [c.purpose, c.sdkReported])).toEqual([['injection-check', 'on_device'], ['pii-check', 'on_device']]);
+    expect(checks.every((c) => c.recordIds.length === 1 && c.recordIds[0]!.startsWith('upload:test-email-'))).toBe(true);
   });
 
   test('your own file without a model: consent first, nothing leaves before it', async ({ page }, info) => {

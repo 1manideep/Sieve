@@ -16,11 +16,12 @@ export class SourceError extends Error {
 
 /** Copy for source rows (20 sections 14 to 17). Full sentences, no em dashes, no item content. */
 export const SOURCE_COPY = {
-  gisLoadFailed: "Couldn't reach Google sign-in. Check your connection and try again.",
+  gisLoadFailed: "Sign in to Sieve with Google first, then connect Gmail.",
   scopeDenied: 'Sieve needs read-only access to Gmail. Nothing was connected.',
   popupBlocked: 'Chrome blocked the Google sign-in window. Allow pop-ups for this site and try again.',
   popupClosed: 'Sign-in was closed. Nothing changed.',
   signInFailed: "Google sign-in didn't finish. Try again.",
+  otherAccount: 'Pick the Google account you use for Sieve, then try again.',
   noClientId: "Gmail sign-in isn't set up on this site yet.",
   gmailNeedsAuth: 'Sign in to Gmail again to add new mail',
   gmailForbidden: (reason: string) => `Gmail refused access: ${reason}.`,

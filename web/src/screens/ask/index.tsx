@@ -1,7 +1,8 @@
 // Ask (`/`, 40 section 13.4): the golden path on the person's own data, through useAskReal (40 section 12).
 // The final design: before a question, F2 (the headline, the glass prompt card, three chips); after one, F3 (the
 // conversation column with the follow-up pill at the bottom). Only the presentation changed; the store is the same.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+// While indexing runs (or is paused), the home shows the Sources screen's indexing row under the chips (13.4).
+import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
@@ -24,10 +25,13 @@ import { useIndexing } from '@/state/indexing';
 import { useNetwork } from '@/state/network';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
-import { askNotices, modelGate } from './askNotices';
+import { askNotices, modelGate, type AskNotice } from './askNotices';
 import styles from './ask.module.css';
 
 const MODEL_NOTICE_ID = 'ask-model-notice';
+
+// Loaded only while indexing shows, so the after-sign-in bundle stays inside its budget (40 section 17.1).
+const IndexingCard = lazy(() => import('@/screens/sources/IndexingCard').then((m) => ({ default: m.IndexingCard })));
 
 function runAsk(q?: string): void {
   useAskReal.getState().ask(q).catch((error: unknown) => console.error(error));
@@ -122,38 +126,42 @@ export function AskScreen() {
       </div>
     ) : null;
 
-  const noticeRows =
-    notices.length > 0 ? (
-      <div className={styles.notices}>
-        {notices.map((n) => (
-          <NoticeRow
-            key={n.id}
-            tone={n.tone}
-            actions={
-              n.actions.length > 0
-                ? n.actions.map((a) => (
-                    <LinkButton key={a.label} to={a.to} variant="ghost" size="sm">
-                      {a.label}
-                    </LinkButton>
-                  ))
-                : undefined
-            }
-          >
-            <p id={n === modelNotice ? MODEL_NOTICE_ID : undefined}>{n.text}</p>
-          </NoticeRow>
-        ))}
-      </div>
-    ) : null;
+  const renderNotices = (list: AskNotice[]): ReactNode => (
+    <div className={styles.notices}>
+      {list.map((n) => (
+        <NoticeRow
+          key={n.id}
+          tone={n.tone}
+          actions={
+            n.actions.length > 0
+              ? n.actions.map((a) => (
+                  <LinkButton key={a.label} to={a.to} variant="ghost" size="sm">
+                    {a.label}
+                  </LinkButton>
+                ))
+              : undefined
+          }
+        >
+          <p id={n === modelNotice ? MODEL_NOTICE_ID : undefined}>{n.text}</p>
+        </NoticeRow>
+      ))}
+    </div>
+  );
+  const noticeRows = notices.length > 0 ? renderNotices(notices) : null;
 
   const onChange = (q: string) => useAskReal.getState().setQuestion(q);
 
   if (phase === 'idle') {
+    // F2: the indexing card takes the place of the one-line 'indexing' notice; the other notices stay.
+    const indexingShown = indexing.state !== 'idle';
+    const homeNotices = notices.filter((n) => n.id !== 'indexing');
+    const homeNoticeRows = homeNotices.length > 0 ? renderNotices(homeNotices) : null;
     return (
       <div className={styles.page} data-phase={phase}>
         <AskHome
           headlineLines={ASK_COPY.headlineLines}
           lead={ASK_COPY.lead}
-          notices={noticeRows}
+          notices={homeNoticeRows}
           card={
             <PromptCard
               ref={inputRef}
@@ -183,11 +191,19 @@ export function AskScreen() {
           }))}
           footer={
             <div className={styles.homeFooter}>
-              {notices.length === 0 ? <p className={styles.idle}>{ASK_COPY.idleHint}</p> : null}
+              {homeNotices.length === 0 && !indexingShown ? <p className={styles.idle}>{ASK_COPY.idleHint}</p> : null}
               <p className={styles.footerLine}>{ASK_COPY.footer}</p>
             </div>
           }
-        />
+        >
+          {indexingShown ? (
+            <div className={styles.indexing}>
+              <Suspense fallback={null}>
+                <IndexingCard />
+              </Suspense>
+            </div>
+          ) : null}
+        </AskHome>
       </div>
     );
   }

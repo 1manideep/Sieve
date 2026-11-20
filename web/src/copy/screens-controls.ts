@@ -29,6 +29,9 @@ export const REQUESTS = {
   bannerNoGrant: 'No assistant can ask yet. Connect one in Settings to get a link for it.',
   makeHomeBase: 'Make this my home base',
   useThisTab: 'Use this tab instead',
+  /** 40 section 13.8.9, testing mode. {stop} is a link to Settings with the text autoApproveStop. */
+  autoApproveNotice: 'Auto-approving answers for {names} until {time}. {stop}.',
+  autoApproveStop: 'Stop in Settings',
   connectAi: 'Connect an assistant',
   otherDeviceFallback: 'another computer',
   memorySaverTip:
@@ -130,10 +133,29 @@ export const SOURCES = {
   runningTitle: 'Indexing on this device',
   runningText: '{done} of {total} items · about {eta} left',
   runningLeft: '{left} items left',
-  runningSub: 'Labels, captions and safety checks run with Gemini Nano on this computer. Your questions always go first.',
+  /** While a source is still finding items: the total only grows, so no ETA yet (20 section 13.5). */
+  runningSoFar: '{done} of {total} items so far. Still finding more.',
+  runningSub: 'Everything runs on this computer, one step at a time. Your questions always go first.',
+  /** What the card says Sieve is working on now (20 section 13.5), in the order the work runs. */
+  stageReading: 'Reading {list}',
+  stageReadingNew: 'Reading new items',
+  stageLabel: 'Sorting {n} items with Gemini Nano',
+  stageLabelOne: 'Sorting 1 item with Gemini Nano',
+  stageEmbed: 'Making the search index',
+  stagePrivacy: 'Checking for personal details',
+  stageCaption: 'Describing {n} photos with Gemini Nano',
+  stageCaptionOne: 'Describing 1 photo with Gemini Nano',
+  /** "Reading 7 PDFs, 3 notes and 12 photos": one and many, in this order. */
+  inventory: {
+    pdfs: ['PDF', 'PDFs'], notes: ['note', 'notes'], photos: ['photo', 'photos'], files: ['other file', 'other files'], emails: ['email', 'emails'],
+  },
   yieldingText: 'Paused while Sieve answers your question.',
   pausedTitle: 'Indexing paused',
   pausedText: 'Resume to finish the index. {left} items left.',
+  batteryText: 'Paused on battery. Plug in, or press Resume to index anyway.',
+  batteryResume: 'Resume',
+  describePhotos: 'Describe photos with Gemini Nano',
+  describePhotosHelp: 'About 10 seconds of GPU per photo, newest first. Only while this computer is plugged in.',
   idleTitle: 'Your index is up to date.',
   lastUpdated: 'Last updated {when}',
   progressLabel: 'Indexing progress',
@@ -168,9 +190,8 @@ export const SOURCES = {
   fileTooBig: '{name} is over 10 MB.',
   fileUnsupported: "{name} isn't a supported file. Try PDF, text or a photo.",
   tooManyFiles: 'Add up to 5 files at a time.',
-  /** D9: before the Google popup for Gmail, say that Gmail access is in testing mode and offer the folder. */
-  gmailTesting:
-    'Gmail access is in Google\'s testing mode, so only accounts added as testers can connect. Others see Google\'s "access blocked" page. A local folder works for everyone.',
+  /** D9: before the Google popup for Gmail, say what Google's unverified-app warning asks for, and offer the folder. */
+  gmailTesting: "Google shows a warning that Sieve isn't verified yet. Press Advanced, then Go to Sieve, and allow read-only Gmail access.",
   useFolderInstead: 'Use a local folder instead',
   laterSources: 'Add a source: Google Calendar and Google Drive come later.',
   rebuildTitle: 'Rebuild the index?',
@@ -243,6 +264,7 @@ export const SEEN = {
   stepFull: 'Full item',
   byApp: 'Approved by you',
   byExtension: 'Approved in the extension',
+  byAuto: 'Approved automatically',
   byRule: 'Blocked by a rule',
   byDeclined: 'Declined by you',
   statusPending: 'Waiting for {aiName} to collect',
@@ -296,6 +318,12 @@ export const SETTINGS = {
   neverUsed: 'Never used',
   narrow: 'Change limits',
   revoke: 'Revoke',
+  // 13.8.9 Auto-approve, testing mode
+  autoApprove: 'Auto-approve answers',
+  autoApproveNote:
+    "For testing. Sieve answers this assistant's questions without asking you, answer only, for 2 hours. Every answer still gets a receipt.",
+  autoApproveUntil: 'Auto-approving until {time}',
+  autoApproveStop: 'Stop',
   past: 'Past connections ({n})',
   aisEmpty: 'No assistant can ask yet. Connect one to get a link you paste into it.',
   aisLoading: 'Loading connections',
@@ -455,12 +483,12 @@ export const TRY = {
   endSession: 'End session',
   viewerTitle: "The demo computer's screen",
   queued:
-    "Both demo computers are in use. You're number {n} in line (about {m} min). The Playground works right away in the meantime.",
-  offline: 'The demo computer is offline right now. The Playground shows everything with cloud answers on sample data.',
+    "Both demo computers are in use. You're number {n} in line (about {m} min). Meanwhile, Sieve works on your own computer with your own data.",
+  offline: 'The demo computer is offline right now. Sieve also works on your own computer with your own data.',
   /** Not quoted in 80: the broker's per-browser and hourly caps (80 section 4) need a line of their own. */
-  limited: "The demo computers can't take another visit from this browser right now. The Playground works right away.",
+  limited: "The demo computers can't take another visit from this browser right now. Sieve works on your own computer with your own data.",
   ended: 'This session has ended.',
-  openPlayground: 'Open the Playground',
+  openSieve: 'Open Sieve',
   again: 'Try again',
   ready: 'A demo computer is ready.',
   // F6 and F6A (docs/design/final-flow.md)

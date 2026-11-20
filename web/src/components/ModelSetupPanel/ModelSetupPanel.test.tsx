@@ -19,8 +19,9 @@ function renderPanel(props: ModelSetupPanelProps = {}) {
     <MemoryRouter initialEntries={['/prepare']}>
       <Routes>
         <Route path="/prepare" element={<main><ModelSetupPanel {...props} /></main>} />
-        <Route path="/playground" element={<p>Playground page</p>} />
-        <Route path="/" element={<p>Ask page</p>} />
+        <Route path="/setup" element={<p>Setup page</p>} />
+        <Route path="/settings" element={<p>Settings page</p>} />
+        <Route path="/ask" element={<p>Ask page</p>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -54,7 +55,8 @@ describe('ModelSetupPanel (page)', () => {
     expect(bar).toHaveAttribute('aria-valuenow', '10');
     expect(bar).toHaveAttribute('aria-valuetext', '10% downloaded');
     expect(screen.getByTestId('setup-progress-text')).toHaveTextContent('10%');
-    expect(screen.getByRole('link', { name: 'Open the Playground in a new tab' })).toHaveAttribute('target', '_blank');
+    expect(screen.getByText('Keep this tab open while it downloads.')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Playground/ })).toBeNull();
     await expectNoAxeViolations();
     const original = useAnnouncer.getState().announce;
     const announce = vi.fn();
@@ -68,7 +70,7 @@ describe('ModelSetupPanel (page)', () => {
 
   it('installing, then ready: "The on-device model is ready" and Continue goes back', async () => {
     useAvailability.setState({ text: 'downloadable', setup: { state: 'installing', fraction: 1 } });
-    renderPanel({ backHref: '/playground' });
+    renderPanel({ backHref: '/setup' });
     expect(screen.getByText('Installing on this device…')).toBeInTheDocument();
     expect(screen.getByText('Almost done. Chrome is unpacking the model.')).toBeInTheDocument();
     setAvailability({ text: 'available', setup: { state: 'done' } });
@@ -78,7 +80,7 @@ describe('ModelSetupPanel (page)', () => {
     expect(go).toHaveFocus();
     await expectNoAxeViolations();
     await userEvent.click(go);
-    expect(screen.getByText('Playground page')).toBeInTheDocument();
+    expect(screen.getByText('Setup page')).toBeInTheDocument();
   });
 
   it('downloading in another tab: "Show progress"; an error: the mapped message and Try again', async () => {
@@ -98,12 +100,14 @@ describe('ModelSetupPanel (page)', () => {
     await expectNoAxeViolations();
   });
 
-  it('unavailable: the requirements, "Open the Playground" and Back', async () => {
+  it('unavailable: the requirements, "Turn on cloud fallback" and Back, which defaults to Ask', async () => {
     useAvailability.setState({ text: 'unavailable', setup: { state: 'idle' } });
     renderPanel();
     expect(screen.getByText("This Chrome can't run the on-device model")).toBeInTheDocument();
     expect(screen.getByText(/Gemini Nano needs desktop Chrome 139 or later/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open the Playground' })).toHaveAttribute('href', '/playground');
+    expect(screen.getByText(/With it on, Sieve asks you before the cloud model reads anything\.$/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Turn on cloud fallback' })).toHaveAttribute('href', '/settings#cloud');
+    expect(screen.queryByRole('link', { name: /Playground/ })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByText('Ask page')).toBeInTheDocument();
   });
@@ -132,8 +136,9 @@ describe('ModelSetupPanel (embedded and compact)', () => {
     setAvailability({ text: 'available', setup: { state: 'done' } });
     expect(screen.getByText('On-device model ready')).toBeInTheDocument();
     setAvailability({ text: 'unavailable', setup: { state: 'idle' } });
-    expect(screen.getByText("This Chrome can't run Gemini Nano. Playground answers run in the cloud on sample data.")).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Why?' })).toHaveAttribute('href', '/prepare?back=/playground');
+    expect(screen.getByText("This Chrome can't run Gemini Nano. Answers here run in the cloud on sample data.")).toBeInTheDocument();
+    // "Why?" comes back to the page the strip is on (the demo seat's screen), without naming it.
+    expect(screen.getByRole('link', { name: 'Why?' })).toHaveAttribute('href', '/prepare?back=%2Fprepare');
     await expectNoAxeViolations();
   });
 });
@@ -144,7 +149,7 @@ describe('setup helpers', () => {
     expect(setupErrorMessage({ code: 'needs-click' })).toBe('Chrome needs a click to start. Press Try again.');
     expect(setupErrorMessage({ name: 'NetworkError' })).toBe('The download stopped. Check your connection and press Try again.');
     expect(setupErrorMessage(new Error('boom'), false)).toBe('The download stopped. Check your connection and press Try again.');
-    expect(setupErrorMessage(new Error('boom'), true)).toBe("Chrome couldn't set up the model. Try again, or use the Playground, which works without it.");
+    expect(setupErrorMessage(new Error('boom'), true)).toBe("Chrome couldn't set up the model. Try again, or turn on cloud fallback in Settings.");
   });
 
   it('estimates the time left only after 10 s of samples', () => {

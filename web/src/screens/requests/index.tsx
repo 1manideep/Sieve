@@ -15,7 +15,7 @@ import { ScreenHead } from '../settings/kit/ScreenHead';
 import { PendingList } from './PendingList';
 import { RecentRequests } from './RecentRequests';
 import { RequestDetail } from './RequestDetail';
-import { ClickNotice, GmailTokenBanner, MemorySaverTip, RoleBanner, ShortcutTip } from './RequestNotices';
+import { AutoApproveNotice, ClickNotice, GmailTokenBanner, MemorySaverTip, RoleBanner, ShortcutTip } from './RequestNotices';
 import styles from './requests.module.css';
 
 /** 40 section 13.5: ?id= if it matches; else the oldest waiting for the person; else the newest entry. */
@@ -64,6 +64,7 @@ export function Component() {
     <div className={kit.screen}>
       <ScreenHead title={SCREENS.requests.heading} tryNow />
       <RoleBanner onMakeHomeBase={() => setDialogOpen(true)} />
+      <AutoApproveNotice />
       <GmailTokenBanner />
       <ClickNotice />
       <MemorySaverTip />

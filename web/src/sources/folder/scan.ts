@@ -3,7 +3,7 @@
 import type { IndexRecord } from '@sieve/shared';
 import { FOLDER_FOCUS_RESCAN_MS, FOLDER_MAX_DEPTH, FOLDER_MAX_FILES, FOLDER_RESCAN_MS, SOURCE_REF_MAX_CHARS } from '../../index/config';
 import { removeRecord, removeRecords, writeIfCurrentDetailed } from '../../index/consistency';
-import type { SieveDb, SourceRow } from '../../index/db';
+import type { SieveDb, SourceInventory, SourceRow } from '../../index/db';
 import { blobBytes, sha256Hex } from '../../index/hash';
 import { IngestError, ingestInternal, type RawItem } from '../../index/ingest';
 import { isLeader } from '../../index/locks';
@@ -18,6 +18,14 @@ class Stop extends Error {
   constructor(readonly code: 'permission' | 'missing' | 'paused' | 'aborted') {
     super(code);
   }
+}
+
+/** The card's word for a file type: "7 PDFs, 3 notes, 12 photos" (20 section 13.5). */
+function inventoryKind(type: FileType): keyof SourceInventory {
+  if (type === 'pdf') return 'pdfs';
+  if (type === 'text' || type === 'markdown') return 'notes';
+  if (type === 'json') return 'files';
+  return 'photos';
 }
 
 function errName(e: unknown): string {
@@ -93,11 +101,17 @@ async function doScan(db: SieveDb, signal?: AbortSignal): Promise<void> {
   };
   await patch({ phase: 'scanning' });
 
-  // pass 1: walk fully
+  // pass 1: walk fully. While it walks, the total only grows and the card says "so far" (20 section 13.5).
   const entries: FileEntry[] = [];
   const seen = new Set<string>();
   let complete = true;
   let tooBig = false;
+  const storedCount = await db.records.where('source').equals('folder').count();
+  const listing = () => {
+    rt.syncProgress.set('folder', { discovered: entries.length, remaining: Math.max(0, entries.length - storedCount), listing: true });
+    void rt.queue?.writeRowsNow?.();
+  };
+  listing();
   try {
     for await (const item of walkFolder(root, { maxDepth: FOLDER_MAX_DEPTH, maxFiles: FOLDER_MAX_FILES, signal })) {
       if ('tooBig' in item) {
@@ -116,9 +130,14 @@ async function doScan(db: SieveDb, signal?: AbortSignal): Promise<void> {
       }
       seen.add('folder:' + item.path);
       entries.push(item);
+      if (entries.length % 200 === 0) listing();
     }
   } catch (e) {
     const n = errName(e);
+    if (n === 'NotAllowedError' || n === 'SecurityError' || n === 'NotFoundError' || n === 'AbortError') {
+      rt.syncProgress.delete('folder');
+      void rt.queue?.writeRowsNow?.();
+    }
     if (n === 'NotAllowedError' || n === 'SecurityError') {
       await patch({ errorCode: 'permission-needed', error: SOURCE_COPY.folderPermission(name), needsAuth: true, phase: 'idle' });
       return;
@@ -130,13 +149,31 @@ async function doScan(db: SieveDb, signal?: AbortSignal): Promise<void> {
     if (n === 'AbortError') return;
     complete = false;
   }
-  rt.syncProgress.set('folder', { discovered: entries.length, remaining: entries.length });
-
   // moves, then deletions (01 invariant 5: before indexing new files)
   const stored = new Map<string, IndexRecord>();
   await db.records.where('source').equals('folder').each((r) => {
     stored.set(r.id, r);
   });
+
+  // The inventory, before any model work (20 section 13.5): the files this scan will read, by kind, and the row's
+  // progress total. Unchanged files take the fast path in pass 2 and are not counted as left to read.
+  const readable = (e: FileEntry): boolean => {
+    const type = fileTypeOf(e.name);
+    if (!type || e.size > maxBytesFor(type) || e.path.length > SOURCE_REF_MAX_CHARS) return false;
+    const rec = stored.get('folder:' + e.path);
+    return !(rec && rec.sizeBytes === e.size && rec.sourceModifiedAt === e.lastModified);
+  };
+  const toRead = new Set<string>();
+  const inventory: SourceInventory = {};
+  for (const e of entries) {
+    if (!readable(e)) continue;
+    toRead.add(e.path);
+    const k = inventoryKind(fileTypeOf(e.name) as FileType);
+    inventory[k] = (inventory[k] ?? 0) + 1;
+  }
+  await patch({ inventory });
+  rt.syncProgress.set('folder', { discovered: entries.length, remaining: toRead.size });
+  await rt.queue?.writeRowsNow?.();
   const vanished = complete ? [...stored.values()].filter((r) => !seen.has(r.id)) : [];
   const moved = new Set<string>();
   if (vanished.length > 0) {
@@ -171,13 +208,15 @@ async function doScan(db: SieveDb, signal?: AbortSignal): Promise<void> {
 
   // pass 2: newest first
   entries.sort((a, b) => b.lastModified - a.lastModified);
-  let remaining = entries.length;
+  let remaining = toRead.size;
   try {
     for (const e of entries) {
       if (signal?.aborted) throw new Stop('aborted');
       if (pausedDbs.has(db)) throw new Stop('paused');
-      remaining--;
-      rt.syncProgress.set('folder', { discovered: entries.length, remaining });
+      if (toRead.has(e.path)) {
+        remaining--;
+        rt.syncProgress.set('folder', { discovered: entries.length, remaining });
+      }
       const id = 'folder:' + e.path;
       if (e.path.length > SOURCE_REF_MAX_CHARS) {
         skip('limit');

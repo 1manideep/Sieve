@@ -6,13 +6,8 @@ export async function requireGoogle({ request }: LoaderFunctionArgs): Promise<nu
   await whenAuthReady();
   if (useSession.getState().kind !== 'google') {
     const url = new URL(request.url);
-    throw redirect('/welcome?next=' + encodeURIComponent(url.pathname + url.search + url.hash));
+    throw redirect('/?next=' + encodeURIComponent(url.pathname + url.search + url.hash));
   }
   return null;
 }
 
-export async function welcomeLoader(): Promise<null> {
-  await whenAuthReady();
-  if (useSession.getState().kind === 'google') throw redirect('/');
-  return null;
-}

@@ -230,7 +230,7 @@ export const OUTCOME_COPY = {
   modelBody:
     'Your own data stays unread without it. Turn on cloud fallback in Settings to use the cloud model, with your OK each time.',
   settings: 'Settings',
-  tryPlayground: 'Try the Playground',
+  setUpModel: 'Set up the on-device model',
   errorTitle: 'Something went wrong on this device',
   errorBody: 'Nothing was shared.',
   retry: 'Try again',
@@ -292,8 +292,7 @@ export const MODEL_SETUP_COPY = {
   valueText: '{pct}% downloaded',
   progress: '{pct}%',
   progressEta: '{pct}% · about {eta} left',
-  keepOpen: 'Keep this tab open. You can try the Playground in another tab meanwhile.',
-  openPlaygroundNewTab: 'Open the Playground in a new tab',
+  keepOpen: 'Keep this tab open while it downloads.',
   installing: 'Installing on this device…',
   installingBody: 'Almost done. Chrome is unpacking the model.',
   finishing: 'Finishing setup on this device. This can take a minute or two.',
@@ -307,23 +306,23 @@ export const MODEL_SETUP_COPY = {
   tryAgain: 'Try again',
   unavailableTitle: "This Chrome can't run the on-device model",
   unavailableBody:
-    'Gemini Nano needs desktop Chrome 139 or later on Windows 10 or 11, macOS 13 or later, Linux, or a Chromebook Plus, with 22 GB of free disk space and either a graphics card with more than 4 GB of memory or 16 GB of RAM. Your own data stays unread here unless you turn on cloud fallback. The Playground still works and labels what runs in the cloud.',
-  openPlayground: 'Open the Playground',
+    'Gemini Nano needs desktop Chrome 139 or later on Windows 10 or 11, macOS 13 or later, Linux, or a Chromebook Plus, with 22 GB of free disk space and either a graphics card with more than 4 GB of memory or 16 GB of RAM. Your own data stays unread here unless you turn on cloud fallback. With it on, Sieve asks you before the cloud model reads anything.',
+  turnOnCloud: 'Turn on cloud fallback',
   back: 'Back',
   checking: 'Checking this Chrome for the on-device model…',
   errorDisk: 'Chrome needs more free disk space (about 22 GB) to set up the model.',
   errorNotAllowed: 'Chrome needs a click to start. Press Try again.',
   errorNetwork: 'The download stopped. Check your connection and press Try again.',
-  errorOther: "Chrome couldn't set up the model. Try again, or use the Playground, which works without it.",
+  errorOther: "Chrome couldn't set up the model. Try again, or turn on cloud fallback in Settings.",
   announceStep: 'Setup {pct}% done.',
   announceReady: 'The on-device model is ready.',
-  // Compact variant for the Playground strip (40 section 13.2a)
+  // Compact variant for the demo seats' setup strip (40 section 13.2a)
   compactNotSetUp: "Gemini Nano isn't set up in this Chrome yet.",
   compactStart: 'Set up on-device AI (about 4 GB, about 3 to 4 minutes)',
   compactProgress: 'Setting up Gemini Nano on this computer · {pct}%',
   compactInstalling: 'Installing… Chrome is unpacking the model. This can sit near 90% for a minute or two.',
   compactReady: 'On-device model ready',
-  compactUnavailable: "This Chrome can't run Gemini Nano. Playground answers run in the cloud on sample data.",
+  compactUnavailable: "This Chrome can't run Gemini Nano. Answers here run in the cloud on sample data.",
   compactWhy: 'Why?',
   compactDownloading: 'Chrome is setting up Gemini Nano. This can take a few minutes.',
 } as const;
@@ -346,8 +345,6 @@ export const OWNER_CONFLICT_COPY = {
 
 export const WELCOME_COPY = {
   tag: 'Built with Gemini Nano and Firebase AI Logic',
-  tryPlayground: 'Try the Playground',
-  tryCaption: 'No sign-in. A pretend computer with sample mail, photos and documents.',
   signIn: 'Sign in with Google',
   signInCaption:
     'Use your own Gmail and files. Sign-in asks only for your name and email; Gmail access is a separate step you choose.',
@@ -375,16 +372,13 @@ export const WELCOME_COPY = {
       body: 'What has AI seen? lists every share: who asked, what left, and when.',
     },
   ],
-  requirements:
-    'Works best in Chrome 139 or later with Gemini Nano. Without it, the Playground runs its sample data in the cloud and labels every step that does.',
   footerLicense: 'Open source under Apache-2.0',
   footerSource: 'Source code',
   footerHackathon: 'Built for #BuildHybridAI 2026',
   // F1, the landing (docs/design/final-flow.md)
   openSieve: 'Open Sieve',
   tryComputer: 'Try on a real computer',
-  signInNote: 'Open Sieve signs you in with Google. No account?',
-  signInNoteLink: 'The Playground needs none.',
+  signInNote: 'Open Sieve signs you in with Google.',
   sceneLabel: 'A sphere of 1,204 emails, 92 photos and 31 documents on this computer, with one approved line leaving it.',
   constellation: { emails: '1,204 emails', photos: '92 photos', documents: '31 documents', line: 'one approved line' },
   numbers: [
@@ -442,18 +436,21 @@ export const SETUP_COPY = {
   next: 'Next',
   skipForNow: 'Skip for now',
   finish: 'Finish',
-  step1Title: 'Prepare the on-device model',
-  step2Title: 'Make this computer your home base',
-  step2Body:
+  // 40 section 13.3: connect first, then the model, the home base and notifications.
+  step1Title: 'Connect your data',
+  step1Body: 'Sieve reads your Gmail and the folders you pick, on this computer only. Mail and files never reach our server.',
+  step1Note:
+    'Indexing runs in the background on this device. You can ask questions while it works; your questions go first.',
+  step2Title: 'Prepare the on-device model',
+  step2Note: 'The download keeps going in the background while you finish setup.',
+  step3Title: 'Make this computer your home base',
+  step3Body:
     'Requests from AIs you connect come to an open Sieve tab on one computer. Sieve does the private work there and asks you before anything is shared.',
-  step2Done: 'This computer is your home base.',
+  step3Done: 'This computer is your home base.',
   nameLabel: 'Name this computer',
   nameError: 'Give this computer a name.',
   makeHomeBase: 'Make this my home base',
   homeBaseFailed: "Couldn't make this the home base. Check your connection and try again.",
-  step3Title: 'Connect a source',
-  step3Note:
-    'Indexing runs in the background on this device. You can ask questions while it works; your questions go first.',
   tryAgain: 'Try again',
   step4Title: 'Get told when an AI asks',
   push: 'Push notification when a request is waiting',
@@ -509,13 +506,13 @@ export const ASK_COPY = {
   noticeDownloadable: 'Set up the on-device model once to ask about your own data. It takes about 3 to 4 minutes.',
   noticeSettingUp: "The on-device model is being set up ({pct}%). You can ask once it's ready.",
   noticeNoModel:
-    "This Chrome has no on-device model, so Sieve can't read your own data here. Turn on cloud fallback in Settings, or try the Playground.",
+    "This Chrome has no on-device model, so Sieve can't read your own data here. See what the model needs, or turn on cloud fallback in Settings.",
   noticeNoModelCloud:
     'No on-device model here. Sieve will ask you before the cloud model reads anything, and show you the exact text.',
   noticeIndexing:
     "Indexing on this device: {left} items left. Answers can miss what isn't indexed yet. Your question goes first.",
   goToSources: 'Go to Sources',
-  tryPlayground: 'Try the Playground',
+  setUpModel: 'Set up the on-device model',
   setItUp: 'Set it up',
   showProgress: 'Show progress',
   settings: 'Settings',
@@ -657,8 +654,7 @@ export const PLAYGROUND_COPY = {
   ownDataTitle: 'Use your own data',
   ownDataBody:
     'Sign in with Google to use Sieve on your own mail and files. Sign-in asks only for your name and email.',
-  ownDataGmail:
-    'Sieve\'s Gmail access is still in Google\'s testing mode, so only accounts added as testers can connect Gmail. Other accounts would see Google\'s "access blocked" page.',
+  ownDataGmail: "Google shows a warning that Sieve isn't verified yet. Press Advanced, then Go to Sieve.",
   ownDataFolder: 'A local folder works for everyone: after you sign in, pick a folder of files and photos on this computer.',
   ownDataSignIn: 'Sign in with Google',
   ownDataStay: 'Stay in the Playground',

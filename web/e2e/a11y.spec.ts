@@ -18,9 +18,9 @@ async function seriousViolations(page: Page): Promise<string[]> {
 }
 
 test.describe('accessibility', () => {
-  test('/welcome', async ({ page }) => {
+  test('/ (the landing)', async ({ page }) => {
     await prepareStubs(page, { availability: 'available' });
-    await page.goto('/welcome');
+    await page.goto('/');
     await expect(page.getByRole('heading', { level: 1, name: 'Only what you approve leaves your computer.' })).toBeVisible();
     expect(await seriousViolations(page)).toEqual([]);
   });

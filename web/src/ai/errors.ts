@@ -42,6 +42,18 @@ const MSG = {
   generic: 'Something went wrong with the model.',
 };
 
+/**
+ * A refusal from the cloud model that a retry cannot fix: an HTTP 4xx other than 429 (for example 400
+ * FAILED_PRECONDITION "Firebase AI Logic genai config not found", or 403 from App Check). 429 is a busy model and
+ * may be retried; 5xx and network failures are not refusals.
+ */
+export function isCloudRefusal(e: unknown): boolean {
+  const ai = asAIError(e);
+  if (!ai || ai.code !== 'fetch-error') return false;
+  const status = ai.customErrorData?.status;
+  return status !== undefined && status >= 400 && status < 500 && status !== 429;
+}
+
 export function mapError(
   e: unknown,
   ctx: { mode: InferenceModeName; timedOut: boolean; callerAborted: boolean; timeoutMs?: number },

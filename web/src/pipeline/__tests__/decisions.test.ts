@@ -115,6 +115,21 @@ describe('finalizeDecision and related items (10 section 16.11)', () => {
     expect(payload?.itemCount).toBe(2);
   });
 
+  it('FD-8b: a related item gets the same share-time Nano check, on its own outgoing text (11 section 10.7)', async () => {
+    const p = await golden();
+    privacy.checkOutgoing.mockClear();
+    privacy.buildStepOption.mockClear();
+    const step = { kind: 'pii' as const, label: 'Found and masked 1 name in the text to share', where: 'device' as const, ms: 30, at: 1 };
+    privacy.checkOutgoing.mockResolvedValueOnce({ entities: [{ text: 'Dana', type: 'name', by: 'nano' }], quotes: [], trace: [step], nanoPii: true, ran: 2, shareChecks: [{ key: 'k' }] });
+    const related = await buildRelatedOptions({ db, proposal: p, recordId: 'playground:pets', dataClass: 'sample' });
+    expect(privacy.checkOutgoing).toHaveBeenCalledTimes(1);
+    expect(privacy.checkOutgoing.mock.calls[0]![2].map((o) => o.step)).toEqual(['excerpt', 'full']);
+    expect(privacy.buildStepOption).toHaveBeenCalledTimes(4);              // built, then built again with what Nano found
+    expect(privacy.buildStepOption.mock.calls[2]![4]).toMatchObject({ extraEntities: [{ text: 'Dana', type: 'name', by: 'nano' }], extraQuotes: [] });
+    expect(related[2].trace).toContainEqual(step);
+    expect(idx.patchRecord).toHaveBeenCalledWith(db, 'playground:pets', expect.any(Number), { shareChecks: [{ key: 'k' }] });
+  });
+
   it('FD-9: a related item cannot be shared at the answer step; unknown items are refused', async () => {
     const p = await golden();
     const related = await buildRelatedOptions({ db, proposal: p, recordId: 'playground:pets', dataClass: 'sample' });

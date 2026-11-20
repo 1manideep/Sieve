@@ -1,5 +1,5 @@
 // Prepare the on-device model (`/prepare?back=<path>`, 40 sections 13.2 and 16.18): one centred card with the
-// click-started setup. "Back" goes to ?back= (default "/" for Google users, "/playground" otherwise).
+// click-started setup. "Back" goes to ?back= (default "/"; a signed-out person is sent on to Welcome from there).
 import { Link, useSearchParams } from 'react-router-dom';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
 import { Icon } from '@/components/icons';
@@ -7,13 +7,11 @@ import { ModelSetupPanel } from '@/components/ModelSetupPanel/ModelSetupPanel';
 import { safePath } from '@/components/signIn';
 import { TITLES } from '@/copy/strings';
 import { PREPARE_COPY } from '@/copy/screens-main';
-import { useSession } from '@/state/session';
 import styles from './prepare.module.css';
 
 export function PrepareScreen() {
   const [params] = useSearchParams();
-  const google = useSession((s) => s.kind === 'google');
-  const back = safePath(params.get('back'), google ? '/' : '/playground');
+  const back = safePath(params.get('back'), '/ask');
   return (
     <div className={styles.page}>
       <p className={styles.back}>

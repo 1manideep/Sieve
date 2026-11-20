@@ -12,8 +12,10 @@ import { approveOnlyIfAsked, sentHeading } from '../src/shared/labels';
 import { App, CONNECTING_DELAY_MS } from '../src/sidepanel/App';
 import { LIFTING_TEXT_TEST_ID, TRANSITION_TEST_ID } from '../src/sidepanel/components/ApprovedTransition';
 import { shortcutHint } from '../src/sidepanel/shortcut';
+import type { SettingsStore } from '../src/sidepanel/components/SettingsMenu';
 import { detectSurface } from '../src/sidepanel/surface';
 import type { PanelApi } from '../src/sidepanel/usePanelPort';
+import type { Settings } from '../src/shared/settings';
 import { portPair } from './fakeChrome';
 import type { FakePort } from './fakeChrome';
 import {
@@ -35,13 +37,14 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function setup(opts: { surface?: Surface; openSidePanel?: () => Promise<void> } = {}) {
+function setup(opts: { surface?: Surface; openSidePanel?: () => Promise<void>; settings?: SettingsStore } = {}) {
   const box: { worker: FakePort | null } = { worker: null };
   const sent: unknown[] = [];
   const closePanel = vi.fn();
   const api: PanelApi = {
     ...(opts.surface ? { surface: opts.surface } : {}),
     ...(opts.openSidePanel ? { openSidePanel: opts.openSidePanel } : {}),
+    ...(opts.settings ? { settings: opts.settings } : {}),
     runtime: {
       connect: ({ name }) => {
         const { near, far } = portPair(name, {});
@@ -539,6 +542,142 @@ describe('header and footer', () => {
     expect(shortcutHint({ platform: 'Win32' })).toBe('Alt+Shift+S');
     expect(shortcutHint({ platform: 'Linux x86_64' })).toBe('Alt+Shift+S');
     expect(shortcutHint({})).toBe('Alt+Shift+S');
+  });
+});
+
+describe('settings (50 section 8.10)', () => {
+  function memoryStore(initial: Settings = { openOnArrival: true }, opts: { writeRejects?: boolean } = {}) {
+    let current: Settings = { ...initial };
+    const writes: Partial<Settings>[] = [];
+    const store: SettingsStore = {
+      read: vi.fn(() => Promise.resolve({ ...current })),
+      write: vi.fn((change: Partial<Settings>) => {
+        writes.push(change);
+        if (opts.writeRejects) return Promise.reject(new Error('quota'));
+        current = { ...current, ...change };
+        return Promise.resolve({ ...current });
+      }),
+    };
+    return { store, writes, current: () => current };
+  }
+  const gear = () => screen.getByRole('button', { name: 'Settings' });
+  const toggle = () => screen.getByRole('switch', { name: 'Open when a request arrives' });
+  const settle = () =>
+    act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+  it('the gear shows the settings: "Open when a request arrives", on by default', async () => {
+    const { store } = memoryStore();
+    const t = setup({ surface: 'popup', settings: store });
+    t.push(panelState());
+    await settle();
+    expect(gear()).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument(); // hidden until the gear is pressed
+    fireEvent.click(gear());
+    expect(gear()).toHaveAttribute('aria-expanded', 'true');
+    expect(gear()).toHaveAttribute('aria-controls', screen.getByRole('region', { name: 'Settings' }).id);
+    expect(toggle()).toBeChecked();
+    expect(toggle()).toBeEnabled();
+    expect(toggle()).toHaveAccessibleDescription(
+      'Sieve opens its popup by itself when a new request comes in. When this is off, you get the badge and a notification.',
+    );
+    // The header keeps the close button next to the gear.
+    expect(within(screen.getByRole('banner')).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Settings', 'Close the panel']);
+    await expectNoAxeViolations();
+    fireEvent.click(gear());
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+  });
+
+  it('turning it off saves openOnArrival false; a stored off shows off, and turning it on saves true', async () => {
+    const { store, writes, current } = memoryStore();
+    const t = setup({ settings: store });
+    t.push(panelState({ proposals: [DEPOSIT] }));
+    await settle();
+    fireEvent.click(gear());
+    await act(async () => {
+      fireEvent.click(toggle());
+      await Promise.resolve();
+    });
+    expect(writes).toEqual([{ openOnArrival: false }]);
+    expect(current()).toEqual({ openOnArrival: false });
+    expect(toggle()).not.toBeChecked();
+    expect(screen.getByRole('heading', { name: 'A request is waiting' })).toBeInTheDocument(); // the card stays
+    cleanup();
+    const off = memoryStore({ openOnArrival: false });
+    setup({ settings: off.store }).push(panelState());
+    await settle();
+    fireEvent.click(gear());
+    expect(toggle()).not.toBeChecked();
+    await act(async () => {
+      fireEvent.click(toggle());
+      await Promise.resolve();
+    });
+    expect(off.writes).toEqual([{ openOnArrival: true }]);
+    expect(toggle()).toBeChecked();
+  });
+
+  it('Escape closes the settings and puts focus back on the gear', async () => {
+    const { store } = memoryStore();
+    setup({ settings: store }).push(panelState());
+    await settle();
+    fireEvent.click(gear());
+    toggle().focus();
+    fireEvent.keyDown(toggle(), { key: 'Escape' });
+    expect(gear()).toHaveAttribute('aria-expanded', 'false');
+    expect(gear()).toHaveFocus();
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument();
+  });
+
+  it('a save that fails puts the switch back and says so', async () => {
+    const { store } = memoryStore({ openOnArrival: true }, { writeRejects: true });
+    setup({ settings: store }).push(panelState());
+    await settle();
+    fireEvent.click(gear());
+    await act(async () => {
+      fireEvent.click(toggle());
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(toggle()).toBeChecked();
+    expect(screen.getByRole('alert')).toHaveTextContent("Couldn't save this setting. Try again.");
+  });
+
+  it('quick presses end on the last choice, even when the saves finish out of order', async () => {
+    const pendingWrites: { change: Partial<Settings>; done: (v: Settings) => void }[] = [];
+    const store: SettingsStore = {
+      read: () => Promise.resolve({ openOnArrival: true }),
+      write: (change) => new Promise<Settings>((done) => pendingWrites.push({ change, done })),
+    };
+    setup({ settings: store }).push(panelState());
+    await settle();
+    fireEvent.click(gear());
+    fireEvent.click(toggle()); // off
+    fireEvent.click(toggle()); // on
+    fireEvent.click(toggle()); // off
+    expect(pendingWrites.map((w) => w.change)).toEqual([{ openOnArrival: false }, { openOnArrival: true }, { openOnArrival: false }]);
+    await act(async () => {
+      pendingWrites[2]?.done({ openOnArrival: false });
+      pendingWrites[0]?.done({ openOnArrival: false });
+      pendingWrites[1]?.done({ openOnArrival: true }); // an older save, finishing last
+      await Promise.resolve();
+    });
+    expect(toggle()).not.toBeChecked();
+  });
+
+  it('the switch waits for the stored value before it can be changed', () => {
+    const store: SettingsStore = { read: () => new Promise(() => {}), write: vi.fn() };
+    setup({ settings: store }).push(panelState());
+    fireEvent.click(gear());
+    expect(toggle()).toBeDisabled();
+    expect(toggle()).toBeChecked(); // shows the default meanwhile
+  });
+
+  it('without a settings store the header has no gear', () => {
+    setup().push(panelState());
+    expect(screen.queryByRole('button', { name: 'Settings' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Settings' })).not.toBeInTheDocument();
   });
 });
 

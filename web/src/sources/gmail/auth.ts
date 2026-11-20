@@ -1,6 +1,11 @@
 // Google Identity Services token client for gmail.readonly (20 section 15.1). The token lives only in this
 // module's memory: never in IndexedDB, localStorage, sessionStorage, Firestore, a URL or a log.
+// When the Google sign-in script is not there at click time (blocked, still loading, or no client id), the same click
+// asks through the Firebase popup instead (reauthenticateWithPopup with the gmail.readonly scope). It never waits for
+// the script: the popup must open inside the click.
+import { GoogleAuthProvider, reauthenticateWithPopup, type User, type UserCredential } from 'firebase/auth';
 import { env } from '@/app/env';
+import { getAuthInstance } from '@/app/firebase';
 import { GIS_LOAD_TIMEOUT_MS, GIS_SRC, GMAIL_SCOPE, GMAIL_TOKEN_SKEW_MS } from '../../index/config';
 import { SOURCE_COPY, SourceError } from '../types';
 
@@ -16,6 +21,12 @@ interface GoogleOauth2 {
 }
 interface GoogleGlobal { accounts?: { oauth2?: GoogleOauth2 } }
 
+/** A token from the Firebase popup carries no lifetime; Google's access tokens last an hour. */
+export const FIREBASE_TOKEN_MS = 55 * 60_000;
+/** POST endpoints: the token goes in the body, never in a URL. */
+const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo';
+const REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
+
 let token: { value: string; expiresAt: number } | null = null;
 let gisPromise: Promise<void> | null = null;
 let client: TokenClient | null = null;
@@ -27,30 +38,26 @@ function oauth2(): GoogleOauth2 | undefined {
 
 /**
  * The OAuth client id, read from web/src/app/env.ts as `env.googleOAuthClientId` (VITE_GOOGLE_OAUTH_CLIENT_ID).
- * env.ts does not expose it yet (contract change request in the WP4 report); until it does this is undefined
- * and Gmail sign-in reports that it is not set up.
+ * Without it the Google sign-in script cannot be used, and the Firebase popup asks instead.
  */
 export function gmailClientId(): string | undefined {
   const id = (env as typeof env & { googleOAuthClientId?: string }).googleOAuthClientId;
   return id && id.trim() ? id.trim() : undefined;
 }
 
-/** Inject the GIS script once; resolve when google.accounts.oauth2 exists. */
+/**
+ * Inject the GIS script once; resolve when google.accounts.oauth2 exists. Best effort, on mount: a click never waits
+ * for it. A script that failed or timed out is removed, so the next attempt injects a fresh one (a dead element never
+ * fires again, and reusing it would make every later attempt wait out the timeout).
+ */
 export function preloadGis(): Promise<void> {
   if (oauth2()) return Promise.resolve();
   gisPromise ??= new Promise<void>((resolve, reject) => {
-    const fail = () => {
+    if (typeof document === 'undefined') {
       gisPromise = null;
       reject(new SourceError('gis-load-failed', SOURCE_COPY.gisLoadFailed));
-    };
-    const timer = setTimeout(fail, GIS_LOAD_TIMEOUT_MS);
-    const done = () => {
-      if (oauth2()) {
-        clearTimeout(timer);
-        resolve();
-      }
-    };
-    if (typeof document === 'undefined') return fail();
+      return;
+    }
     let script = document.querySelector<HTMLScriptElement>(`script[src="${GIS_SRC}"]`);
     if (!script) {
       script = document.createElement('script');
@@ -58,12 +65,30 @@ export function preloadGis(): Promise<void> {
       script.async = true;
       document.head.appendChild(script);
     }
-    script.addEventListener('load', done);
-    script.addEventListener('error', () => {
+    const el = script;
+    let settled = false;
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      fail();
-    });
-    done();
+      el.removeEventListener('load', onLoad);
+      el.removeEventListener('error', onError);
+      if (ok) {
+        resolve();
+        return;
+      }
+      el.remove();
+      gisPromise = null;
+      reject(new SourceError('gis-load-failed', SOURCE_COPY.gisLoadFailed));
+    };
+    const onLoad = () => {
+      if (oauth2()) finish(true);
+    };
+    const onError = () => finish(false);
+    const timer = setTimeout(() => finish(Boolean(oauth2())), GIS_LOAD_TIMEOUT_MS);
+    el.addEventListener('load', onLoad);
+    el.addEventListener('error', onError);
+    onLoad();
   });
   return gisPromise;
 }
@@ -107,8 +132,17 @@ function tokenClient(): TokenClient {
   return client;
 }
 
-/** Call synchronously inside the click handler so the popup keeps the user activation. */
-export function requestGmailToken(opts: { prompt: '' | 'consent' | 'select_account'; loginHint?: string }): Promise<void> {
+type TokenRequest = { prompt: '' | 'consent' | 'select_account'; loginHint?: string };
+
+/**
+ * Call synchronously inside the click handler so the popup keeps the user activation. Google Identity Services when
+ * it has loaded; otherwise the Firebase popup, at once.
+ */
+export function requestGmailToken(opts: TokenRequest): Promise<void> {
+  return oauth2() && gmailClientId() ? requestWithGis(opts) : requestWithFirebase(opts);
+}
+
+function requestWithGis(opts: TokenRequest): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     try {
       const c = tokenClient();
@@ -121,6 +155,65 @@ export function requestGmailToken(opts: { prompt: '' | 'consent' | 'select_accou
       pending = null;
       reject(e);
     }
+  });
+}
+
+/** Firebase popup errors as source errors. Only the code is read: the error can carry the credential. */
+function popupError(e: unknown): SourceError {
+  if (e instanceof SourceError) return e;
+  const code = (e as { code?: unknown } | null)?.code;
+  if (code === 'auth/popup-blocked') return new SourceError('popup-blocked', SOURCE_COPY.popupBlocked);
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request' || code === 'auth/user-cancelled') {
+    return new SourceError('popup-closed', SOURCE_COPY.popupClosed);
+  }
+  if (code === 'auth/user-mismatch') return new SourceError('unknown', SOURCE_COPY.otherAccount);
+  return new SourceError('unknown', SOURCE_COPY.signInFailed);
+}
+
+/** The scopes Google granted this token, or null when the check could not run (the Gmail calls that follow will say). */
+async function grantedScopes(accessToken: string): Promise<string | null> {
+  let res: Response;
+  try {
+    res = await fetch(TOKENINFO_URL, { method: 'POST', body: new URLSearchParams({ access_token: accessToken }) });
+  } catch {
+    return null;
+  }
+  if (!res.ok) throw new SourceError('unknown', SOURCE_COPY.signInFailed);
+  const info = (await res.json().catch(() => null)) as { scope?: unknown } | null;
+  return typeof info?.scope === 'string' ? info.scope : '';
+}
+
+async function keepFirebaseToken(result: UserCredential): Promise<void> {
+  const accessToken = GoogleAuthProvider.credentialFromResult(result)?.accessToken;
+  if (!accessToken) throw new SourceError('unknown', SOURCE_COPY.signInFailed);
+  // The credential is trusted when the result lists its scopes; Firebase usually does not, so Google is asked.
+  const listed = (result as UserCredential & { _tokenResponse?: { scope?: unknown } })._tokenResponse?.scope;
+  const scopes = typeof listed === 'string' ? listed : await grantedScopes(accessToken);
+  if (scopes !== null && !scopes.split(/[\s,]+/).includes(GMAIL_SCOPE)) throw new SourceError('scope-denied', SOURCE_COPY.scopeDenied);
+  token = { value: accessToken, expiresAt: Date.now() + FIREBASE_TOKEN_MS };
+}
+
+/** The Firebase popup for the signed-in Google account, opened before any await. */
+function requestWithFirebase(opts: TokenRequest): Promise<void> {
+  let user: User | null;
+  try {
+    user = getAuthInstance().currentUser;
+  } catch {
+    user = null;
+  }
+  // Neither way is open: no Google sign-in script and no Google account to ask through.
+  if (!user || user.isAnonymous) return Promise.reject(new SourceError('gis-load-failed', SOURCE_COPY.gisLoadFailed));
+  const provider = new GoogleAuthProvider();
+  provider.addScope(GMAIL_SCOPE);
+  provider.setCustomParameters({ ...(opts.prompt ? { prompt: 'consent' } : {}), ...(user.email ? { login_hint: user.email } : {}) });
+  let popup: Promise<UserCredential>;
+  try {
+    popup = reauthenticateWithPopup(user, provider);
+  } catch (e) {
+    return Promise.reject(popupError(e));
+  }
+  return popup.then(keepFirebaseToken).catch((e: unknown) => {
+    throw popupError(e);
   });
 }
 
@@ -138,8 +231,17 @@ export function clearGmailToken(): void {
 export async function revokeGmailToken(): Promise<void> {
   const t = token?.value;
   token = null;
+  if (!t) return;
   const o = oauth2();
-  if (!t || !o) return;
+  if (!o) {
+    // No Google sign-in script (the token came from the Firebase popup): Google's revoke endpoint, token in the body.
+    try {
+      await fetch(REVOKE_URL, { method: 'POST', body: new URLSearchParams({ token: t }) });
+    } catch {
+      // Offline: the token still runs out within the hour, and Sieve has already forgotten it.
+    }
+    return;
+  }
   await new Promise<void>((resolve) => {
     try {
       o.revoke(t, () => resolve());
