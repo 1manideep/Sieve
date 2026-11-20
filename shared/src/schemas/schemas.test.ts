@@ -11,13 +11,13 @@ const validateCheck = ajv.compile(MCP_CHECK_INPUT_SCHEMA);
 
 // Every ToolResult status, checked against the type in both directions.
 const TOOL_STATUSES = [
-  'answered', 'pending', 'declined', 'blocked', 'no-match', 'offline', 'expired', 'not-allowed', 'error',
+  'answered', 'pending', 'declined', 'blocked', 'no-match', 'unsupported', 'offline', 'expired', 'unknown', 'not-allowed', 'error',
 ] as const satisfies readonly ToolResult['status'][];
 type MissingStatus = Exclude<ToolResult['status'], (typeof TOOL_STATUSES)[number]>;
 const noMissingStatus: [MissingStatus] extends [never] ? true : false = true;
 
 // The ladder input's optional fields are exactly the hint fields the request doc stores (01 section 7).
-type HintField = Exclude<keyof LadderToolInput, 'question'>;
+type HintField = Exclude<keyof LadderToolInput, 'question' | 'idempotency_key'>;
 const HINT_FIELDS = ['after', 'before', 'source', 'from', 'terms'] as const satisfies readonly HintField[];
 const hintFieldsAreQueryHints: HintField extends keyof QueryHints ? true : false = true;
 
@@ -73,10 +73,14 @@ describe('MCP ladder tool input schema', () => {
     expect(validateLadder({ question: 'x', action: 'send' })).toBe(false);
   });
 
-  it('allows questions up to MAX_QUESTION_CHARS and only the hint fields', () => {
+  it('allows questions up to MAX_QUESTION_CHARS, the hint fields and the retry key', () => {
     expect(validateLadder({ question: 'x'.repeat(MAX_QUESTION_CHARS) })).toBe(true);
     expect(hintFieldsAreQueryHints).toBe(true);
-    expect(Object.keys(MCP_LADDER_INPUT_SCHEMA.properties)).toEqual(['question', ...HINT_FIELDS]);
+    expect(Object.keys(MCP_LADDER_INPUT_SCHEMA.properties)).toEqual(['question', ...HINT_FIELDS, 'idempotency_key']);
+    // 30 section 9.4: 1 to 64 characters
+    expect(validateLadder({ question: 'x', idempotency_key: 'ask-1' })).toBe(true);
+    expect(validateLadder({ question: 'x', idempotency_key: '' })).toBe(false);
+    expect(validateLadder({ question: 'x', idempotency_key: 'k'.repeat(65) })).toBe(false);
   });
 });
 

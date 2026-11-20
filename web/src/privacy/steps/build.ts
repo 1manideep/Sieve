@@ -10,12 +10,15 @@ import { shortenLinks } from '../links';
 import { locateEntities } from '../pii/locate';
 import { finalizeSpans } from '../pii/merge';
 import { prepareValidators, runValidators } from '../pii/validators';
+import { findActorNames } from '../pii/validators/names';
+import { findSecretCodes } from '../pii/validators/secretCode';
 import { redact } from '../redact';
 import { cleanChars } from '../sanitize/chars';
 import { expectedStages, isScanCurrent, knownEntities, memoScan, scanText } from '../scan/scan';
 import { collapseSpaces, ensureWellFormed, isAbortError, plural, type Range } from '../text';
 import type { BuildStepOptions } from '../types';
 import { answerKeepTypes, cleanAnswer } from './answer';
+import { keepAskerWords, notTheCompany, senderEntities } from './asker';
 import { excerptHeader, locateExcerpt } from './excerpt';
 import { capFull, fullHeader, lastCutBefore } from './full';
 import { copiesTooMuch, hiddenLeak } from './invariants';
@@ -153,10 +156,13 @@ export async function buildStepOption(
       removed = r.count;
     }
 
-    // 6. spans (plain code only): validators plus everything already known about this record (and, at share time,
-    // what Gemini Nano found in the outgoing text)
-    const known = [...knownEntities(rec), ...(opts.extraEntities ?? [])];
-    const spans = finalizeSpans(text, [...runValidators(text), ...locateEntities(text, known)]);
+    // 6. spans (plain code only): validators, one-time codes and sign-in links, names in "X sent you an email", plus
+    // everything already known about this record and its sender (and, at share time, what Gemini Nano found in the
+    // outgoing text). What the asker typed in the question is never masked; one-time codes always are.
+    const known = [...knownEntities(rec), ...senderEntities(rec), ...(opts.extraEntities ?? [])];
+    const actors = notTheCompany(text, findActorNames(text), rec);
+    const found = finalizeSpans(text, [...runValidators(text), ...findSecretCodes(text), ...actors, ...locateEntities(text, known)]);
+    const spans = keepAskerWords(text, found, opts.question);
 
     // 7, 8. answer exemptions, then redaction
     const keepTypes = step === 'answer' && opts.question ? answerKeepTypes(opts.question) : [];

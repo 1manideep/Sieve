@@ -1,7 +1,7 @@
 // Gmail REST from the browser (20 section 15.2): bearer token, quota bucket, backoff, typed errors.
 import { BACKOFF, GMAIL_API, GMAIL_BUCKET_CAPACITY, GMAIL_COST, GMAIL_LIST_PAGE, GMAIL_MAX_CONCURRENCY, GMAIL_UNITS_PER_MINUTE } from '../../index/config';
 import { emitIndexEvent } from '../../index/events';
-import { clearGmailToken, getGmailToken } from './auth';
+import { getGmailToken, rejectGmailToken } from './auth';
 import { UnitBucket } from './rateLimit';
 
 export type Priority = 'interactive' | 'background';
@@ -105,7 +105,7 @@ export async function gmailFetch<T>(path: string, opts: { units: number; priorit
       // no JSON body
     }
     if (res.status === 401) {
-      clearGmailToken();
+      rejectGmailToken(tok);   // the registry then drops it from the store too (20 section 15.1)
       emitIndexEvent({ type: 'gmail-auth-lost' });
       throw new GmailAuthError();
     }

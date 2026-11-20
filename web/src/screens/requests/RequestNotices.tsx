@@ -4,9 +4,8 @@ import { Link } from 'react-router-dom';
 import { Button, LinkButton } from '@/components/Button/Button';
 import { useDb } from '@/components/dbTables';
 import { Notice } from '@/components/Notice/Notice';
-import { REQUESTS, fillText } from '@/copy/screens-controls';
+import { REQUESTS, SOURCES, fillText } from '@/copy/screens-controls';
 import { STATUS_POPOVER } from '@/copy/strings';
-import { MAIL_COPY } from '@/robust/copy';
 import { useAutoApprove } from '@/state/autoApprove';
 import { useGrants } from '@/state/grants';
 import { useHomeBase, type HomeBaseState } from '@/state/homeBase';
@@ -28,9 +27,11 @@ export const CONNECT_AI_HREF = '/settings?connect=1#ais';
 const MEMORY_SAVER_KEY = 'sieve.tip.memorySaver';
 
 /**
- * 70 R-MAIL-10: the Gmail sign-in expired. Answers still come from mail already indexed, but new mail and the
- * freshness check (the `source-unchecked` warning) wait until the person signs in again; the button runs the
- * re-authorization straight from the click, as the Sources screen does (the Google popup needs the gesture).
+ * 70 R-MAIL-10: the Gmail token on this computer ran out and no tab renewed it (20 section 15.1). Answers still come
+ * from mail already indexed, but new mail and the freshness check (the `source-unchecked` warning) wait for Continue;
+ * the button runs the re-authorization straight from the click, as the Sources screen does (the Google popup needs
+ * the gesture). Same tone and words as the Gmail card: a plain note, and the warning only when Google refused
+ * read-only access after Continue.
  */
 export function GmailTokenBanner() {
   const db = useDb('real');
@@ -38,9 +39,10 @@ export function GmailTokenBanner() {
   const busy = useSources((s) => s.busy.gmail === true);
   const gmail = rows?.find((r) => r.kind === 'gmail');
   if (!gmail?.connected || !gmail.needsAuth) return null;
+  const refused = gmail.errorCode === 'auth-needed';
   return (
     <Notice
-      tone="warning"
+      tone={refused ? 'warning' : 'info'}
       actions={
         <Button
           variant="secondary"
@@ -50,11 +52,11 @@ export function GmailTokenBanner() {
             useSources.getState().reauthorize('gmail').catch(console.error);
           }}
         >
-          {MAIL_COPY.tokenExpiredButton}
+          {SOURCES.continue}
         </Button>
       }
     >
-      {MAIL_COPY.tokenExpiredBanner}
+      {refused ? SOURCES.needsAuthGmailRefused : SOURCES.needsAuthGmail}
     </Notice>
   );
 }

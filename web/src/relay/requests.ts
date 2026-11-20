@@ -35,12 +35,12 @@ import type { RelayRequestView } from '@/state/types';
 export { decisionDeadline, isPlaygroundRequest } from './deadline';
 
 export const REQUEST_STATUSES: readonly RequestStatus[] = [
-  'queued', 'claimed', 'awaiting-person', 'answered', 'declined', 'blocked', 'no-match',
+  'queued', 'claimed', 'awaiting-person', 'answered', 'declined', 'blocked', 'no-match', 'unsupported',
   'collected', 'expired', 'revoked', 'offline', 'error',
 ];
 export const OPEN_STATUSES: readonly RequestStatus[] = ['queued', 'claimed', 'awaiting-person'];
 export const TERMINAL_STATUSES: readonly RequestStatus[] = [
-  'answered', 'declined', 'blocked', 'no-match', 'collected', 'expired', 'revoked', 'offline', 'error',
+  'answered', 'declined', 'blocked', 'no-match', 'unsupported', 'collected', 'expired', 'revoked', 'offline', 'error',
 ];
 const SOURCES: readonly SourceKind[] = ['gmail', 'folder', 'upload', 'playground'];
 
@@ -52,7 +52,7 @@ export type FinishInput =
   | { status: 'answered'; response: RelayPayload; receipt?: Receipt }
   | { status: 'declined'; message: string; receipt?: Receipt }
   | { status: 'blocked'; message: string; receipt?: Receipt }
-  | { status: 'no-match' | 'error'; message: string };
+  | { status: 'no-match' | 'unsupported' | 'error'; message: string };
 
 /** A request doc that failed parseRequestDoc (70 R-RLY-11): only its id and status are trusted. */
 export interface InvalidRequest { id: string; status: unknown; reason?: 'no-readable-words' }
@@ -202,7 +202,7 @@ export async function finishRequest(uid: string, id: string, deviceId: string, f
     if (d.claimedBy !== deviceId) return 'gone';
     const from = d.status as RequestStatus;
     // The allowed transitions (30 section 9.1): answered and declined only from awaiting-person;
-    // no-match and blocked only from claimed; error from either.
+    // no-match, unsupported and blocked only from claimed; error from either.
     const allowed =
       f.status === 'answered' || f.status === 'declined'
         ? from === 'awaiting-person'

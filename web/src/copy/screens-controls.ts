@@ -88,6 +88,7 @@ export const REQUESTS = {
     declined: 'Declined',
     blocked: 'Blocked by your rules',
     'no-match': 'No match',
+    unsupported: "Counts aren't available",
     expired: 'Expired',
     revoked: 'Cancelled',
     offline: 'Home base was offline',
@@ -180,7 +181,10 @@ export const SOURCES = {
   upToDate: 'Up to date',
   folderName: 'Folder: {folderName}',
   pausedLabel: 'Indexing paused',
-  needsAuthGmail: 'Google needs you to sign in again to keep syncing.',
+  /** A plain note: the Gmail token ran out and no tab renewed it (20 section 15.1). */
+  needsAuthGmail: 'Syncing paused. Continue to keep getting new mail.',
+  /** The one Gmail warning: Google still refused read-only access after Continue. */
+  needsAuthGmailRefused: "Google didn't allow read-only Gmail access. Try Continue again.",
   needsAuthFolder: 'Chrome needs your OK to read "{folderName}" again.',
   continue: 'Continue',
   allowAgain: 'Allow again',

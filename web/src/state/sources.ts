@@ -10,6 +10,7 @@ import type { DbKind } from './types';
 export interface SourceRowView {
   kind: SourceKind; connected: boolean; paused: boolean; progress: { done: number; total: number };
   lastSyncAt?: number; needsAuth?: boolean; error?: string; folderName?: string;   // the last three from CR-4
+  errorCode?: string;   // 'auth-needed' on Gmail: Google refused read-only access after Continue (20 section 15.1)
 }
 export type AddResult = { name: string; ok: true; recordId: string } | { name: string; ok: false; reason: string };
 export interface SourcesState {

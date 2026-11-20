@@ -50,9 +50,92 @@ def test_result_from_request_and_d6():
     assert tools.result_from_request(rid, {"status": "error"}).message == tools.MSG_HOME_ERROR
     p = tools.pending_result(rid)
     assert p.message == ("The person has not approved this yet. Tell them a request is waiting in Sieve, then call "
-                         f"sieve_check with request_id \"{rid}\"; it waits up to 45 seconds for their decision.")
+                         f"sieve_check with request_id \"{rid}\"; it waits about 20 seconds per call, so call it "
+                         "again while the result is pending.")
     a = tools.answered_result(rid, "full", "Text")
     assert a.message == "The person approved sharing this full item."
+
+
+def test_unsupported_and_unknown_statuses():
+    rid = "a" * 20
+    msg = "Sieve answers about one item at a time, so it cannot count your emails."
+    out = tools.result_from_request(rid, {"status": "unsupported", "message": msg})
+    assert out.to_wire() == {"status": "unsupported", "request_id": rid, "message": msg}
+    assert tools.result_from_request(rid, {"status": "unsupported"}).message == tools.MSG_UNSUPPORTED
+    assert tools.result_from_request(rid, {"status": "unsupported", "message": "x" * 301}).message == tools.MSG_UNSUPPORTED
+    unknown = tools.unknown_request_result()
+    assert unknown.to_wire() == {"status": "unknown", "message": tools.MSG_UNKNOWN_ID}
+    assert "expired" not in tools.MSG_UNKNOWN_ID
+    expired = tools.result_from_request(rid, {"status": "expired"})
+    assert (expired.status, expired.request_id, expired.message) == ("expired", rid, tools.MSG_REQUEST_EXPIRED)
+    assert not tools.is_error(out) and not tools.is_error(unknown)
+    enum = tools.TOOL_RESULT_SCHEMA["properties"]["status"]["enum"]
+    assert "unknown" in enum and "unsupported" in enum and "expired" in enum
+
+
+def test_open_limit_text_states_the_limit():
+    ids = ["A" * 20, "B" * 20, "C" * 20]
+    out = tools.open_limit_result(ids)
+    assert out.status == "error" and out.request_id is None
+    assert out.message == ("At most 3 requests can wait per connection, and 3 are waiting now: "
+                           f"\"{ids[0]}\", \"{ids[1]}\", \"{ids[2]}\". Call sieve_check on those first, then ask again.")
+    assert tools.open_limit_result([]).message.startswith("At most 3 requests can wait per connection, and 3 are "
+                                                          "waiting now. ")
+    answer = tools.TOOLS["sieve_answer"]["description"]
+    assert "At most 3 requests can wait per connection; wait for sieve_check before asking more." in answer
+
+
+def test_descriptions_carry_the_waits_and_the_retry_rule():
+    answer = tools.TOOLS["sieve_answer"]["description"]
+    assert "the result is often \"pending\"" in answer
+    assert "poll with sieve_check, which waits about 20 seconds per call" in answer
+    assert ("If a call fails or times out, call again with the same arguments within 10 minutes: Sieve returns the "
+            "existing request and its result instead of making a new one.") in answer
+    assert "unsupported" in answer
+    for name in ("sieve_excerpt", "sieve_full_item"):
+        assert "poll with sieve_check, which waits about 20 seconds per call" in tools.TOOLS[name]["description"]
+    check = tools.TOOLS["sieve_check"]["description"]
+    assert "waits about 20 seconds" in check and "\"unknown\"" in check and "45" not in json.dumps(tools.TOOLS)
+    key = tools.LADDER_INPUT_SCHEMA["properties"]["idempotency_key"]
+    assert key["maxLength"] == 64 and "Optional." in key["description"]
+
+
+@pytest.mark.parametrize("step, allowed, hidden", [
+    ("answer", ["sieve_answer", "sieve_check"], ["sieve_excerpt", "sieve_full_item"]),
+    ("excerpt", ["sieve_answer", "sieve_excerpt", "sieve_check"], ["sieve_full_item"]),
+    ("full", ["sieve_answer", "sieve_excerpt", "sieve_full_item", "sieve_check"], []),
+])
+def test_instructions_and_tools_name_only_allowed_tools(step, allowed, hidden):
+    text = tools.instructions(TODAY, step)
+    listed = tools.tools_for_step(step, version="2025-11-25")
+    legacy = tools.tools_for_step(step, version="2025-03-26")
+    assert [t["name"] for t in listed] == [t["name"] for t in legacy] == allowed
+    readable = text + json.dumps(listed) + json.dumps(legacy) + tools.result_for_denial("CAVEAT_NOT_SATISFIED",
+                                                                                      _grant(step)).message
+    for name in hidden:
+        assert name not in readable
+    for name in allowed:
+        assert name in text + json.dumps(listed)
+    assert "sieve_check waits about 20 seconds per call" in text
+    assert "At most 3 requests can wait per connection; wait for sieve_check before asking more." in text
+    assert "otherwise today is 2026-11-16." in text
+    if step == "answer":
+        assert "4. Ask with sieve_answer. This connection shares one-sentence answers only." in text
+        assert "Use this first" not in listed[0]["description"]
+    else:
+        assert "Use this first: it shares the least." in listed[0]["description"]
+
+
+def test_idempotency_key_argument():
+    args = tools.parse_ladder_args({"question": "Q", "idempotency_key": "  ask-7 "}, today=TODAY)
+    assert args.idempotency_key == "ask-7" and args.hints is None
+    for absent in (None, "", "   "):
+        assert tools.parse_ladder_args({"question": "Q", "idempotency_key": absent}, today=TODAY).idempotency_key is None
+    assert tools.parse_ladder_args({"question": "Q", "idempotency_key": "k" * 64}, today=TODAY).idempotency_key
+    for bad in ("k" * 65, 7, ["a"], "a\x00b", "a​b"):
+        with pytest.raises(tools.ArgError) as err:
+            tools.parse_ladder_args({"question": "Q", "idempotency_key": bad}, today=TODAY)
+        assert str(err.value) == "idempotency_key must be 1 to 64 characters of plain text."
 
 
 def test_call_tool_result_shapes():
@@ -73,7 +156,11 @@ def test_instructions_text():
     text = tools.instructions(TODAY)
     assert "otherwise today is 2026-11-16." in text
     assert text.startswith("Sieve answers questions about one person's own email, files and photos.")
-    assert "\u2014" not in text and "\u2014" not in json.dumps(tools.TOOLS)
+    assert "{" not in text and "45" not in text
+    copy = [tools.instructions(TODAY, s) for s in ("answer", "excerpt", "full")] + [json.dumps(tools.TOOLS)]
+    copy += [v for k, v in vars(tools).items() if k.startswith("MSG_") and isinstance(v, str)]
+    for t in copy:
+        assert "\u2014" not in t and "\u2013" not in t and "--" not in t
 
 
 def test_u15_example_and_normalisation():
@@ -117,7 +204,8 @@ DATE_MSG = "{f} must be a real date written as YYYY-MM-DD, for example 2026-10-0
     ({"question": "Q", "terms": "A1"}, "terms must be a list of at most 5 exact identifiers, each 1 to 64 characters."),
     ({"question": "Q", "terms": [1, None]},
      "terms must be a list of at most 5 exact identifiers, each 1 to 64 characters."),
-    ({"question": "Q", "limit": 5}, "Unknown argument \"limit\". Allowed: question, after, before, source, from, terms."),
+    ({"question": "Q", "limit": 5},
+     "Unknown argument \"limit\". Allowed: question, after, before, source, from, terms, idempotency_key."),
     ({"question": "x" * 501}, "The question must be 1 to 500 characters of plain text."),
     ({"question": "bad\x00question"}, "The question must be 1 to 500 characters of plain text."),
     ({"question": 42}, "The question must be 1 to 500 characters of plain text."),

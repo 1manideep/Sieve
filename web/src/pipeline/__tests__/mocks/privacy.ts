@@ -3,6 +3,8 @@
 import { vi } from 'vitest';
 import type { DataClass, IndexRecord, KnownEntity, LadderStep, StepOption, TraceStep, Warning } from '@sieve/shared';
 
+export { holdsSecretCode } from '@/privacy/pii/validators/secretCode';
+
 type Parts = { answer?: string; excerpt?: string; full?: string };
 
 export function defaultBuild(step: LadderStep, parts: Parts, _record: IndexRecord, _data: DataClass, _opts?: unknown): Promise<StepOption> {

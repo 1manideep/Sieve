@@ -10,6 +10,7 @@ export {
   selectAndAnswer, recordBody, fitPassages, deriveExcerpt, bestWindow, snapToSentences, selectPrompt, countNoun,
   type Passage, type PassageRange, type SelectOptions, type SelectValue,
 } from './tasks/select';
+export { verifyAnswer, verifyPrompt, type VerifyOptions, type VerifyValue } from './tasks/verify';
 export { captionPhoto } from './tasks/caption';
 export { draftReply, draftPrompt } from './tasks/draft';
 export { codeLabel, isHealthStrong, CODE_LABEL_RULES, HEALTH_STRONG } from './tasks/codeLabel';
@@ -18,7 +19,7 @@ export { toJpegPart } from './image';
 // Prompts and versions
 export { PROMPT_VERSIONS } from './versions';
 export {
-  LABEL_SYSTEM, LABEL_SCHEMA, SELECT_SYSTEM, SELECT_SCHEMA, CAPTION_SYSTEM, DRAFT_SYSTEM, DEFAULT_DRAFT_INSTRUCTION,
+  LABEL_SYSTEM, LABEL_SCHEMA, SELECT_SYSTEM, SELECT_SCHEMA, VERIFY_SYSTEM, VERIFY_SCHEMA, CAPTION_SYSTEM, DRAFT_SYSTEM, DEFAULT_DRAFT_INSTRUCTION,
 } from './prompts';
 
 // Setup, availability and the device engine

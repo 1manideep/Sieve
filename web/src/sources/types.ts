@@ -23,7 +23,9 @@ export const SOURCE_COPY = {
   signInFailed: "Google sign-in didn't finish. Try again.",
   otherAccount: 'Pick the Google account you use for Sieve, then try again.',
   noClientId: "Gmail sign-in isn't set up on this site yet.",
-  gmailNeedsAuth: 'Sign in to Gmail again to add new mail',
+  gmailNeedsAuth: 'Syncing paused. Continue to keep getting new mail.',
+  /** Google refused read-only Gmail access after Continue (a fresh token still got a 401, or the box was unticked). */
+  gmailAccessRefused: "Google didn't allow read-only Gmail access. Try Continue again.",
   gmailForbidden: (reason: string) => `Gmail refused access: ${reason}.`,
   gmailQuota: 'Gmail is limiting requests. Sieve will try again in a few minutes.',
   network: "Couldn't reach Gmail. Sieve will try again when you're online.",

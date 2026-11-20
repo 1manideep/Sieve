@@ -34,8 +34,8 @@ export const ASSISTANT_MODEL = CLOUD_MODEL_DRAFT;
 /** 00 D8: cloud calls per visitor (uid) per day in this browser. A question usually takes two. */
 export const ASSISTANT_DAILY_CLOUD_CALLS = 30;
 export const ASSISTANT_CAP_KEY = 'sieve.playgroundAssistant.cloudCalls';
-/** sieve_check calls per question; each waits up to 45 s on the server for the person's decision. */
-export const ASSISTANT_MAX_CHECKS = 3;
+/** sieve_check calls per question; each waits about 20 s on the server for the person's decision (30 section 8.5). */
+export const ASSISTANT_MAX_CHECKS = 9;
 export const ASSISTANT_MAX_TOOL_CALLS = 4;          // ladder tool calls Gemini may make per question
 export const ASSISTANT_MAX_TURNS = 6;               // model calls per question
 export const ASSISTANT_MAX_OUTPUT_TOKENS = 2048;
@@ -52,7 +52,7 @@ export const LIMIT_RESULT_MESSAGE =
 
 const LINK_PATH_RE = /^\/mcp\/[A-Za-z0-9_-]{43}\/?$/;
 const SIEVE_TOOLS = new Set<string>(Object.values(MCP_TOOLS));
-const STATUSES = new Set<ToolResult['status']>(['answered', 'pending', 'declined', 'blocked', 'no-match', 'offline', 'expired', 'not-allowed', 'error']);
+const STATUSES = new Set<ToolResult['status']>(['answered', 'pending', 'declined', 'blocked', 'no-match', 'unsupported', 'offline', 'expired', 'unknown', 'not-allowed', 'error']);
 
 // ---------------------------------------------------------------------------------------------------------------
 // The connector (30 section 8)
@@ -508,7 +508,7 @@ function textOf(response: AssistantResponse): string {
 /**
  * One question: model turn, then every function call it made carried out on the connector, then the results back as
  * function responses, until Gemini answers in text. A pending result is collected with sieve_check (the server waits
- * up to 45 s for the person's decision on each), at most ASSISTANT_MAX_CHECKS times per question; the final result is
+ * about 20 s for the person's decision on each), at most ASSISTANT_MAX_CHECKS times per question; the final result is
  * what Gemini receives for its call. Every model call counts against the daily cap first.
  */
 export async function runCloudAssistant(input: RunInput): Promise<AssistantRun> {

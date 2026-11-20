@@ -233,6 +233,12 @@ def _grant_for_list(deps: Deps, connector: Mapping[str, Any]) -> GrantMeta | Non
         return None
 
 
+def _step_for_list(deps: Deps, connector: Mapping[str, Any]) -> str:
+    """The grant's current cap for tools/list and the instructions; 'answer' (the least) when unreadable."""
+    grant = _grant_for_list(deps, connector)
+    return grant.max_step if grant else "answer"
+
+
 def _dispatch(msg: Mapping[str, Any], *, era: str, version: str, link_secret: str, link_hash: str,
               connector: Mapping[str, Any], deps: Deps, t0: float) -> Reply:
     method = msg["method"]
@@ -242,18 +248,18 @@ def _dispatch(msg: Mapping[str, Any], *, era: str, version: str, link_secret: st
             params = msg.get("params") if isinstance(msg.get("params"), Mapping) else {}
             requested = params.get("protocolVersion")
             negotiated = requested if requested in config.LEGACY_VERSIONS else config.LATEST_LEGACY_VERSION
+            text = tools.instructions(deps.now().date(), _step_for_list(deps, connector))
             return Reply(200, _result(msg_id, {"protocolVersion": negotiated, "capabilities": CAPABILITIES,
-                                               "serverInfo": SERVER_INFO,
-                                               "instructions": tools.instructions(deps.now().date())}))
+                                               "serverInfo": SERVER_INFO, "instructions": text}))
         if method == "server/discover" and era == "modern":
+            text = tools.instructions(deps.now().date(), _step_for_list(deps, connector))
             return Reply(200, _result(msg_id, _modern({
                 "supportedVersions": list(config.MODERN_VERSIONS), "capabilities": CAPABILITIES,
-                "instructions": tools.instructions(deps.now().date()), "ttlMs": 300000, "cacheScope": "private"})))
+                "instructions": text, "ttlMs": 300000, "cacheScope": "private"})))
         if method == "ping":
             return Reply(200, _result(msg_id, _modern({}) if era == "modern" else {}))
         if method == "tools/list":
-            grant = _grant_for_list(deps, connector)
-            listed = tools.tools_for_step(grant.max_step if grant else "answer", version=version)
+            listed = tools.tools_for_step(_step_for_list(deps, connector), version=version)
             if era == "modern":
                 return Reply(200, _result(msg_id, _modern({"tools": listed, "ttlMs": 60000,
                                                            "cacheScope": "private"})))

@@ -20,9 +20,10 @@ const SUMMARY_NAMES: Record<PiiType, [string, string]> = {
   name: ['name', 'names'],
   address: ['address', 'addresses'],
   dob: ['date of birth', 'dates of birth'],
+  'secret-code': ['one-time code or sign-in link', 'one-time codes or sign-in links'],
   other: ['ID number', 'ID numbers'],
 };
-const SUMMARY_ORDER: readonly PiiType[] = ['email', 'phone', 'card', 'iban', 'ssn', 'account', 'name', 'address', 'dob', 'other'];
+const SUMMARY_ORDER: readonly PiiType[] = ['secret-code', 'email', 'phone', 'card', 'iban', 'ssn', 'account', 'name', 'address', 'dob', 'other'];
 
 /** "2 names, 1 phone number": counts by type, largest first. */
 export function summarize(spans: readonly PiiSpan[]): string {

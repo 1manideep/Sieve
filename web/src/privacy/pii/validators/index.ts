@@ -13,6 +13,7 @@ import { findPhones, loadPhoneLib, phoneLibReady } from './phone';
 import { findSsns } from './ssn';
 
 export { isValidIban } from './iban';
+export { findSecretCodes, holdsSecretCode } from './secretCode';
 
 /** Loads the phone metadata; every async entry point awaits it before calling runValidators. */
 export function prepareValidators(): Promise<void> {

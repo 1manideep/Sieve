@@ -742,6 +742,7 @@ interface GrantsState {
 interface SourceRowView {
   kind: SourceKind; connected: boolean; paused: boolean; progress: { done: number; total: number };
   lastSyncAt?: number; needsAuth?: boolean; error?: string; folderName?: string;   // the last three from CR-4
+  errorCode?: string;   // 'auth-needed' on Gmail: the refused-token warning (13.6)
 }
 type AddResult = { name: string; ok: true; recordId: string } | { name: string; ok: false; reason: string };
 interface SourcesState {
@@ -1142,13 +1143,17 @@ Outcome handling:
 
 | Outcome | Firestore | Receipt | Person sees |
 |---|---|---|---|
+| `ready` with no option to approve (every option unavailable or empty; T08 of Nov 20) | handled as `no-match` below, before `markAwaiting`: no card | none | history row only |
 | `ready` | `markAwaiting` | later, with the decision | entry `awaiting-person`; extension updated; announce polite "New request from {aiName}: {question}"; if the person is not on `/requests`, toast info "New request from {aiName}" body "{question}" action "Review" (navigates to `/requests?id={id}`) |
 | `needs-cloud-consent` | `markAwaiting` | later | as `ready`; the card shows the consent panel (16.13) |
 | `blocked-never` | `finishRequest` `blocked`, message `MSG.blocked` | `finalizeDecision` with `approved: false`; CR-3 makes it `status: 'blocked'`, `decidedBy: 'rule'`, `chars: 0` | toast info "{aiName} asked for something your rules never share. Sieve told it no." |
 | `no-match` | `finishRequest` `no-match`, `MSG.noMatch` | none | history row only |
+| `unsupported` (a count, Nov 20) | `finishRequest` `unsupported`, `MSG.unsupported` ("Sieve answers from one item at a time at this level, so counts aren't available."), which the relay passes to the assistant | none | history row only ("Counts aren't available") |
 | `model-unavailable` | `finishRequest` `error`, `MSG.modelUnavailable` | none | toast warning "{aiName} asked, but this Chrome has no on-device model. Sieve told it to try later." |
 | `error`, a thrown error, or the timeout | `finishRequest` `error`, `MSG.error` | none | toast error "Sieve couldn't prepare an answer for {aiName}. It was told to try again later." |
 | aborted by expiry | nothing (functions mark it expired) | none | entry removed |
+
+Every row but `ready` and `needs-cloud-consent` ends without a card. "Declined" is only ever the person's own choice. A `blocked-never` for a one-time code or a sign-in link (11 section 5.2) is handled like any other: `MSG.blocked` to the assistant, the real reason in the app.
 
 Auto-approve (13.8.9): for `ready`, after `markAwaiting` really returned `'ok'` (not the offline fallback), the engine checks `autoApprove(grantId)` and the clean-answer conditions. When all hold, it does not announce, toast or send a preview to the extension. It calls `decide({ requestId, approved: true, step: 'answer', decidedBy: 'app' })`, so every check in 11.8 and the send check run as for a click. `markAutoApproved(id, true)` runs just before `finishRequest` writes the receipt. If `decide` fails, the mark is removed. If the entry is still `awaiting-person`, it then waits for the person as in the row above, with the reason on the card.
 
@@ -1159,6 +1164,7 @@ Messages to the AI (`relay/messagesToAi.ts`, written into `RelayRequest.message`
 | `declined` | "The person declined to share this." |
 | `blocked` | "The person's rules don't allow sharing this." |
 | `noMatch` | "Nothing on the person's device matched this request." |
+| `unsupported` | "Sieve answers from one item at a time at this level, so counts aren't available." |
 | `modelUnavailable` | "Sieve can't read the person's data on this device right now. Try again later." |
 | `error` | "Sieve couldn't prepare an answer on the person's device. Try again later." |
 
@@ -1619,7 +1625,8 @@ States:
 - Connected and indexing: tag "Connected" (teal); bar; label "Indexing {done} of {total} items".
 - Connected and up to date: label "Up to date · new mail is added while Sieve is open" (Gmail) or "Up to date" (others); folder adds "Folder: {folderName}".
 - Paused: tag "Paused" (amber), label "Indexing paused".
-- `needsAuth`: amber notice "Google needs you to sign in again to keep syncing." (Gmail) or "Chrome needs your OK to read "{folderName}" again." (folder) with button "Continue" / "Allow again" → `reauthorize`.
+- `needsAuth`, Gmail (changed Nov 20, 20 section 15.1): a plain notice (tone info) "Syncing paused. Continue to keep getting new mail." with button "Continue" → `reauthorize`. The amber warning only with `errorCode: 'auth-needed'` (Google refused read-only access after Continue): "Google didn't allow read-only Gmail access. Try Continue again." with "Continue", and the error line is not repeated. The Requests banner (70 R-MAIL-10) uses the same tone and words.
+- `needsAuth`, folder: amber notice "Chrome needs your OK to read "{folderName}" again." with button "Allow again" → `reauthorize`.
 - `error`: red text (14px) `{error}` and button "Try again" → `connect`.
 - Connected: secondary button "Disconnect" (confirm below). Upload card shows "{n} files" and its "Add files" button (accept ".txt,.md,.pdf,.jpg,.jpeg,.png,.webp", up to 5 files per pick, 10 MB each; each file goes through `ingest(db, raw, 'own')`).
 

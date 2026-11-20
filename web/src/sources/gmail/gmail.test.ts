@@ -1,11 +1,12 @@
 // 20 section 20, Gmail: A-GM-1 to A-GM-5, A-EM-5, A-CON-1, A-CON-7 to A-CON-10 (Gmail), A-SR-11, with FakeGmail.
+// A-GM-5 since Nov 20: the token is kept on the real Gmail row only (15.1), never in web storage or another table.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { b64url, FakeGmail } from '../../../../tests/harness/fakeGmail';
 import { installFakeGis } from '../../../../tests/harness/fakeGis';
 import { createHashEmbedClient } from '../../../../tests/harness/hashEmbedder';
-import { dropDb, freshDb } from '../../../../tests/harness/indexEnv';
+import { dropDb, freshDb, until } from '../../../../tests/harness/indexEnv';
 import { verifyFresh } from '../../index/consistency';
-import { openDbNamed, type SieveDb } from '../../index/db';
+import { openDbNamed, type SieveDb, type SourceRow } from '../../index/db';
 import { closeDb, ready } from '../../index/lifecycle';
 import { peekQueue } from '../../index/queue/ingestQueue';
 import { getRuntime } from '../../index/runtime';
@@ -19,6 +20,7 @@ import { buildGmailQuery } from './liveSearch';
 import { decodeMimeWords, decodeSnippet, extractBodies, header, isSkippable } from './mime';
 import { UnitBucket } from './rateLimit';
 import { runGmailSync } from './sync';
+import { storedTokenOf } from './tokenStore';
 
 vi.mock('@/ai', async () => (await import('../../../../tests/harness/aiMock')).aiModule);
 vi.mock('@/privacy', async () => (await import('../../../../tests/harness/privacyMock')).privacyModule);
@@ -154,6 +156,8 @@ describe('REST errors (A-GM-3)', () => {
     expect(lost).toContain('gmail-auth-lost');
     expect(getGmailToken()).toBeNull();
     expect((await db.sources.get('gmail'))?.needsAuth).toBe(true);
+    // the refused token leaves the row too, so no tab takes it back (20 section 15.1)
+    await until(async () => storedTokenOf(await db.sources.get('gmail')) === null);
     await expect(gmailFetch('/profile', { units: 1, priority: 'interactive' })).rejects.toMatchObject({ name: 'GmailAuthError' });
   });
 
@@ -190,11 +194,16 @@ describe('connect and backfill (A-GM-4, A-GM-5)', () => {
     expect((await db.records.get('gmail:new1'))?.text).toBe('fresh body');
   }, 60_000);
 
-  it('never stores the token; logs replace it', async () => {
+  it('keeps the token only on the real Gmail row, never in web storage; logs replace it', async () => {
     gmail.add({ id: 'a', subject: 'Hello', text: 'hi' });
     await connect();
     const token = gmail.token;
+    const row = await db.sources.get('gmail');
+    expect(storedTokenOf(row)).toMatchObject({ value: token, scope: expect.stringContaining('gmail.readonly') });
+    const { accessToken: _kept, ...rest } = row as SourceRow & { accessToken?: unknown };
+    expect(JSON.stringify(rest)).not.toContain(token);
     for (const t of db.tables) {
+      if (t.name === 'sources') continue;
       const rows = await t.toArray();
       expect(JSON.stringify(rows)).not.toContain(token);
     }
@@ -293,6 +302,7 @@ describe('deletions and history (A-CON-1, A-CON-7, A-CON-8, A-CON-9)', () => {
     await disconnectSource(db, 'gmail');
     expect(await db.records.where('source').equals('gmail').count()).toBe(0);
     expect(await db.sources.get('gmail')).toMatchObject({ connected: false });
+    expect(storedTokenOf(await db.sources.get('gmail'))).toBeNull();
     expect(gis.revoked).toContain(gmail.token);
     expect(getGmailToken()).toBeNull();
   });

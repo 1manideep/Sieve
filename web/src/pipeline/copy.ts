@@ -22,6 +22,7 @@ const METHOD_NAMES: [Candidate['matchedBy'], string][] = [
 export const RUNNING = {
   retrieve: 'Searching this device…',
   fresh: 'Checking the item is still there…',
+  verify: 'Checking the answer against the item…',
   pii: 'Masking personal details on this device…',
   // 11 section 10.7: Gemini Nano reads the text that would leave, once per text (cached on the item)
   injectionCheck: 'Checking for hidden instructions…',
@@ -51,6 +52,13 @@ export const LABELS = {
   ruleBlocked: (n: number, aiName: string) => `${plural(n, 'item', 'items')} you blocked for ${aiName}`,
   ruleSource: (n: number, aiName: string) => `${plural(n, 'item', 'items')} from sources ${aiName} may not use`,
   ruleStale: (n: number) => `${plural(n, 'stale search entry', 'stale search entries')} skipped`,
+  ruleSecret: (n: number) =>
+    `${plural(n, 'item holds', 'items hold')} a verification code or a sign-in link, never shared, stopped before any model read ${n === 1 ? 'it' : 'them'}`,
+  countUnsupported: 'This asks for a count. Sieve answers from one item at a time, so nothing was searched.',
+  newestFirst: 'Put the matches newest first, because the question asks for the latest',
+  verifyYes: 'The item answers the question',
+  verifyNo: 'The item does not answer the question',
+  verifyFailed: "Couldn't check the answer against the item on this device",
   freshChecked: (kind: ItemKind) => `Checked that the ${kindNoun(kind)} is still there`,
   freshGone: (kind: ItemKind) => `That ${kindNoun(kind)} was deleted, so it was skipped`,
   freshChangedHolds: (kind: ItemKind) => `That ${kindNoun(kind)} changed since it was indexed. Sieve re-read it and the answer still holds`,
@@ -110,6 +118,10 @@ export const WARNINGS = {
     kind: 'unverified-answer',
     message: `Check the answer: ${facts.join(', ')} ${facts.length === 1 ? 'is' : 'are'} not in the item. Share the exact lines if you're not sure.`,
   }),
+  unchecked: (): Warning => ({
+    kind: 'unverified-answer',
+    message: "Sieve couldn't check that this item answers the question. Read the answer before you share it.",
+  }),
   sourceUnchecked: (): Warning => ({
     kind: 'source-unchecked',
     message: "Sieve couldn't check that this email still exists; it used the copy on this computer.",
@@ -128,7 +140,9 @@ export const UNAVAILABLE = {
   relatedAnswer: 'Related items can be shared as an excerpt or the full item.',
   relatedGone: "This item was deleted, so it can't be shared.",
   never: (category: Category) => `${category} is never shared.`,
+  secretCode: 'Verification codes and sign-in links are never shared.',
   noMatch: 'Nothing on this device matched.',
+  unsupported: "Sieve answers from one item at a time at this level, so counts aren't available.",
   needsConsent: 'This needs your OK before the cloud model can read it.',
   modelUnavailable: "The on-device model isn't available.",
   error: 'Nothing was prepared.',

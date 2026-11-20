@@ -109,6 +109,9 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
   }
 
   const folderMissing = kind === 'folder' && !canPickFolders();
+  // Gmail asks with a plain note while syncing waits for Continue; the warning is only for Google refusing read-only
+  // access after a Continue, and that notice carries the row's error, so it is not shown twice.
+  const gmailRefused = kind === 'gmail' && Boolean(row?.needsAuth) && row?.errorCode === 'auth-needed';
   const disconnectBody = `${fillText(SOURCES.disconnectBody, { n: formatCount(itemCount), name })}${
     kind === 'gmail' ? ` ${SOURCES.disconnectGmailExtra}` : ''
   }`;
@@ -162,7 +165,7 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
 
       {row?.needsAuth && kind !== 'upload' ? (
         <Notice
-          tone="warning"
+          tone={kind === 'gmail' && !gmailRefused ? 'info' : 'warning'}
           actions={
             <Button variant="secondary" size="sm" onClick={reauthorize} busy={busy}>
               {kind === 'gmail' ? SOURCES.continue : SOURCES.allowAgain}
@@ -170,14 +173,14 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
           }
         >
           {kind === 'gmail' ? (
-            SOURCES.needsAuthGmail
+            gmailRefused ? SOURCES.needsAuthGmailRefused : SOURCES.needsAuthGmail
           ) : (
             <Fill template={SOURCES.needsAuthFolder} values={{ folderName: <Iso>{row.folderName ?? name}</Iso> }} />
           )}
         </Notice>
       ) : null}
 
-      {row?.error ? (
+      {row?.error && !gmailRefused ? (
         <div className={styles.errorRow}>
           <p className={styles.error}>{row.error}</p>
           {kind !== 'upload' ? (

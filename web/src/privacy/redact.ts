@@ -6,7 +6,7 @@ import type { RedactOptions } from './types';
 
 const NAME_GAP = /^[\s'’.-]{0,3}$/;
 const ADDRESS_GAP = /^(?:[\s,.'’#-]{0,4}|\n)$/;
-const UNNUMBERED: ReadonlySet<PiiType> = new Set(['card', 'iban', 'account']);
+const UNNUMBERED: ReadonlySet<PiiType> = new Set(['card', 'iban', 'account', 'secret-code']);
 
 function identityOf(type: PiiType, value: string): string {
   switch (type) {
@@ -32,6 +32,7 @@ function token(type: PiiType, value: string, n: number | null): string {
     case 'account': return digits.length >= 8 ? `[account ending ${digits.slice(-4)}]` : '[account]';
     case 'ssn': return `[ssn${num}]`;
     case 'dob': return `[date of birth${num}]`;
+    case 'secret-code': return /^https?:/i.test(value) ? '[sign-in link]' : '[code]';
     default: return `[id number${num}]`;
   }
 }

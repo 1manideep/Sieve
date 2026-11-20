@@ -2,8 +2,9 @@
 
 // 01 section 9
 export { SieveDb, openDb } from './db';
-export { search, duplicatesOf } from './search';
-export type { SearchReport, SearchOptions } from './search';
+export { search, duplicatesOf, hardFilterOf, passesFilter } from './search';
+export type { SearchReport, SearchOptions, HardFilter } from './search';
+export { asksCount, asksLatest, isRoleCue, senderCue, senderMatches, senderTokens } from './cues';
 export { parseQuestion } from './parseQuestion';
 export type { ParsedQuestion } from './parseQuestion';
 export { getRecord, ingest, ingestInternal, IngestError } from './ingest';

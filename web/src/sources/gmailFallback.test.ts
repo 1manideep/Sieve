@@ -1,6 +1,6 @@
-// Gmail after a reload when the Google sign-in script cannot load (20 section 15.1): the token was in memory only, so
-// the connected row asks to sign in again; Continue opens the Firebase popup inside the click, the token is held and
-// the sync picks up where it was. The sync jobs are stubbed: this file is about the sign-in, not the backfill.
+// Gmail Continue when the Google sign-in script cannot load (20 section 15.1): the row asks to sign in again (the
+// token on this computer ran out); Continue opens the Firebase popup inside the click, the token is kept on the row
+// and the sync picks up where it was. The sync jobs are stubbed: this file is about the sign-in, not the backfill.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { dropDb, freshDb } from '../../../tests/harness/indexEnv';
 import { GMAIL_SCOPE } from '../index/config';
@@ -15,7 +15,7 @@ vi.mock('@/app/env', async (importOriginal) => {
 });
 const runGmailSync = vi.fn(async () => undefined);
 const startGmailTimers = vi.fn();
-vi.mock('./gmail/sync', () => ({ runGmailSync, startGmailTimers, setGmailPaused: vi.fn(), stopGmailSync: vi.fn(async () => undefined) }));
+vi.mock('./gmail/sync', () => ({ runGmailSync, startGmailTimers, setGmailPaused: vi.fn(), stopGmailSync: vi.fn(async () => undefined), syncAfterNewToken: vi.fn() }));
 
 const fakeAuth = await import('@/test/fakes/firebaseAuth');
 const { gmailStartPatch, reauthorize } = await import('./registry');
@@ -45,12 +45,18 @@ afterEach(async () => {
   await dropDb(db);
 });
 
-describe('Gmail Continue after a reload, with the Google sign-in script blocked', () => {
-  it('on start, the row asks to sign in again and drops the old load error', () => {
-    expect(gmailStartPatch({ errorCode: 'gis-load-failed' }, false)).toEqual({ needsAuth: true, error: undefined, errorCode: undefined });
-    expect(gmailStartPatch({ errorCode: 'popup-closed' }, true)).toEqual({ error: undefined, errorCode: undefined });
-    expect(gmailStartPatch({ errorCode: 'quota' }, false)).toEqual({ needsAuth: true });
-    expect(gmailStartPatch({}, true)).toEqual({});
+describe('Gmail Continue with the Google sign-in script blocked', () => {
+  it('on start, the row never asks merely because this tab holds no token; it drops the old load error', () => {
+    const now = Date.now();
+    const kept = { value: 'ya29.kept', expiresAt: now + 30 * 60_000, scope: GMAIL_SCOPE };
+    const spent = { ...kept, expiresAt: now - 1 };
+    expect(gmailStartPatch({ errorCode: 'gis-load-failed' }, now)).toEqual({ error: undefined, errorCode: undefined });
+    expect(gmailStartPatch({ errorCode: 'quota' }, now)).toEqual({});
+    expect(gmailStartPatch({ needsAuth: true, accessToken: spent }, now)).toEqual({});   // the first sync asks
+    // A usable token on this computer clears an old ask.
+    expect(gmailStartPatch({ needsAuth: true, accessToken: kept }, now)).toEqual({ needsAuth: false });
+    expect(gmailStartPatch({ errorCode: 'popup-closed', accessToken: kept }, now)).toEqual({ error: undefined, errorCode: undefined });
+    expect(gmailStartPatch({ accessToken: kept }, now)).toEqual({});
   });
 
   it('Continue opens the Firebase popup inside the click, holds the token and clears needsAuth', async () => {
@@ -70,7 +76,24 @@ describe('Gmail Continue after a reload, with the Google sign-in script blocked'
     // The sync picks up where it was (auto mode), not a backfill from scratch.
     expect(runGmailSync).toHaveBeenCalledWith(db);
     expect(startGmailTimers).toHaveBeenCalledWith(db);
-    expect(JSON.stringify(row)).not.toContain(fakeAuth.FAKE_POPUP_ACCESS_TOKEN);
+    // Kept on the row for every tab of this account, with its end and scopes (about 55 minutes for a popup token).
+    const kept = (row as { accessToken?: { value: string; expiresAt: number; scope: string } } | undefined)?.accessToken;
+    expect(kept?.value).toBe(fakeAuth.FAKE_POPUP_ACCESS_TOKEN);
+    expect(kept?.scope).toContain(GMAIL_SCOPE);
+    expect(kept!.expiresAt - Date.now()).toBeGreaterThan(50 * 60_000);
+  });
+
+  it('a fresh token that Gmail still refuses gives the warning, with Continue again, and is not kept', async () => {
+    globalThis.fetch = (async (input: RequestInfo | URL) =>
+      String(input).startsWith('https://gmail.googleapis.com/')
+        ? new Response(JSON.stringify({ error: { code: 401, message: 'Invalid Credentials' } }), { status: 401 })
+        : new Response(JSON.stringify({ scope: `openid ${GMAIL_SCOPE}` }), { status: 200 })) as typeof fetch;
+    await reauthorize(db, 'gmail');
+    await vi.waitFor(async () => expect((await db.sources.get('gmail')) as { accessToken?: unknown }).not.toHaveProperty('accessToken'));
+    const row = await db.sources.get('gmail');
+    expect(row).toMatchObject({ needsAuth: true, errorCode: 'auth-needed', error: SOURCE_COPY.gmailAccessRefused });
+    expect(getGmailToken()).toBeNull();
+    expect(runGmailSync).not.toHaveBeenCalled();
   });
 
   it('a closed popup keeps the row asking, with the plain closed line and never the load error', async () => {
@@ -78,6 +101,7 @@ describe('Gmail Continue after a reload, with the Google sign-in script blocked'
     await reauthorize(db, 'gmail');
     const row = await db.sources.get('gmail');
     expect(row).toMatchObject({ needsAuth: true, errorCode: 'popup-closed', error: SOURCE_COPY.popupClosed });
+    expect(row).not.toHaveProperty('accessToken');
     expect(getGmailToken()).toBeNull();
     expect(runGmailSync).not.toHaveBeenCalled();
   });

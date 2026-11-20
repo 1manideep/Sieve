@@ -1,5 +1,6 @@
 // Gmail sign-in (20 section 15.1): the Google sign-in script loader recovers from a failed load, and when the script
-// is not there at click time the same click asks through the Firebase popup at once. The token stays in memory only.
+// is not there at click time the same click asks through the Firebase popup at once. This module holds the token in
+// memory; keeping it on the Gmail row is the registry's (sharedToken.test.ts). Never in web storage.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installFakeGis } from '../../../../tests/harness/fakeGis';
 import { GIS_LOAD_TIMEOUT_MS, GIS_SRC, GMAIL_SCOPE, GMAIL_TOKEN_SKEW_MS } from '../../index/config';
@@ -103,7 +104,7 @@ describe('requestGmailToken without the Google sign-in script', () => {
     expect(init?.method).toBe('POST');
     expect(String(init?.body)).toContain(TOKEN);
 
-    // Memory only.
+    // Never in web storage.
     for (let i = 0; i < localStorage.length; i++) expect(localStorage.getItem(localStorage.key(i) ?? '')).not.toContain(TOKEN);
     for (let i = 0; i < sessionStorage.length; i++) expect(sessionStorage.getItem(sessionStorage.key(i) ?? '')).not.toContain(TOKEN);
   });

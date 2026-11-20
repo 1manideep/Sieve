@@ -24,7 +24,7 @@ Measurements on Mani's machine (M2, Chrome, spike data):
 
 1. Question time is retrieval (milliseconds) plus exactly one Nano call (`selectAndAnswer`, 10). Nothing in `search()` calls Nano.
 2. Embeddings, the index, chunks and vectors never leave the device. The only network calls made here are Gmail API calls with the person's token (message ids, the Gmail search string), the GIS script, and Sieve's own static files (models, word list, Playground data).
-3. The Gmail access token lives in one module variable in memory; it is never written to IndexedDB, localStorage, sessionStorage, Firestore, a URL or a log.
+3. The Gmail access token is kept on this device for up to one hour, on the real database's `sources` row `gmail`, shared by every tab of the account (15.1, changed Nov 20); it is never written to the Playground database, localStorage, sessionStorage, Firestore, a URL or a log.
 4. A model never reads the content of an item whose category rule is `never`, except the batched label call, which reads title, sender and preview to decide the category. The embedder is a model: `never` items are embedded from title and sender only (7.3), so their content is never read by a model.
 5. Every write respects contracts section 10 (implemented in section 5).
 6. The Playground database never reaches Firestore; nothing under `web/src/playground/` imports `firebase/firestore`.
@@ -648,7 +648,8 @@ Checked by running chrono-node 2.10.3 with today 2026-11-17: `Nov 28` and `Dec 4
 ### 9.4 Other hints
 
 - `source`: the first of these words in the question: `email emails mail inbox` gives `'mail'`; `photo photos picture pictures pic pics image images selfie screenshot` gives `'photos'`; `file files document documents doc docs pdf note notes chat` gives `'files'`.
-- `from`: the words after `from` up to the next stop word, preposition or date (one to three words), for example "from Dana" gives `'Dana'`; else `my <role>` for `landlord doctor dentist bank boss manager mom dad pharmacy airline` gives the role word.
+- `from`: the words after `from` up to the next stop word, preposition or date (one to three words), for example "from Dana" gives `'Dana'`; else `my <role>` for `landlord doctor dentist bank boss manager mom dad pharmacy airline` gives the role word. This stays a boost.
+- `sender` (Nov 20, `cues.ts`, a field of `ParsedQuestion`, not of `QueryHints`): the sender the question names, which `search` uses as a filter (10.2). Patterns, first match wins: "from X" (not after a travel or photo word: "flight from Seattle", "photos from Hawaii"); "X's latest email" (`X's [latest|last|newest|most recent] email|order|message|...`); "X said / asked / sent / emailed / replied / wrote" (also "did X send"); "X [one word] email|order|receipt|code|...", which covers "my latest Gymshark order" and "Google verification emails". X is one to three capitalised words that do not start a sentence (and the question is not in title case), or one word that names a sender in the index: a display-name, address or domain word that is not an English word, not generic (`noreply`, `info`, `team`, ...) and not a role. Role words, calendar words, `gmail` and `drive` are never X. A photo question has no sender.
 - `terms` (at most 5): tokens with at least one digit and at least three characters that were not read as dates (`K7Q2LM`, `1432`, `RX-6620194`; `#88231` gives `88231`); double-quoted phrases; capitalized words that are not the first word and not in the word list (names such as "Dana"). Deduped in order.
 - `interpreted`: from 9.3.
 
@@ -664,6 +665,7 @@ export interface SearchReport {
   live?: { q: string; found: number; added: number; ms: number; charsSent: number; skipped?: 'no-token' | 'error' | 'timeout' };
   hydrated?: { fetched: number; skipped: number };
   repaired: number;                     // orphan hits dropped (5.7)
+  filters?: { sender?: string; after?: string; before?: string };   // the hard filters that applied (10.2)
 }
 export function search(db: SieveDb, question: string, opts?: {
   k?: number; sources?: SourceKind[]; categories?: Category[]; hints?: QueryHints;    // contract
@@ -673,7 +675,7 @@ export function search(db: SieveDb, question: string, opts?: {
 export function duplicatesOf(db: SieveDb, recordId: string): Promise<IndexRecord[]>;   // same contentHash, other ids
 ```
 
-Search does not apply category rules: it returns `never` items too, so the pipeline can say "found 1 email labelled Health, never shared" and stop before any model reads it. `opts.sources` and `opts.categories` are hard filters (they come from a grant). Hints only boost.
+Search does not apply category rules: it returns `never` items too, so the pipeline can say "found 1 email labelled Health, never shared" and stop before any model reads it. `opts.sources` and `opts.categories` are hard filters (they come from a grant). The sender and the dates are hard filters too (10.2, Nov 20); the other hints boost.
 
 ```mermaid
 flowchart TD
@@ -698,9 +700,9 @@ flowchart TD
 
 1. `question.trim()` empty: return `[]`.
 2. `now = opts.now ?? clockFor(db)`; `locale = opts.locale ?? navigator.language`; `p = parseQuestion(question, new Date(now), locale, { db })`.
-3. Hints: `hints = { ...p.hints, ...definedFields(opts.hints) }`, with `interpreted` concatenated.
+3. Hints: `hints = { ...p.hints, ...definedFields(opts.hints) }`, with `interpreted` concatenated. Filters (`hardFilterOf`): `sender` is `opts.hints.from` unless that is a role ("my landlord"), else `p.sender`; none for a photo question. `after` and `before` are `hints.after` and `hints.before` (the request's, else the question's dates).
 4. Live Gmail (10.5): start without awaiting when allowed.
-5. **Vector.** `k = opts.k ?? VECTOR_K`. Query texts: `[withEmojiNames(p.normalized)]`, plus `withEmojiNames(p.corrected)` when different (so "🎂 photos" also searches "birthday cake"). `getMl().run('embed', { texts }, { priority: 'foreground', signal })`. `accept(id)` checks the hard filters against the record's in-memory metadata (source, category). `hits = vectorIndex.scan(qv, accept, k * 4)` for each query vector; per record keep the higher score.
+5. **Vector.** `k = opts.k ?? VECTOR_K`. Query texts: `[withEmojiNames(p.normalized)]`, plus `withEmojiNames(p.corrected)` when different (so "🎂 photos" also searches "birthday cake"). `getMl().run('embed', { texts }, { priority: 'foreground', signal })`. `accept(id)` checks the hard filters against the record's in-memory metadata (source, category, sender, dates), so the scan, the keyword step and live Gmail never return an item that fails one. `hits = vectorIndex.scan(qv, accept, k * 4)` for each query vector; per record keep the higher score.
    - Embedder not ready (loading or failed): skip, `vector.ran = false` with the reason, and take `k + KEYWORD_SAFETY_K` from the keyword step instead.
 6. **Boosts** (added to the cosine score, from `BOOST`):
    - date: `hints.after`/`before` contain the record's `date` day: `dateRecord`; else any of `record.mentionedDays` falls inside: `dateMentioned`.
@@ -710,17 +712,22 @@ flowchart TD
    - recency: `recency * exp(-ageDays / 60)`; when the question has `latest`, `newest`, `most recent` or `last` not followed by a unit: `latest * exp(-ageDays / 30)` instead.
 7. Sort by boosted score; walking down, keep at most `MAX_PER_THREAD` per `threadId`; take `k`.
 8. **Keyword safety.** Query words: processed tokens of `p.searchText ?? p.corrected` (and of `withEmojiNames(p.normalized)` when different) plus `hints.terms`. `ms.search(words.join(' '), { ...KEYWORD_SEARCH, filter: hard filters })`. Take the best `KEYWORD_SAFETY_K` records not already in the vector list. Their score is `min(lowest vector score, 1) * 0.99` so they sort after the vector list (or the keyword score normalized to the top hit when the vector step did not run).
-9. **Merge.** Vector list, then keyword extras, then live Gmail additions (10.5), in that order.
-10. **Resolve** every id with `getRecord` (5.7). Then keep one candidate per `contentHash` (the first in order); the others stay available through `duplicatesOf`.
+9. **Merge.** Vector list, then keyword extras, then live Gmail additions (10.5), in that order. With a sender filter and a "latest" question ("Ramki's latest email"), the sender's newest `k` items not yet in the list follow (`matchedBy: 'keyword'`), so the newest one is there to pick; the pipeline orders by date (10 section 12.3 step 6a).
+10. **Resolve** every id with `getRecord` (5.7); a record that fails a filter is dropped. Then keep one candidate per `contentHash` (the first in order); the others stay available through `duplicatesOf`.
 11. **Hydrate** (10.6).
 12. **Candidate** per record: `recordId`; `score` (clipped to 0..1); `matchedBy`: `'caption'` for a photo matched by vector, `'vector'` for other vector hits, `'keyword'` for keyword extras, `'gmail-search'` for live additions; `chunk` = the best chunk's `{ start, end }` when the vector row has a text range (`end > start`); `reason` (10.3).
 13. `opts.onReport?.(report)`. 10 turns the report into trace steps with its own copy (10's `pipeline/copy.ts`); suggested wording: "Searched {N} {items} on this device", "Searched for: {corrected}", "Gmail's own search found {n} emails; the search words were sent to Gmail ({charsSent} characters)", "Search model still loading; used keyword search only".
 
 `opts.signal` aborts the embedding job, Gmail calls and hydration; search then rejects with `DOMException('AbortError')`.
 
-### 10.2 Why hints only boost
+### 10.2 Filters and boosts
 
-"The flight on Dec 4" refers to a date inside an older email, and a person's date guess can be off by a week. Boosting by both the record date and the dates mentioned in the text keeps the right item in the shortlist when the guess is near, and never removes it when the guess is wrong.
+Changed Nov 20, after a test against Claude with a direct Gmail connector: while the sender and dates only boosted, Sieve answered "Did HelloSign send me...?" from another sender's email instead of saying nothing matched.
+
+- **Sender filter.** An item passes when every word of the cue (lowercase; `the`, `inc`, `team` and similar left out) equals a word of its display name, address local part or domain labels (the top-level domain left out), is within OSA distance 1 for words of 5 or more letters, or begins one of them (4 or more letters). "Amazon" passes `amazon.com` and `Amazon.in`, "Kay" passes "Kay Narayanan", and "Good Dog" also passes `gooddog.example` as one word. An address cue must equal the address or its domain. An item without a sender fails.
+- **Date filter.** An item passes when its own day, or a day it mentions (`mentionedDays`), falls inside `after` to `before`, so "the flight on Dec 4" still finds the booking email of Nov 8 that says "Friday, December 4".
+- Nothing passes: `search` returns `[]`, and the pipeline's outcome is `no-match` ("Nothing on this device matched.").
+- A role ("my landlord", "the bank") stays a boost: the landlord's sender name rarely says "landlord". Every other hint boosts (date, source, `from` words, terms, recency, latest), within what passed.
 
 ### 10.3 Reasons (`reasons.ts`)
 
@@ -998,11 +1005,11 @@ export function getQueue(db: SieveDb): IngestQueue;
 export function getPrivacyQueue(db: SieveDb): PrivacyScanQueue;
 ```
 
-40 reads the `sources` rows directly with `useLiveQuery`. Row fields this spec maintains: `connected`, `paused`, `progress`, `lastSyncAt`, `cursor`, `folderHandle`, and the optional `needsAuth`, `error`, `folderName`, `account`, `phase`, `errorCode`, `skipped`, `etaMs`. Rows are written at most every 500 ms per source during bulk work.
+40 reads the `sources` rows directly with `useLiveQuery`. Row fields this spec maintains: `connected`, `paused`, `progress`, `lastSyncAt`, `cursor`, `folderHandle`, and the optional `needsAuth`, `error`, `folderName`, `account`, `phase`, `errorCode`, `skipped`, `etaMs`, and on the Gmail row `accessToken` (15.1). Rows are written at most every 500 ms per source during bulk work.
 
-`startSources(db)`: `await ready(db)`; `becomeIndexer`; as leader: Gmail connected without a token sets `needsAuth: true` (no popup); a folder handle runs the permission check (16.2); start the ingest queue and the privacy queue; start the Gmail sync timer and folder rescans; `requestPersistence()` when a real source is connected.
+`startSources(db)`: `await ready(db)`; every tab reads the stored Gmail token and follows the Gmail row (15.1); `becomeIndexer`; as leader: a connected Gmail row starts a sync, which sets `needsAuth: true` (no popup) only when no usable token is stored, never because this tab's memory is empty; a folder handle runs the permission check (16.2); start the ingest queue and the privacy queue; start the Gmail sync timer and folder rescans; `requestPersistence()` when a real source is connected.
 
-Copy for the rows (40 may restate): `error` strings are full sentences given in 15 and 16; `needsAuth` for Gmail means "Sign in to Gmail again to add new mail"; for a folder `errorCode: 'permission-needed'` means "Allow access to {folderName} again to keep it up to date".
+Copy for the rows (40 may restate): `error` strings are full sentences given in 15 and 16; `needsAuth` for Gmail means "Syncing paused. Continue to keep getting new mail." (a plain note), and with `errorCode: 'auth-needed'` "Google didn't allow read-only Gmail access. Try Continue again." (the only Gmail warning, 15.1); for a folder `errorCode: 'permission-needed'` means "Allow access to {folderName} again to keep it up to date".
 
 ### 14.2 Pause and resume
 
@@ -1031,23 +1038,59 @@ Read-only, straight from the browser to Google. Gmail is a restricted scope; the
 ### 15.1 Sign-in (`auth.ts`)
 
 ```ts
+export interface GmailToken { value: string; expiresAt: number; scope: string }
 export function preloadGis(): Promise<void>;
 export function requestGmailToken(opts: { prompt: '' | 'consent' | 'select_account'; loginHint?: string }): Promise<void>;
 export function getGmailToken(): string | null;
-export function clearGmailToken(): void;
+export function currentGmailToken(): GmailToken | null;
+export function adoptGmailToken(t: GmailToken): boolean;      // a token from the row; true when the held one changed
+export function clearGmailToken(value?: string): void;        // memory only; with value, only that token
+export function rejectGmailToken(value: string): void;        // a 401: forget it and never take it back
 export function revokeGmailToken(): Promise<void>;
+// tokenStore.ts: the token on the real database's Gmail row
+export function readStoredToken(db: SieveDb): Promise<GmailToken | null>;
+export function writeStoredToken(db: SieveDb, t: GmailToken | null, patch?: Partial<SourceRow>): Promise<void>;
+export function clearStoredToken(db: SieveDb, onlyValue?: string): Promise<void>;
+export function loadStoredGmailToken(db: SieveDb): Promise<string | null>;
+// renew.ts: renewal inside the person's own clicks
+export const GMAIL_RENEW_BEFORE_MS = 10 * 60_000;
+export const GMAIL_RENEW_EVERY_MS = 5 * 60_000;
 ```
 
 - `preloadGis`: inject `<script src="https://accounts.google.com/gsi/client" async>` once; resolve when `google.accounts.oauth2` exists; reject after 15 s, or on the script's `error` event, with `gis-load-failed`. A script that failed or timed out is removed from the page, so the next attempt injects a fresh one. 40 calls it when the Sources screen mounts, best effort, so the popup opens within the click's user activation. A click never waits for it.
 - One token client: `google.accounts.oauth2.initTokenClient({ client_id: import.meta.env.VITE_GOOGLE_OAUTH_CLIENT_ID, scope: GMAIL_SCOPE, include_granted_scopes: false, callback, error_callback })`.
 - `requestGmailToken` is called synchronously in the click handler: `tokenClient.requestAccessToken({ prompt, login_hint })`. Google Identity Services is the first choice whenever it has loaded.
-- Fallback, the Firebase popup (added Nov 20: the script is blocked in some Chromes): when `google.accounts.oauth2` is missing at click time (the preload failed or has not finished) or there is no client id, the same click calls `reauthenticateWithPopup(auth.currentUser, provider)` at once, with `provider = new GoogleAuthProvider()`, `provider.addScope(GMAIL_SCOPE)` and `setCustomParameters({ prompt: 'consent', login_hint: user.email })` (renewal sends only `login_hint`). The token is `GoogleAuthProvider.credentialFromResult(result)?.accessToken`, kept in the same module variable for `FIREBASE_TOKEN_MS` (55 minutes; the result has no lifetime). The scopes are trusted when the result lists them; otherwise a POST to `https://oauth2.googleapis.com/tokeninfo` with the token in the body (never in a URL) checks for `GMAIL_SCOPE`, and a token without it gives `scope-denied`. Popup errors: `auth/popup-blocked` gives `popup-blocked`, `auth/popup-closed-by-user` and `auth/cancelled-popup-request` give `popup-closed`, `auth/user-mismatch` gives `unknown` ("Pick the Google account you use for Sieve, then try again."). Only the error code is read, never logged with the error (it can carry the credential). `gis-load-failed` ("Sign in to Sieve with Google first, then connect Gmail.") is left only for when neither way is open (no signed-in Google user). `revokeGmailToken` without the script POSTs the token in the body to `https://oauth2.googleapis.com/revoke`. On app start, a connected row with no token gets `needsAuth: true`, and a stale click error (`gis-load-failed`, `popup-blocked`, `popup-closed`) is cleared, so the card shows only the sign in again notice with Continue.
-- Callback: `resp.error` gives `scope-denied` ("Sieve needs read-only access to Gmail. Nothing was connected."); `!google.accounts.oauth2.hasGrantedAllScopes(resp, GMAIL_SCOPE)` revokes and gives `scope-denied`; else `token = { value: resp.access_token, expiresAt: Date.now() + Number(resp.expires_in) * 1000 }`.
+- Fallback, the Firebase popup (added Nov 20: the script is blocked in some Chromes): when `google.accounts.oauth2` is missing at click time (the preload failed or has not finished) or there is no client id, the same click calls `reauthenticateWithPopup(auth.currentUser, provider)` at once, with `provider = new GoogleAuthProvider()`, `provider.addScope(GMAIL_SCOPE)` and `setCustomParameters({ prompt: 'consent', login_hint: user.email })` (renewal sends only `login_hint`). The token is `GoogleAuthProvider.credentialFromResult(result)?.accessToken`, held and stored like a GIS token (below) for `FIREBASE_TOKEN_MS` (55 minutes; the result has no lifetime). The scopes are trusted when the result lists them; otherwise a POST to `https://oauth2.googleapis.com/tokeninfo` with the token in the body (never in a URL) checks for `GMAIL_SCOPE`, and a token without it gives `scope-denied`. Popup errors: `auth/popup-blocked` gives `popup-blocked`, `auth/popup-closed-by-user` and `auth/cancelled-popup-request` give `popup-closed`, `auth/user-mismatch` gives `unknown` ("Pick the Google account you use for Sieve, then try again."). Only the error code is read, never logged with the error (it can carry the credential). `gis-load-failed` ("Sign in to Sieve with Google first, then connect Gmail.") is left only for when neither way is open (no signed-in Google user). `revokeGmailToken` without the script POSTs the token in the body to `https://oauth2.googleapis.com/revoke`. On app start a stale click error (`gis-load-failed`, `popup-blocked`, `popup-closed`) is cleared; whether to ask for Continue is the first sync's decision (below).
+- Callback: `resp.error` gives `scope-denied` ("Sieve needs read-only access to Gmail. Nothing was connected."); `!google.accounts.oauth2.hasGrantedAllScopes(resp, GMAIL_SCOPE)` revokes and gives `scope-denied`; else `token = { value: resp.access_token, expiresAt: Date.now() + Number(resp.expires_in) * 1000, scope: resp.scope }`.
 - `error_callback`: `popup_failed_to_open` gives `popup-blocked` ("Chrome blocked the Google sign-in window. Allow pop-ups for this site and try again."); `popup_closed` gives `popup-closed` ("Sign-in was closed. Nothing changed."); other `unknown`.
-- The token is in one module variable, only sent in `Authorization: Bearer` to `gmail.googleapis.com`; the app logger replaces `/ya29\.[\w.-]+/` with `[token]`. The token model has no refresh token. `getGmailToken()` returns null from `expiresAt - GMAIL_TOKEN_SKEW_MS`; background jobs then stop with `needsAuth: true`; interactive callers skip Gmail with a report note. Renewal needs a click: `reauthorize(db, 'gmail')` calls `requestGmailToken({ prompt: '', loginHint: row.account })`.
+- The token is only sent in `Authorization: Bearer` to `gmail.googleapis.com` (and in the body of the tokeninfo and revoke POSTs); the app logger replaces `/ya29\.[\w.-]+/` with `[token]`. The token model has no refresh token. `getGmailToken()` returns null from `expiresAt - GMAIL_TOKEN_SKEW_MS`; interactive callers then skip Gmail with a report note.
+- **The token on this device (changed Nov 20, replacing "memory only").** The token is kept on this computer for its lifetime, up to one hour, shared by every tab of this account: `{ value, expiresAt, scope }` in the `accessToken` field of the real database's `sources` row `gmail` (a field that is not indexed, so no schema change). It is never put in the Playground database, localStorage, sessionStorage, Firestore, a URL or a log. Why: the Gmail sync runs only in the tab that holds the indexer lock (4.4), and Sieve is often open in more than one tab. With the token in one tab's memory, any other tab, a reload or a new tab had none, and every start and every 5 minute sync marked the shared row `needsAuth`, so the person was asked to sign in again long before the hour was up. The index itself (mail text, previews, vectors) already lives in IndexedDB on this device, so a one-hour, read-only token there is not the more sensitive secret.
+  - Read: on start in every tab (`loadStoredGmailToken`), and before every sync. Every tab follows the row with a Dexie live query, which sees other tabs' writes: a new token is held at once, and the indexer tab syncs with it (`syncAfterNewToken`) without waiting for its timer; a token removed from the row is dropped from memory.
+  - Write: whenever a token is obtained, by Connect, Continue or a click renewal, through Google Identity Services or the Firebase popup. The write also sets `needsAuth: false`.
+  - Clear: on sign-out of Sieve or a change of Google account (Firebase `onAuthStateChanged`, watched only when the app has already started Firebase), on disconnect (after the revoke), on expiry (`readStoredToken` removes a spent token), and on a 401 (`rejectGmailToken`, then `clearStoredToken(db, value)`, which leaves a newer token another tab already kept).
+  - Asking: `needsAuth: true` is set only when a sync actually runs, or Gmail answers 401, and no usable token exists after reading the row. It is never set at app start merely because this tab's memory is empty. `gmailStartPatch` reads the stored token and its expiry: a usable stored token clears an old `needsAuth`.
+  - Renewal inside the person's own clicks: while Gmail is connected, the sources module installs one document click listener. When the stored token has under `GMAIL_RENEW_BEFORE_MS` (10 minutes) left, or ran out by time, a click anywhere in the app calls `requestGmailToken({ prompt: '', loginHint })` synchronously inside that click, through Google Identity Services only, at most once per `GMAIL_RENEW_EVERY_MS` (5 minutes), and keeps the new token on the row. It never opens the Firebase popup: that opens only from the card's own Continue button (a surprise popup is worse than a notice). It does nothing while indexing is paused, after a refused token, or when a token request is already open (the Continue click itself).
+  - Continue: `reauthorize(db, 'gmail')` calls `requestGmailToken({ prompt: '', loginHint: row.account })`, keeps the token on the row, then checks it with `users.getProfile`. A fresh token that Gmail still answers 401 to, or a token without `GMAIL_SCOPE`, is a real scope problem: `{ needsAuth: true, errorCode: 'auth-needed', error: "Google didn't allow read-only Gmail access. Try Continue again." }`, and the token is not kept.
+  - The card (40 section 13.6): `needsAuth` alone is a plain note (tone info), "Syncing paused. Continue to keep getting new mail." with Continue. The warning tone is only for `errorCode: 'auth-needed'`, with the line above and Continue.
+
+```mermaid
+flowchart TD
+  T[Token obtained: Connect, Continue or a click] --> W[Keep on sources.gmail.accessToken]
+  W --> Q[Dexie live query in every tab]
+  Q --> H[Each tab holds the token]
+  Q --> L{Indexer tab?}
+  L -->|yes| S[Sync now]
+  S --> R{Usable token after reading the row?}
+  R -->|yes| G[Gmail API]
+  R -->|no| N[needsAuth: plain note with Continue]
+  G -->|401| X[Drop that token from memory and row]
+  X --> R
+  E[Expiry, sign-out, disconnect] --> C[Clear the row and memory]
+  K[Click anywhere, under 10 minutes left, GIS loaded] --> T
+```
 - CSP (40/60 own headers): `script-src` and `frame-src` allow `https://accounts.google.com`; `connect-src` allows `https://gmail.googleapis.com` and `https://oauth2.googleapis.com`.
 
-`connectGmail(db)`: row `phase: 'listing'`; `requestGmailToken({ prompt: 'select_account' })`; `getProfile()`; upsert `{ kind: 'gmail', connected: true, account: emailAddress, cursor: historyId, progress: { done: 0, total: 0 }, paused: false, needsAuth: false }` (history id taken before listing, so mail arriving during the backfill is caught by the first incremental sync; duplicates are harmless); `requestPersistence()`; start the backfill (15.4). Errors leave the row as it was and set `error`, `errorCode`.
+`connectGmail(db)`: row `phase: 'listing'`; `requestGmailToken({ prompt: 'select_account' })`; `getProfile()`; upsert `{ kind: 'gmail', connected: true, account: emailAddress, cursor: historyId, progress: { done: 0, total: 0 }, paused: false, needsAuth: false, accessToken }` (history id taken before listing, so mail arriving during the backfill is caught by the first incremental sync; duplicates are harmless); `requestPersistence()`; start the backfill (15.4). Errors leave the row as it was and set `error`, `errorCode`.
 
 ```mermaid
 sequenceDiagram
@@ -1062,10 +1105,10 @@ sequenceDiagram
   UI->>A: requestGmailToken(select_account)
   A->>G: requestAccessToken
   G-->>A: TokenResponse
-  A->>A: hasGrantedAllScopes, keep token in memory
+  A->>A: hasGrantedAllScopes, hold token
   UI->>API: users.getProfile
   API-->>UI: emailAddress, historyId
-  UI->>DB: sources.gmail connected, account, cursor
+  UI->>DB: sources.gmail connected, account, cursor, accessToken
   UI->>UI: start backfill in the background
 ```
 
@@ -1970,9 +2013,10 @@ Vitest with `fake-indexeddb/auto` and `TZ=America/Chicago`; AI, privacy and ML w
 ### Gmail
 - **A-GM-1** MIME fixtures: alternative gives HTML only; mixed with a PDF attachment gives the body and `attachments: 1`; nested rfc822; base64url with `-` and `_`; `charset=iso-8859-1`.
 - **A-GM-2** `UnitBucket` timing and priority with fake timers.
-- **A-GM-3** Backoff on 429 and `Retry-After`; `GmailRateError` after 6 attempts; 401 clears the token and sets `needsAuth`.
+- **A-GM-3** Backoff on 429 and `Retry-After`; `GmailRateError` after 6 attempts; 401 clears the token in memory and on the row and sets `needsAuth`.
 - **A-GM-4** Backfill of 1,200 mocked messages, resume after reload fetches only missing ids, bodies phase re-indexes in place.
-- **A-GM-5** Token never stored: after connect and sync, no IndexedDB store, localStorage or sessionStorage contains the token; logs show `[token]`.
+- **A-GM-5** Token kept only on the real Gmail row (changed Nov 20, 15.1): after connect and sync, the `sources` row `gmail` holds `accessToken`; no other IndexedDB store, the Playground database, localStorage or sessionStorage contains the token; logs show `[token]`.
+- **A-GM-6** Shared token (15.1): the stored token survives a reload and a fresh module instance syncs with it; a second tab with a valid stored token does not set `needsAuth`; a token another tab keeps starts the indexer tab's sync at once; expiry clears it and the next sync sets `needsAuth`; a 401 clears it but leaves a newer one; sign-out and disconnect clear it; a click renews through GIS under 10 minutes left, once per 5 minutes, and never without GIS; Continue keeps the token.
 
 ### Folder, uploads, readers, photos
 - **A-FD-1** `isIgnored`, `fileTypeOf`; HEIC counted under `skipped.heic`; a 31 MB PDF `too-large`.

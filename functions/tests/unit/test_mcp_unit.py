@@ -131,6 +131,31 @@ def test_u8_no_session_header_and_no_store():
         assert "Mcp-Session-Id" not in r.headers and r.headers["Cache-Control"] == "no-store"
 
 
+def test_instructions_follow_the_grant_cap():
+    """initialize, server/discover and tools/list name only the tools the grant's cap allows."""
+    today = datetime(2026, 11, 16, tzinfo=timezone.utc)
+    for step in ("answer", "excerpt", "full", None):
+        secret = links.new_link_secret()
+        db = _db_with_connector(secret)
+        if step:
+            db.collection("users/u1/grants").document("G" * 20).set({
+                "aiName": "Test", "maxStep": step, "allowedCategories": ["Home"], "allowedSources": ["gmail"],
+                "createdAt": today, "expiresAt": today, "linkHint": "abcd"})
+        deps = _deps(db)
+        cap = step or "answer"          # an unreadable grant gets the least
+        init = _post(f"/{secret}", _msg("initialize", {"protocolVersion": "2025-11-25"}), deps=deps).get_json()
+        assert init["result"]["instructions"] == tools.instructions(today.date(), cap)
+        disc = _post(f"/{secret}", _msg("server/discover", {"_meta": META}),
+                     headers=dict(_modern_headers("server/discover")), deps=deps).get_json()
+        assert disc["result"]["instructions"] == tools.instructions(today.date(), cap)
+        listed = _post(f"/{secret}", _msg("tools/list"), headers={"MCP-Protocol-Version": "2025-11-25"},
+                       deps=deps).get_json()["result"]["tools"]
+        assert [t["name"] for t in listed] == tools.allowed_tools(cap)
+        if cap == "answer":
+            readable = json.dumps(init) + json.dumps(disc) + json.dumps(listed)
+            assert "sieve_excerpt" not in readable and "sieve_full_item" not in readable
+
+
 def test_u10_tools_for_step():
     assert [t["name"] for t in tools.tools_for_step("answer", version="2025-11-25")] == ["sieve_answer", "sieve_check"]
     full = tools.tools_for_step("full", version="2026-07-28")

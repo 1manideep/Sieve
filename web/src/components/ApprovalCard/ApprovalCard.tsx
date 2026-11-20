@@ -7,7 +7,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { MAX_PAYLOAD_CHARS, type LadderStep, type Proposal, type StepOption, type TraceStep } from '@sieve/shared';
 import type { RecordMeta } from '@/state/records';
-import { APPROVAL_COPY, CONVERSATION_COPY, LADDER_COPY, OUTGOING_COPY, RELATED_COPY, fill } from '@/copy/screens-main';
+import { APPROVAL_COPY, CONVERSATION_COPY, LADDER_COPY, OUTCOME_COPY, OUTGOING_COPY, RELATED_COPY, fill } from '@/copy/screens-main';
 import { Glyph } from '../AskResult/glyphs';
 import { CategoryBadge } from '../CategoryBadge/CategoryBadge';
 import { ConsentPanel } from '../ConsentPanel/ConsentPanel';
@@ -137,6 +137,7 @@ export function ApprovalCard(props: ApprovalCardProps) {
             <OutcomePanel
               outcome={proposal.outcome}
               category={item?.category}
+              secret={proposal.outcome === 'blocked-never' && proposal.options[0]?.unavailableReason === `${OUTCOME_COPY.secretTitle}.`}
               variant={variant === 'playground' ? 'playground' : 'real'}
               onRetry={onRetry}
             />

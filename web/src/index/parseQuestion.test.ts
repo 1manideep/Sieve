@@ -62,8 +62,17 @@ describe('typo correction (A-PQ-1)', () => {
 
 describe('hints (A-PQ-4)', () => {
   it('emails from Dana in October', () => {
-    const h = parseQuestion('emails from Dana in October', NOW, 'en-US', { db }).hints;
-    expect(h).toMatchObject({ source: 'mail', from: 'Dana', after: '2026-10-01', before: '2026-10-31' });
+    const p = parseQuestion('emails from Dana in October', NOW, 'en-US', { db });
+    expect(p.hints).toMatchObject({ source: 'mail', from: 'Dana', after: '2026-10-01', before: '2026-10-31' });
+    expect(p.sender).toBe('Dana');
+  });
+
+  it('the sender cue (9.4): a named sender, never a role or a place', () => {
+    expect(parseQuestion('What did Priya say about the agenda?', NOW, 'en-US', { db }).sender).toBe('Priya');
+    expect(parseQuestion('what did kestrelmoor send me', NOW, 'en-US', { db }).sender).toBe('kestrelmoor');
+    expect(parseQuestion('What did my landlord say?', NOW, 'en-US', { db }).sender).toBeUndefined();
+    expect(parseQuestion('When does my flight from Seattle leave?', NOW, 'en-US', { db }).sender).toBeUndefined();
+    expect(parseQuestion('photos from Hawaii', NOW, 'en-US', { db }).sender).toBeUndefined();
   });
 
   it('order numbers become terms; my landlord becomes the from hint', () => {

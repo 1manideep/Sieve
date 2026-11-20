@@ -13,6 +13,7 @@ import { isLeader } from '../../index/locks';
 import { getRuntime } from '../../index/runtime';
 import { SOURCE_COPY } from '../types';
 import { getGmailToken } from './auth';
+import { loadStoredGmailToken } from './tokenStore';
 import {
   GmailAuthError, GmailForbiddenError, GmailNetworkError, GmailNotFoundError, GmailRateError,
   getMessage, getProfile, listHistory, listMessages, type GmailMessage,
@@ -280,7 +281,11 @@ export function setGmailPaused(db: SieveDb, paused: boolean): void {
   else pausedDbs.delete(db);
 }
 
-interface Controller { abort: AbortController; running: Promise<void> | null; timer: ReturnType<typeof setInterval> | null; onVisible: (() => void) | null }
+interface Controller {
+  abort: AbortController; running: Promise<void> | null; timer: ReturnType<typeof setInterval> | null; onVisible: (() => void) | null;
+  /** Run once more when the current job ends (a new token arrived while it ran). */
+  rerun: boolean;
+}
 const controllers = new Map<SieveDb, Controller>();
 
 async function rowError(db: SieveDb, e: unknown): Promise<void> {
@@ -290,12 +295,22 @@ async function rowError(db: SieveDb, e: unknown): Promise<void> {
     rt.syncProgress.delete('gmail');
     void rt.queue?.writeRowsNow?.();
   }
-  if (e instanceof SyncStopped) {
-    if (e.why === 'no-token') await db.sources.update('gmail', { needsAuth: true, phase: 'idle' });
-    else if (e.why === 'paused') await db.sources.update('gmail', { phase: 'idle' });
+  if ((e instanceof SyncStopped && e.why === 'no-token') || e instanceof GmailAuthError) {
+    // The token ran out or Gmail refused it. Another tab may have renewed it: ask for Continue only when the row has
+    // no usable token either (20 section 15.1).
+    if (await loadStoredGmailToken(db).catch(() => null)) {
+      await db.sources.update('gmail', { phase: 'idle' });
+      const c = controllers.get(db);
+      if (c) c.rerun = true;
+    } else {
+      await db.sources.update('gmail', { needsAuth: true, phase: 'idle' });
+    }
     return;
   }
-  if (e instanceof GmailAuthError) return void (await db.sources.update('gmail', { needsAuth: true, phase: 'idle' }));
+  if (e instanceof SyncStopped) {
+    if (e.why === 'paused') await db.sources.update('gmail', { phase: 'idle' });
+    return;
+  }
   if (e instanceof GmailForbiddenError) return void (await db.sources.update('gmail', { errorCode: 'gmail-forbidden', error: SOURCE_COPY.gmailForbidden(e.reason), phase: 'idle' }));
   if (e instanceof GmailRateError) return void (await db.sources.update('gmail', { errorCode: 'quota', error: SOURCE_COPY.gmailQuota, phase: 'idle' }));
   if (e instanceof GmailNetworkError) return void (await db.sources.update('gmail', { errorCode: 'network', error: SOURCE_COPY.network, phase: 'idle' }));
@@ -308,7 +323,7 @@ async function rowError(db: SieveDb, e: unknown): Promise<void> {
 function controllerFor(db: SieveDb): Controller {
   let c = controllers.get(db);
   if (!c) {
-    c = { abort: new AbortController(), running: null, timer: null, onVisible: null };
+    c = { abort: new AbortController(), running: null, timer: null, onVisible: null, rerun: false };
     controllers.set(db, c);
     getRuntime(db).stoppers.add(() => stopGmailSync(db));
   }
@@ -322,7 +337,8 @@ export function runGmailSync(db: SieveDb, mode: 'auto' | 'backfill' | 'reconcile
   c.running = (async () => {
     const row = await db.sources.get('gmail');
     if (!row?.connected || row.paused || !isLeader(db)) return;
-    if (!getGmailToken()) {
+    // The token on this computer, which any tab may have renewed; Continue is asked for only when there is none.
+    if (!(await loadStoredGmailToken(db).catch(() => getGmailToken()))) {
       await db.sources.update('gmail', { needsAuth: true });
       return;
     }
@@ -337,8 +353,19 @@ export function runGmailSync(db: SieveDb, mode: 'auto' | 'backfill' | 'reconcile
     }
   })().finally(() => {
     c.running = null;
+    if (c.rerun && controllers.get(db) === c) {
+      c.rerun = false;
+      void runGmailSync(db);
+    }
   });
   return c.running;
+}
+
+/** A new token reached this tab (another tab kept it on the row): sync now, or right after the job that is running. */
+export function syncAfterNewToken(db: SieveDb): void {
+  const c = controllerFor(db);
+  if (c.running) c.rerun = true;
+  else void runGmailSync(db);
 }
 
 /** Timers: every GMAIL_SYNC_INTERVAL_MS and when the tab becomes visible (leader only). */

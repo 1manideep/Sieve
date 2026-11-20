@@ -18,6 +18,7 @@ export interface SieveE2EAnswer {
   match: string;                 // case-insensitive text of the question
   recordId?: string | null;      // the record that answers it; absent: the first candidate; null: none of them
   answer: string;
+  verify?: boolean;              // what the verify-answer check says; absent: true
 }
 export interface SieveE2E {
   nano?: NanoAvailability;

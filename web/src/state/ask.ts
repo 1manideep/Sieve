@@ -120,6 +120,7 @@ function outcomeAnnouncement(p: Proposal): { text: string; politeness: 'polite' 
     case 'ready': return { text: ASK_FLOW.foundMatch, politeness: 'polite' };
     case 'blocked-never': return { text: ASK_FLOW.neverShared(p.item?.category ?? 'This category'), politeness: 'polite' };
     case 'no-match': return { text: ASK_FLOW.noMatch, politeness: 'polite' };
+    case 'unsupported': return { text: ASK_FLOW.unsupported, politeness: 'polite' };
     case 'needs-cloud-consent': return { text: ASK_FLOW.needsConsent, politeness: 'polite' };
     case 'model-unavailable': return { text: ASK_FLOW.modelUnavailable, politeness: 'polite' };
     default: return { text: ASK_FLOW.somethingWrong, politeness: 'assertive' };

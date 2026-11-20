@@ -5,7 +5,7 @@ import { setLanguageModelForTests } from '../device/languageModel';
 import { baseSessionCount } from '../device/sessions';
 import { downloadNano, NanoSetupError } from '../device/setup';
 import { installNanoWatchers } from '../device/watchers';
-import { LABEL_SYSTEM, SELECT_SYSTEM } from '../prompts';
+import { LABEL_SYSTEM, SELECT_SYSTEM, VERIFY_SYSTEM } from '../prompts';
 import { installFakeLanguageModel } from '../testing/fakeLanguageModel';
 import { resetAiForTests } from '../testing/reset';
 
@@ -135,19 +135,20 @@ describe('watchers (10 section 7.7)', () => {
   beforeEach(() => resetAiForTests());
   afterEach(() => uninstall?.());
 
-  it('AV-9: the first pointerdown warms select, then label; a second creates nothing', async () => {
+  it('AV-9: the first pointerdown warms select, then verify, then label; a second creates nothing', async () => {
     const lm = installFakeLanguageModel({ availability: { text: 'available', image: 'unavailable' } });
     setLanguageModelForTests(lm);
     uninstall = installNanoWatchers();
     window.dispatchEvent(new Event('pointerdown'));
-    await vi.waitFor(() => expect(lm.counters.creates).toBe(2));
+    await vi.waitFor(() => expect(lm.counters.creates).toBe(3));
     expect(lm.createOptions[0].initialPrompts).toEqual([{ role: 'system', content: SELECT_SYSTEM }]);
-    expect(lm.createOptions[1].initialPrompts).toEqual([{ role: 'system', content: LABEL_SYSTEM }]);
+    expect(lm.createOptions[1].initialPrompts).toEqual([{ role: 'system', content: VERIFY_SYSTEM }]);
+    expect(lm.createOptions[2].initialPrompts).toEqual([{ role: 'system', content: LABEL_SYSTEM }]);
     window.dispatchEvent(new Event('pointerdown'));
     await flush();
     await flush();
-    expect(lm.counters.creates).toBe(2);
-    expect(baseSessionCount()).toBe(2);
+    expect(lm.counters.creates).toBe(3);
+    expect(baseSessionCount()).toBe(3);
   });
 
   it('pagehide drops the warm sessions; focus re-checks availability', async () => {
@@ -155,7 +156,7 @@ describe('watchers (10 section 7.7)', () => {
     setLanguageModelForTests(lm);
     uninstall = installNanoWatchers();
     window.dispatchEvent(new Event('keydown'));
-    await vi.waitFor(() => expect(baseSessionCount()).toBe(2));
+    await vi.waitFor(() => expect(baseSessionCount()).toBe(3));
     window.dispatchEvent(new Event('pagehide'));
     expect(baseSessionCount()).toBe(0);
     const before = lm.counters.availabilityCalls;

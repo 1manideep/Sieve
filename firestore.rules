@@ -147,7 +147,7 @@ service cloud.firestore {
     }
     function isClaimedOutcome(before, after, keys) {
       return before.status == 'claimed'
-        && after.status in ['no-match', 'blocked', 'error']
+        && after.status in ['no-match', 'blocked', 'error', 'unsupported']
         && keys.hasOnly(['status', 'message'])
         && validMessage(after);
     }

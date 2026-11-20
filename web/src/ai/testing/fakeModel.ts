@@ -4,7 +4,7 @@
 //   Nano 'available' and the mode allows the device: on_device; else the cloud: in_cloud.
 // Outputs are deterministic. Faults come from window.__sieveE2E.faults[purpose], consumed one per call:
 //   'hang', 'hang-while-hidden', 'throw:<DOMException name>', 'ai-error:<code>:<status>', 'bad-json',
-//   'item:<Pn>', 'answer:<text>', 'availability:<state>'.
+//   'item:<Pn>', 'answer:<text>', 'answers:false' (verify-answer), 'availability:<state>'.
 import type { NanoAvailability } from '@sieve/shared';
 import type { E2EHooks, SieveE2E } from '../e2e';
 import type { HybridCaller, ModelCallResult, ModelSpec, SdkPart } from '../hybrid';
@@ -93,6 +93,14 @@ function selectReply(prompt: string, recordIds: string[], fault: string | undefi
   return JSON.stringify({ item, answer: item === 'none' ? '' : answer });
 }
 
+/** The check of the answer against the item: true unless the canned entry or a fault says false. */
+function verifyReply(prompt: string, fault: string | undefined): string {
+  const question = /^Question: (.*)$/m.exec(prompt)?.[1]?.toLowerCase() ?? '';
+  const entry = (state().answers ?? []).find((a) => question.includes(a.match.toLowerCase()));
+  const answers = fault === 'answers:false' ? false : (entry?.verify ?? true);
+  return JSON.stringify({ answers, reason: answers ? 'The passage states the answer.' : 'The passage does not answer the question.' });
+}
+
 function reply(spec: ModelSpec, prompt: string, recordIds: string[], fault: string | undefined): string {
   if (fault === 'bad-json') return 'not json';
   switch (spec.purpose) {
@@ -100,6 +108,8 @@ function reply(spec: ModelSpec, prompt: string, recordIds: string[], fault: stri
       return labelReply(prompt);
     case 'select-answer':
       return selectReply(prompt, recordIds, fault);
+    case 'verify-answer':
+      return verifyReply(prompt, fault);
     case 'caption':
       return JSON.stringify({ caption: FIXED_CAPTION });
     case 'draft': {

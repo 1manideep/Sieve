@@ -47,7 +47,10 @@ export interface SelectOptions {
   onAnswerText?: (soFar: string) => void;
   hints?: QueryHints;
   today?: number;
+  latest?: boolean;                                     // the question asks for the newest item; passages come newest first
 }
+
+type PromptOpts = { hints?: QueryHints; today?: number; latest?: boolean };
 
 const FIELD_CHARS = 140;
 /** 70 R-MDL-08: an answer that is really "not found" counts as no item. */
@@ -126,7 +129,7 @@ function passageText(body: string, range: PassageRange, photo: boolean): string 
   return `${before ? '[...] ' : ''}${core}${after ? ' [...]' : ''}`;
 }
 
-function recordDay(r: IndexRecord): string {
+export function recordDay(r: IndexRecord): string {
   return localDay(r.kind === 'photo' ? (r.photo?.takenAt ?? r.date) : r.date);
 }
 
@@ -151,12 +154,13 @@ function hintLines(hints: QueryHints | undefined): string[] {
 }
 
 /** The user message for the select call (10 section 10.3). */
-export function selectPrompt(question: string, passages: Passage[], opts?: { hints?: QueryHints; today?: number }): string {
+export function selectPrompt(question: string, passages: Passage[], opts?: PromptOpts): string {
   const head = [`Today is ${localDay(opts?.today ?? Date.now())}.`, `Question: ${promptField(question, 600)}`, ...hintLines(opts?.hints)];
+  if (opts?.latest) head.push('The person wants the newest item that answers the question. The passages are listed newest first.');
   return [head.join('\n'), ...passages.map((p, i) => passageBlock(p, i + 1))].join('\n\n');
 }
 
-function estimate(question: string, passages: Passage[], opts?: { hints?: QueryHints; today?: number }): number {
+function estimate(question: string, passages: Passage[], opts?: PromptOpts): number {
   return estimatePromptTokens({ system: SELECT_SYSTEM, texts: [selectPrompt(question, passages, opts)], images: 0, schema: SELECT_SCHEMA });
 }
 
@@ -165,7 +169,7 @@ export function fitPassages(
   question: string,
   records: IndexRecord[],
   ranges: Record<string, PassageRange>,
-  opts?: { hints?: QueryHints; today?: number },
+  opts?: PromptOpts,
 ): Passage[] {
   const kept = records.slice(0, SELECT_MAX_PASSAGES);
   const bodies = new Map<string, { body: string; ss: Range[] }>();
@@ -341,8 +345,9 @@ export async function selectAndAnswer(
     return { ok: true, value: { recordId: null, answer: '', excerpt: '' }, trace: codeTrace('select', 'No items to read', 0) };
   }
   const today = opts?.today ?? Date.now();
-  const passages = fitPassages(question, records, opts?.passages ?? {}, { hints: opts?.hints, today });
-  const prompt = selectPrompt(question, passages, { hints: opts?.hints, today });
+  const promptOpts: PromptOpts = { hints: opts?.hints, today, latest: opts?.latest };
+  const passages = fitPassages(question, records, opts?.passages ?? {}, promptOpts);
+  const prompt = selectPrompt(question, passages, promptOpts);
   const dataChars =
     question.length + passages.reduce((n, p) => n + p.text.length + p.record.title.length + (p.record.from?.length ?? 0), 0);
 

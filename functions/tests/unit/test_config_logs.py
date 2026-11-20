@@ -22,9 +22,18 @@ def test_broker_secret_validation(monkeypatch):
 
 
 def test_relay_wait_clamped(monkeypatch):
-    for raw, expected in (("45", 45), ("120", 50), ("1", 3), ("bad", 45)):
+    for raw, expected in (("45", 20), ("120", 20), ("6", 6), ("1", 3), ("bad", 20)):
         monkeypatch.setenv("RELAY_WAIT_SECONDS", raw)
         assert config.relay_wait_seconds() == expected
+
+
+def test_call_budget_constants():
+    """Request id first: every wait and the last collect fit inside the 25 s budget, below 30 s gateways."""
+    assert (config.SHORT_WAIT_SECONDS, config.CHECK_WAIT_SECONDS, config.REPLY_DEADLINE_SECONDS) == (15, 20, 25)
+    assert config.SHORT_WAIT_SECONDS <= config.WAIT_CAP_SECONDS
+    assert config.CHECK_WAIT_SECONDS <= config.WAIT_CAP_SECONDS < config.COLLECT_CUTOFF_SECONDS
+    assert config.COLLECT_CUTOFF_SECONDS + 2 <= config.REPLY_DEADLINE_SECONDS <= 25
+    assert config.IDEMPOTENCY_WINDOW_SECONDS == 600 and config.IDEMPOTENCY_KEY_MAX_CHARS == 64
 
 
 def test_public_base_url_trims(monkeypatch):

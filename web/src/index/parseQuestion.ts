@@ -2,6 +2,7 @@
 import { MAX_QUESTION_CHARS } from '@sieve/shared';
 import type { QueryHints } from '@sieve/shared';
 import type { SieveDb } from './db';
+import { knownSenderWordsOf, senderCue } from './cues';
 import { parseDates } from './dates';
 import { isEnglishWord } from './dictionary';
 import { lastReadyDb, peekRuntime } from './runtime';
@@ -9,7 +10,8 @@ import { cutGraphemes, emojiNames, withEmojiNames } from './text';
 import { STOP_WORDS } from './tokenize';
 import { correctQuery } from './typos';
 
-export interface ParsedQuestion { normalized: string; corrected: string; hints: QueryHints; searchText?: string }
+/** `sender`: the sender the question names (20 section 9.4), a filter in search; `hints.from` stays the boost. */
+export interface ParsedQuestion { normalized: string; corrected: string; hints: QueryHints; searchText?: string; sender?: string }
 
 const SOURCE_WORDS: [NonNullable<QueryHints['source']>, string[]][] = [
   ['mail', ['email', 'emails', 'mail', 'inbox']],
@@ -92,7 +94,8 @@ function termHints(text: string, dateTexts: string[]): string[] {
 export function parseQuestion(question: string, now: Date, locale: string, opts?: { db?: SieveDb; flip?: string[] }): ParsedQuestion {
   const normalized = normalizeText(question);
   const db = opts?.db ?? lastReadyDb();
-  const vocab = db ? peekRuntime(db)?.vocab ?? null : null;
+  const rt = db ? peekRuntime(db) : undefined;
+  const vocab = rt?.vocab ?? null;
   const { corrected } = correctQuery(normalized, vocab);
   const dates = parseDates(corrected, now, locale, opts?.flip);
   const hints: QueryHints = {};
@@ -106,6 +109,9 @@ export function parseQuestion(question: string, now: Date, locale: string, opts?
   if (terms.length > 0) hints.terms = terms;
   if (dates.interpreted.length > 0) hints.interpreted = dates.interpreted;
   const out: ParsedQuestion = { normalized, corrected, hints };
+  // photos have no sender: "photos from Hawaii" names a place
+  const sender = source === 'photos' ? undefined : senderCue(corrected, rt ? knownSenderWordsOf(rt.meta) : undefined);
+  if (sender) out.sender = sender;
   if (emojiNames(corrected).length > 0) out.searchText = withEmojiNames(corrected);
   return out;
 }

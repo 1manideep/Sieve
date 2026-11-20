@@ -161,6 +161,10 @@ describe('the connector', () => {
     expect(parseToolResult({ content: [{ type: 'text', text: JSON.stringify(nothing) }] })).toEqual(nothing);
     expect(parseToolResult({ content: [{ type: 'text', text: 'not json' }] })).toBeNull();
     expect(parseToolResult({ structuredContent: { status: 'surprise', message: 'x' } })).toBeNull();
+    // 30 section 8.5 (Nov 20): a count question and a request id the server does not know
+    const counts = { status: 'unsupported', request_id: REQ, message: "Sieve answers from one item at a time at this level, so counts aren't available." };
+    expect(parseToolResult({ structuredContent: counts, content: [] })).toEqual(counts);
+    expect(parseToolResult({ structuredContent: { status: 'unknown', message: 'Sieve has no request with that id.' }, content: [] })).toMatchObject({ status: 'unknown' });
   });
 
   it('turns a JSON-RPC error into an error result the model can act on; HTTP failures are connector errors', async () => {
@@ -258,18 +262,18 @@ describe('runCloudAssistant', () => {
     expect(out.calls[0]).toMatchObject({ status: 'no-match', chars: 0, received: '{"status":"no-match","request_id":"abcdefghij0123456789","message":"Nothing to share for that."}' });
   });
 
-  it('checks a pending request at most three times, then hands Gemini the last pending result', async () => {
+  it('checks a pending request at most nine times, then hands Gemini the last pending result', async () => {
     const c = fakeConnector(() => pending);
     const { model, requests } = fakeModel([
       () => respond([ask('sieve_answer', landlordArgs)]),
       () => respond([say('A request is waiting in Sieve. Approve it there and ask me again.')]),
     ]);
     const out = await run(model, c.fetchImpl).promise;
-    expect(c.calls().map((s) => s.body.params?.name)).toEqual(['sieve_answer', 'sieve_check', 'sieve_check', 'sieve_check']);
-    expect(ASSISTANT_MAX_CHECKS).toBe(3);
-    expect(out.calls.filter((x) => x.handedToGemini).map((x) => x.id)).toEqual(['call-4']);
+    expect(c.calls().map((s) => s.body.params?.name)).toEqual(['sieve_answer', ...Array<string>(9).fill('sieve_check')]);
+    expect(ASSISTANT_MAX_CHECKS).toBe(9);
+    expect(out.calls.filter((x) => x.handedToGemini).map((x) => x.id)).toEqual(['call-10']);
     expect(requests[1][2].parts[0]).toMatchObject({ functionResponse: { name: 'sieve_answer', response: pending } });
-    // A further sieve_check from Gemini is not sent once the three are used.
+    // A further sieve_check from Gemini is not sent once the nine are used.
     const c2 = fakeConnector(() => pending);
     const { model: m2 } = fakeModel([
       () => respond([ask('sieve_answer', landlordArgs)]),
@@ -277,7 +281,7 @@ describe('runCloudAssistant', () => {
       () => respond([say('Still waiting.')]),
     ]);
     const out2 = await run(m2, c2.fetchImpl).promise;
-    expect(c2.calls()).toHaveLength(4);
+    expect(c2.calls()).toHaveLength(10);
     expect(out2.outcome).toEqual({ kind: 'answered', text: 'Still waiting.' });
   });
 

@@ -1,16 +1,18 @@
 // search (01 section 9, 20 section 10): vector top VECTOR_K, keyword extras for exact ids and names, live Gmail
-// additions; hints boost, never filter; every hit is resolved with getRecord; one candidate per contentHash.
+// additions; the sender and the dates are filters, the other hints boost (10.2); every hit is resolved with getRecord;
+// one candidate per contentHash.
 import { EMBEDDING_DIMS, KEYWORD_SAFETY_K, VECTOR_K } from '@sieve/shared';
 import type { Candidate, Category, IndexRecord, ItemKind, QueryHints, SourceKind } from '@sieve/shared';
 import { getMl } from '../ml/client';
 import type { EmbedInput, EmbedOutput } from '../ml/protocol';
 import { BOOST, GMAIL_LIVE_K, MAX_PER_THREAD } from './config';
 import { repairOrphanHit } from './consistency';
+import { asksLatest, isRoleCue, senderMatches } from './cues';
 import { clockFor, type SieveDb } from './db';
 import { iso } from './dates';
 import { getRecord } from './ingest';
 import { ready } from './lifecycle';
-import { parseQuestion } from './parseQuestion';
+import { parseQuestion, type ParsedQuestion } from './parseQuestion';
 import { queryWordsOf, reasonFor } from './reasons';
 import { getRuntime, type RecordMeta } from './runtime';
 import { osaDistance } from './typos';
@@ -26,7 +28,11 @@ export interface SearchReport {
   live?: { q: string; found: number; added: number; ms: number; charsSent: number; skipped?: 'no-token' | 'error' | 'timeout' };
   hydrated?: { fetched: number; skipped: number };
   repaired: number;                     // orphan hits dropped (20 section 5.7)
+  filters?: HardFilter;                 // the sender and dates every candidate had to fit (10.2)
 }
+
+/** Hard filters (20 section 10.2): an item that fails one never becomes a candidate. */
+export interface HardFilter { sender?: string; after?: string; before?: string }
 
 export interface SearchOptions {
   k?: number; sources?: SourceKind[]; categories?: Category[]; hints?: QueryHints;
@@ -69,9 +75,30 @@ function words(s: string): string[] {
   return s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 
-function inRange(day: string, hints: QueryHints): boolean {
+function inRange(day: string, hints: Pick<QueryHints, 'after' | 'before'>): boolean {
   if (hints.after && day < hints.after) return false;
   if (hints.before && day > hints.before) return false;
+  return true;
+}
+
+/**
+ * The request's `from` (unless it is a role such as "my landlord") or the sender the question names, and the dates
+ * (from the request or the question). Photos have no sender, so a sender never filters a photo question.
+ */
+export function hardFilterOf(p: Pick<ParsedQuestion, 'sender'>, explicit: QueryHints | undefined, merged: QueryHints): HardFilter {
+  const out: HardFilter = {};
+  const asked = explicit?.from?.trim();
+  const sender = asked && !isRoleCue(asked) ? asked : p.sender;
+  if (sender && merged.source !== 'photos') out.sender = sender;
+  if (merged.after) out.after = merged.after;
+  if (merged.before) out.before = merged.before;
+  return out;
+}
+
+/** The sender fits, and the item's own day or a day it mentions falls inside the dates ("the flight on Dec 4"). */
+export function passesFilter(f: HardFilter, r: { from?: string; date: number; mentionedDays?: string[] }): boolean {
+  if (f.sender && !senderMatches(f.sender, r.from)) return false;
+  if ((f.after || f.before) && !inRange(iso(new Date(r.date)), f) && !(r.mentionedDays ?? []).some((d) => inRange(d, f))) return false;
   return true;
 }
 
@@ -119,6 +146,8 @@ export async function search(db: SieveDb, question: string, opts: SearchOptions 
   const locale = opts.locale ?? (typeof navigator !== 'undefined' ? navigator.language : 'en-US');
   const p = parseQuestion(question, new Date(now), locale, { db });
   const hints = mergeHints(p.hints, opts.hints);
+  const filter = hardFilterOf(p, opts.hints, hints);
+  const filtered = Object.keys(filter).length > 0;
   const k = opts.k ?? VECTOR_K;
 
   const byKind: Partial<Record<ItemKind, number>> = {};
@@ -127,7 +156,7 @@ export async function search(db: SieveDb, question: string, opts: SearchOptions 
     if (!m) return true;   // resolved below: a hit without a record is dropped and repaired
     if (opts.sources && !opts.sources.includes(m.source)) return false;
     if (opts.categories && !opts.categories.includes(m.category)) return false;
-    return true;
+    return !filtered || passesFilter(filter, m);
   };
   let scopeCount = 0;
   for (const m of rt.meta.values()) {
@@ -137,6 +166,7 @@ export async function search(db: SieveDb, question: string, opts: SearchOptions 
   }
   const report: SearchReport = { scope: { records: scopeCount, byKind }, hints, vector: { ran: false, ms: 0 }, keyword: { ms: 0, added: 0 }, repaired: 0 };
   if (p.corrected !== p.normalized) report.searchedFor = p.corrected;
+  if (filtered) report.filters = filter;
 
   // live Gmail search starts now and is merged at the end (20 section 10.5)
   const gmailRow = db.sieveKind === 'real' && opts.live !== false && (!opts.sources || opts.sources.includes('gmail')) ? await db.sources.get('gmail') : undefined;
@@ -259,6 +289,16 @@ export async function search(db: SieveDb, question: string, opts: SearchOptions 
   }
 
   const merged = [...vectorList, ...extras, ...liveList];
+  // "Ramki's latest email": the sender's newest items join the list, so the newest one is there to pick (20 section 10.2)
+  if (filter.sender && asksLatest(p.corrected)) {
+    const present = new Set(merged.map((s) => s.id));
+    const newest = [...rt.meta.values()].filter((m) => !present.has(m.id) && accept(m.id)).sort((a, b) => b.date - a.date).slice(0, k);
+    for (const m of newest) {
+      if (hashes.has(m.contentHash)) continue;
+      hashes.add(m.contentHash);
+      merged.push({ id: m.id, score: Math.min(lowest, 1) * 0.97, matchedBy: 'keyword', fromBoost: true });
+    }
+  }
   abortIfNeeded(opts.signal);
 
   // resolve again (a delete may have committed meanwhile) and hydrate Gmail bodies
@@ -270,6 +310,7 @@ export async function search(db: SieveDb, question: string, opts: SearchOptions 
       report.repaired++;
       continue;
     }
+    if (filtered && !passesFilter(filter, rec)) continue;   // a live Gmail id or a hit without metadata
     final.push({ s, rec });
   }
   if (opts.hydrate !== false && db.sieveKind === 'real') {

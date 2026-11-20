@@ -20,6 +20,7 @@ const TONES: Record<RequestStatus, TagProps['tone']> = {
   declined: 'muted',
   blocked: 'never',
   'no-match': 'muted',
+  unsupported: 'muted',
   expired: 'muted',
   revoked: 'muted',
   offline: 'muted',

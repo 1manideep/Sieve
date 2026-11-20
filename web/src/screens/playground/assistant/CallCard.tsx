@@ -18,8 +18,10 @@ const TONE: Record<AssistantCall['status'], TagTone> = {
   declined: 'muted',
   blocked: 'muted',
   'no-match': 'muted',
+  unsupported: 'muted',
   offline: 'warn',
   expired: 'muted',
+  unknown: 'muted',
   'not-allowed': 'never',
   error: 'never',
 };

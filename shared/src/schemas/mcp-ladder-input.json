@@ -25,6 +25,10 @@
       "type": "array", "maxItems": 5,
       "items": { "type": "string", "minLength": 1, "maxLength": 64 },
       "description": "Optional. Up to 5 exact identifiers to match word for word: order, booking, invoice, flight or account numbers, codes, file names or email addresses. Not general topic words."
+    },
+    "idempotency_key": {
+      "type": "string", "minLength": 1, "maxLength": 64,
+      "description": "Optional. A name of your choice for this ask, up to 64 characters. A retry with the same key and the same question returns the existing request and its result, even after it finished. Use a new key to ask the same question again on purpose."
     }
   },
   "required": ["question"],

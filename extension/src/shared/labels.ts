@@ -130,6 +130,8 @@ export function outcomeCopy(outcome: Exclude<ProposalOutcome, 'ready'>, category
         heading: 'Needs your OK for the cloud',
         body: 'This Chrome has no on-device model, so this request needs the cloud. Decide in Sieve, where you can see exactly what goes.',
       };
+    case 'unsupported':
+      return { heading: "Counts aren't available", body: "Sieve answers from one item at a time, so it can't count items." };
     case 'model-unavailable':
       return { heading: "Sieve can't read this yet", body: "The on-device model isn't ready. Open Sieve to see its status." };
     case 'error':

@@ -3,7 +3,8 @@ import { vi } from 'vitest';
 import type { Candidate, IndexRecord, QueryHints } from '@sieve/shared';
 import type { IngestQueue, SieveDb } from '@/index';
 
-export type { IngestQueue, SieveDb } from '@/index';
+export type { IngestQueue, SieveDb, HardFilter } from '@/index';
+export { asksCount, asksLatest } from '@/index/cues';
 
 export const records = new Map<string, IndexRecord>();
 

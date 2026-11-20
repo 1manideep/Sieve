@@ -3,7 +3,7 @@ import type { PiiSpan, PiiType } from '@sieve/shared';
 import { escapeRegExp } from '../text';
 import { isProtectedValue } from './protected';
 
-export const TYPE_RANK: readonly PiiType[] = ['card', 'iban', 'ssn', 'account', 'email', 'phone', 'dob', 'address', 'name', 'other'];
+export const TYPE_RANK: readonly PiiType[] = ['secret-code', 'card', 'iban', 'ssn', 'account', 'email', 'phone', 'dob', 'address', 'name', 'other'];
 export const BY_RANK: readonly PiiSpan['by'][] = ['validator', 'model', 'nano'];
 
 export const PII_STOPWORDS: ReadonlySet<string> = new Set(

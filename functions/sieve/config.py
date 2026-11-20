@@ -21,7 +21,7 @@ REQUEST_TTL_HOURS = 24
 MAX_QUESTION_CHARS = 500
 MAX_PAYLOAD_CHARS = 8000
 GRANT_DEFAULT_DAYS = 30
-RELAY_WAIT_SECONDS_DEFAULT = 45
+RELAY_WAIT_SECONDS_DEFAULT = 45  # mirrors shared; on the server only an upper bound now (SHORT_WAIT_SECONDS, CHECK_WAIT_SECONDS)
 MCP_TOOLS = {"answer": "sieve_answer", "excerpt": "sieve_excerpt", "full": "sieve_full_item", "check": "sieve_check"}
 TOOL_STEP = {"sieve_answer": "answer", "sieve_excerpt": "excerpt", "sieve_full_item": "full"}
 STEP_TOOL = {step: tool for tool, step in TOOL_STEP.items()}
@@ -48,12 +48,16 @@ CONNECTOR_RETENTION_DAYS = 7      # connector docs kept this long after expiry/r
 RATE_LIMIT_CALLS = 30             # tools/call per grant per window
 RATE_LIMIT_WINDOW_SECONDS = 600
 MAX_OPEN_REQUESTS_PER_GRANT = 3
-DEDUPE_WINDOW_SECONDS = 600       # 70 R-MCP-06: the same open question within this window reuses the request
+IDEMPOTENCY_WINDOW_SECONDS = 600  # a call with the same key within this window returns the existing request
+IDEMPOTENCY_KEY_MAX_CHARS = 64
 NOTHING_MIN_DELAY_SECONDS = 10.0  # 00 D6: blocked and no-match leave no earlier than this after the request was made
 MAX_BODY_BYTES = 16_384
-WAIT_CAP_SECONDS = 50             # the wait never runs past t0 + 50 s
-COLLECT_CUTOFF_SECONDS = 53       # no collection after t0 + 53 s (the reply must leave before 55 s)
-REPLY_DEADLINE_SECONDS = 55
+# Request id first: a tool call never holds the connection long enough for a client gateway (30 to 60 s) to cut it.
+SHORT_WAIT_SECONDS = 15           # a ladder tool waits at most this long for a decision, then returns pending
+CHECK_WAIT_SECONDS = 20           # sieve_check waits at most this long per call
+WAIT_CAP_SECONDS = 20             # no wait runs past t0 + 20 s
+COLLECT_CUTOFF_SECONDS = 23       # no collection after t0 + 23 s (the reply must leave before 25 s)
+REPLY_DEADLINE_SECONDS = 25       # end to end, from t0, for every tool call
 SAFETY_POLL_SECONDS = 5.0
 MESSAGE_MAX_CHARS = 300
 LINK_SECRET_BYTES = 32            # secrets.token_urlsafe(32) -> 43 characters
@@ -114,7 +118,7 @@ def broker_secret_bytes() -> bytes:
 
 
 def relay_wait_seconds() -> int:
-    """RELAY_WAIT_SECONDS.value clamped to [3, WAIT_CAP_SECONDS]."""
+    """RELAY_WAIT_SECONDS.value clamped to [3, WAIT_CAP_SECONDS]. It can only shorten the waits (tests use 6)."""
     try:
         value = int(RELAY_WAIT_SECONDS.value)
     except (TypeError, ValueError):

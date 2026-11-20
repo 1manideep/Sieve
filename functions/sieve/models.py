@@ -18,9 +18,10 @@ Category = Literal["Home", "Work", "Money", "Health", "Travel", "Shopping", "Per
 SourceKind = Literal["gmail", "folder", "upload", "playground"]
 ToolName = Literal["sieve_answer", "sieve_excerpt", "sieve_full_item", "sieve_check"]
 RequestStatus = Literal["queued", "claimed", "awaiting-person", "answered", "declined", "blocked", "no-match",
-                        "collected", "expired", "revoked", "offline", "error"]
+                        "unsupported", "collected", "expired", "revoked", "offline", "error"]
 ReceiptStatus = Literal["pending-collection", "delivered", "declined", "blocked", "revoked", "expired"]
-ToolStatus = Literal["answered", "pending", "declined", "blocked", "no-match", "offline", "expired", "not-allowed", "error"]
+ToolStatus = Literal["answered", "pending", "declined", "blocked", "no-match", "unsupported", "offline", "expired",
+                     "unknown", "not-allowed", "error"]
 
 SHARED_IMAGE_MAX_BYTES = 600 * 1024            # 01 section 11.7: at most 600 KB JPEG
 SHARED_IMAGE_MAX_BASE64 = 819_200              # base64 of 600 KB
@@ -89,6 +90,7 @@ class RelayRequest(FsModel):
     claimed_by: str | None = None
     response: RelayPayload | None = None
     message: str | None = None
+    idempotency_key: str | None = None   # sha256 hex of the scoped key (30 section 9.4); never the client's raw text
 
 
 class GrantMeta(FsModel):

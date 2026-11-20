@@ -936,6 +936,12 @@ Steps of `selectAndAnswer`:
 
 Prototype results on `EMAILS` in `spikes/nano/data.js` with plausible answers: deposit "Your deposit was $1,200, paid on March 3." gives "We received your security deposit of $1,200 on March 3." (offsets 32 to 87); flight gives the "Flight SA 1432 departs ..." sentence; pets gives the two sentences on the 40-pound dog and the $300 fee; an answer saying "$1,500" gives the same deposit sentence with `unsupported: ['$1,500']`.
 
+`opts.latest` (Nov 20): the question asks for the latest item, the pipeline passes the passages newest first, and the prompt gains the line "The person wants the newest item that answers the question. The passages are listed newest first." (`PROMPT_VERSIONS.select` 2).
+
+### 10.3a `verifyAnswer` (`tasks/verify.ts`, Nov 20): the check of the answer against the item
+
+One more call after select-answer, approved by the owner on Nov 20 after a test where Sieve read a daycare's "Pickup Jun 12" as a vet visit. Purpose `verify-answer`, `ONLY_ON_DEVICE` for own data (`resolveRoute` never sends it anywhere, even with cloud fallback on), `PREFER_ON_DEVICE` for sample data, foreground, warm base session after select's. The prompt gives the question, the proposed answer, and the chosen item's kind, sender, date, title and passage (the range select read, from `fitPassages`). Schema `{ answers: boolean, reason: string }`. `VERIFY_SYSTEM`: `answers` is true only if the passage states the answer's facts, the item is about what the question asks, the sender fits a sender the question names, and the date fits a time the question names; a field that only looks like the answer (a pickup date for a vaccine question, an order date for a delivery question) is false.
+
 ### 10.4 `captionPhoto` (`tasks/caption.ts`)
 
 ```ts
@@ -1108,7 +1114,7 @@ sequenceDiagram
   participant C as Caller (Ask or home base)
   participant P as prepareProposal
   participant IX as Index (vector + keyword, 20)
-  participant AI as runModel / Nano (one call)
+  participant AI as runModel / Nano (select, then the check)
   participant PR as Privacy (11, no Nano)
   C->>P: PrepareInput (+ onProgress)
   P->>P: validate, splitDraftRequest, parseQuestion (in-app)
@@ -1130,6 +1136,10 @@ sequenceDiagram
   alt gone or changed (rare)
     P->>P: skip or re-read; at most one more selectAndAnswer
   end
+  P->>AI: verifyAnswer(question, item, answer), on the device for own data
+  alt the item does not answer
+    P-->>C: no-match
+  end
   P->>P: deriveExcerpt (code), rule for item, warnings, index-time steps
   P->>PR: buildStepOption x3 (answer, excerpt, full)
   PR-->>P: exact outgoing texts, redactions
@@ -1143,7 +1153,8 @@ State: `trace: TraceStep[]`, `warnings: Warning[]`. Every exit builds a `Proposa
 
 1. Forget any consent request for this `requestId`. `q = question.trim()`. Empty or over `MAX_QUESTION_CHARS`: outcome `error`, code step "The question is empty or longer than 500 characters." `stepIndex(requestedStep) > stepIndex(maxStep)`: outcome `error`, "This asks for more than this AI may receive."
 2. Before each later step: if `signal.aborted`, return outcome `error` with a final code step "Stopped: the request was cancelled or expired."
-3. `lookup = splitDraftRequest(q).lookup`. Hints: `hints = input.hints`. When `input.hints` is absent and `requester.kind === 'in-app'`: `const p = parseQuestion(lookup, new Date(now), navigator.language || 'en-US')`; `lookup = p.corrected`; `hints = p.hints`. When `p.corrected !== p.normalized`, add code step `retrieve` "Searched for "{corrected}" (spelling fixed on this device)". For each `hints.interpreted` entry with `ambiguous: true`, add code step `retrieve` "Read "{text}" as {as}. It could mean another date; check the result." `lookup` is what both search and Nano see.
+3. `lookup = splitDraftRequest(q).lookup`. Hints: `hints = input.hints`. When `input.hints` is absent and `requester.kind === 'in-app'`: `const p = parseQuestion(lookup, new Date(now), navigator.language || 'en-US')`; `lookup = p.corrected`; `hints = p.hints` without `from` (search finds the sender the question names itself, 20 section 10.2; a request's own `from` is a filter). When `p.corrected !== p.normalized`, add code step `retrieve` "Searched for "{corrected}" (spelling fixed on this device)". For each `hints.interpreted` entry with `ambiguous: true`, add code step `retrieve` "Read "{text}" as {as}. It could mean another date; check the result." `lookup` is what both search and Nano see.
+3a. Counts (Nov 20): `asksCount(lookup)` ("how many emails", "the number of orders", "count my receipts", "how often does X email me") gives outcome `unsupported` at once, code step "This asks for a count. Sieve answers from one item at a time, so nothing was searched." No search, no model call.
 4. Retrieve (`kind: 'retrieve'`, running "Searching this device…", `where: 'code'`): `t = performance.now(); cands = await search(db, lookup, { sources: allowedSources, hints })`. Categories are not passed, so blocked items stay visible to the rules step. Label per 12.6 with the measured ms and the methods from `matchedBy`. If any candidate has `matchedBy: 'gmail-search'`, add a second retrieve step, `where: 'cloud'`, label "Gmail's own search was asked too (your search words went to Google, as with any Gmail search)", `charsSent: lookup.length`. No candidates: outcome `no-match`.
 5. Load and filter, in rank order, with no model involved:
    - `rec = await getRecord(db, c.recordId)` for every candidate (invariant 7). Missing: drop it, count it as `stale`, and call `removeRecord(db, c.recordId, 'source-deleted')` without awaiting, so the orphan vector and keyword rows go (logged as "integrity repair: orphan index entry"; see V14).
@@ -1151,9 +1162,11 @@ State: `trace: TraceStep[]`, `warnings: Warning[]`. Every exit builds a `Proposa
    - `allowedSources` given and `rec.source` not in it: excluded (`source`).
    - `allowedCategories` given and `rec.category` not in it: excluded (`grant`).
    - `rule = settings.categoryRules[rec.category] ?? DEFAULT_CATEGORY_RULES[rec.category]`; `never`: into `neverBlocked`.
+   - `holdsSecretCode(rec)` (11 section 5.2: a one-time code or a sign-in link in the title or text): into `neverBlocked` too, whatever the category, so no model reads it. A `blocked-never` for it carries "Verification codes and sign-in links are never shared."
    - Otherwise into `allowed` with its candidate (`allowed` keeps at most `SELECT_MAX_PASSAGES`).
    - If anything was excluded or blocked: one code step `kind: 'rule'` (labels 12.6).
 6. `allowed` empty: `neverBlocked` non-empty gives outcome `blocked-never` with `item` = the top `neverBlocked` record and `rule: 'never'`; otherwise `no-match`.
+6a. Latest (Nov 20): when `asksLatest(lookup)` ("latest", "newest", "most recent", "last" not followed by a unit or a date), `allowed` is sorted by `rec.date`, newest first, with code step "Put the matches newest first, because the question asks for the latest"; with a sender or date filter in the search report, only the newest `VECTOR_K` stay. Step 9 passes `latest: true`.
 7. Data class: `own = allowed.filter(a => recordDataClass(a.rec) === 'own')`; `callData = own.length ? 'own' : 'sample'`. `ownCloud = { allowed: input.dataClass === 'sample' ? true : settings.cloudFallbackForOwnData, db, maxAgeMs: input.dataClass === 'sample' ? null : CONSENT_MAX_AGE_MS }` (in the Playground, `input.dataClass` is `sample` and the visitor's own files are switched by per-file consent alone).
 8. Consent (only when `callData === 'own'` and `(await getNanoAvailability()).text !== 'available'`):
    - `!ownCloud.allowed`: outcome `model-unavailable`, code step "Stopped before any model ran: this Chrome has no on-device model, and cloud fallback for your own data is off." (or "...the on-device model is not set up yet." for `downloadable`/`downloading`).
@@ -1167,7 +1180,8 @@ State: `trace: TraceStep[]`, `warnings: Warning[]`. Every exit builds a `Proposa
     - `'gone'` (deleted at the source, or moved to Trash or Spam; `verifyFresh` already removed it from the index): add code step "That {email|file|photo|item} was deleted, so it was skipped". Remove it from `allowed`. If `allowed` is now empty, finish as step 12 (`no-match` or `blocked-never`). Otherwise, when no re-run has happened yet, run step 9 once more on the remaining records (streaming again); a second `'gone'` or `'changed'` after that re-run ends with `no-match` and the step "The items changed while Sieve was reading them. Ask again."
     - `'changed'` (`verifyFresh` re-indexed it): `fresh = await getRecord(db, chosen.id)`. If `fresh` exists and `deriveExcerpt(recordBody(fresh), { start: 0, end: recordBody(fresh).length }, answer)` covers every answer fact that the old body had (and finds no new unsupported fact), continue with `fresh` and add code step "That {noun} changed since it was indexed. Sieve re-read it and the answer still holds". Otherwise add "That {noun} changed since it was indexed, so Sieve read it again" and re-run step 9 once on `allowed` with `fresh` in place of the old record (same limits as `'gone'`).
     - `verifyFresh` throws (offline, Gmail error): treat as `'ok'` for local files and Playground items; for Gmail, end with outcome `error` and the step "Couldn't check the email with Gmail, so nothing was prepared. Check your connection."
-    At most one re-run per request, so question time is one Nano call, or two in this rare case.
+    At most one re-run per request, so question time is one select call, or two in this rare case.
+12b. The check (10.3a, `kind: 'answer'`, running "Checking the answer against the item…", `where` from the SDK): `verifyAnswer(lookup, chosen, answer, recordDataClass(chosen), { passage, signal, ownCloud, today })`. `answers: false`: outcome `no-match`, final label "The item does not answer the question". True: "The item answers the question". A call that cannot run (no Nano for own data, bad output, timeout): label "Couldn't check the answer against the item on this device" and warning `unverified-answer` "Sieve couldn't check that this item answers the question. Read the answer before you share it." (so it is never auto-approved). Aborted: `error` as step 2.
 13. `rec` = the chosen (fresh) record. Excerpt step (`kind: 'excerpt'`, `where: 'code'`, label 12.6), including the unsupported-facts note when `res.value.unsupported` is non-empty.
 14. Rule and warnings for `rec`:
     - `rule = settings.categoryRules[rec.category]` (`approve` or `ask-first`; `never` was filtered).
@@ -1192,9 +1206,10 @@ A thrown error anywhere becomes outcome `error` with a code step "Something went
 
 | Outcome | When | `item` | Model calls |
 |---|---|---|---|
-| `ready` | An allowed item answers and is still fresh | chosen record | 1 (2 when the first choice was deleted or changed) |
-| `no-match` | No candidates; all excluded by grant, source or block; Nano picked none and nothing was `never`-blocked; or the items kept changing | none | 0, 1 or 2 |
-| `blocked-never` | Only `never` items left, or Nano picked none among allowed items and a `never` item matched | top blocked record | 0 or 1 |
+| `ready` | An allowed item answers, is still fresh and passed the check (12b) | chosen record | 2 (3 when the first choice was deleted or changed) |
+| `no-match` | No candidates (nothing passed the sender or date filter); all excluded by grant, source or block; Nano picked none and nothing was `never`-blocked; the check said no (12b); or the items kept changing | none | 0 to 3 |
+| `unsupported` | The question asks for a count (step 3a) | none | 0 |
+| `blocked-never` | Only `never` items left (a `never` category or a one-time code), or Nano picked none among allowed items and a `never` item matched | top blocked record | 0 or 1 |
 | `needs-cloud-consent` | Own data, no Nano, cloud allowed, consent missing | first record needing consent | 0 |
 | `model-unavailable` | Own data, no Nano, cloud fallback off; or the model is not ready | none | 0 |
 | `error` | Validation, abort, expiry, model errors, thrown errors | none | 0 or 1 |
@@ -1210,7 +1225,8 @@ Plurals: `{n} item`/`{n} items`; the noun is "email", "photo" or "file" when eve
 | Step | Running label | Final label |
 |---|---|---|
 | retrieve | "Searching this device…" | "Found {n} likely {match/matches} on this device in {ms} ms ({methods})"; none: "Found nothing that matches on this device ({ms} ms)". Methods: `vector` "meaning search", `keyword` "keyword search", `caption` "photo captions", `gmail-search` "Gmail search", joined with " and ". |
-| rule | (none, instant) | Parts joined with "; ": "{n} {Category} {item/items} never shared, stopped before any model read {it/them}" per category; "{n} {item/items} outside what {aiName} may ask about"; "{n} {item/items} you blocked for {aiName}"; "{n} {item/items} from sources {aiName} may not use"; "{n} stale search {entry/entries} skipped" |
+| rule | (none, instant) | Parts joined with "; ": "{n} {Category} {item/items} never shared, stopped before any model read {it/them}" per category; "{n} {item/items} outside what {aiName} may ask about"; "{n} {item/items} you blocked for {aiName}"; "{n} {item/items} from sources {aiName} may not use"; "{n} stale search {entry/entries} skipped"; "{n} {item holds/items hold} a verification code or a sign-in link, never shared, stopped before any model read {it/them}"; counts: "This asks for a count. Sieve answers from one item at a time, so nothing was searched." |
+| answer (the check, 12b) | "Checking the answer against the item…" | "The item answers the question"; "The item does not answer the question"; "Couldn't check the answer against the item on this device" |
 | fresh | "Checking the item is still there…" | none when `'ok'`; otherwise the step 12a labels: "That email was deleted, so it was skipped" (noun by kind), "That email changed since it was indexed. Sieve re-read it and the answer still holds", "That email changed since it was indexed, so Sieve read it again", "The items changed while Sieve was reading them. Ask again." These use `kind: 'retrieve'`, `where: 'code'`. |
 | select (device) | "Reading {n} {nouns} on this device…" | "Picked "{title}" and wrote the answer"; none: "Read {n} {nouns}; none of them answers the question" |
 | select (cloud, sample) | "Reading {n} sample {nouns} in the cloud…" | same as device |

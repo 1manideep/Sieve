@@ -53,13 +53,13 @@ export const TIMING = {
 };
 
 export const TIMEOUT_MS: Record<Purpose, number> = {
-  'select-answer': 45000, label: 60000, caption: 60000, draft: 30000, 'injection-check': 30000, 'pii-check': 30000,
+  'select-answer': 45000, 'verify-answer': 30000, label: 60000, caption: 60000, draft: 30000, 'injection-check': 30000, 'pii-check': 30000,
 };
 export const MAX_OUTPUT_TOKENS: Record<Purpose, number> = {
-  'select-answer': 256, label: 1200, caption: 128, draft: 600, 'injection-check': 256, 'pii-check': 1024,
+  'select-answer': 256, 'verify-answer': 128, label: 1200, caption: 128, draft: 600, 'injection-check': 256, 'pii-check': 1024,
 };
 export const DEFAULT_PRIORITY: Record<Purpose, Priority> = {
-  'select-answer': 'foreground', draft: 'foreground', caption: 'background', label: 'background',
+  'select-answer': 'foreground', 'verify-answer': 'foreground', draft: 'foreground', caption: 'background', label: 'background',
   'injection-check': 'background', 'pii-check': 'background',
 };
 

@@ -14,6 +14,7 @@ export interface SeamAnswer {
   match: string;           // case-insensitive text of the question
   recordId?: string | null; // absent: the first candidate; null: none of the allowed items answers it
   answer: string;
+  verify?: boolean;         // what the verify-answer check says (10 section 12.3 step 12b); absent: true
 }
 
 export const ANSWERS: SeamAnswer[] = [
@@ -25,6 +26,8 @@ export const ANSWERS: SeamAnswer[] = [
   { match: 'parcel', recordId: 'playground:pg-mail-30', answer: 'It asks you to pay a $2 redelivery fee through a link, which looks like a scam.' },
   { match: 'test email', answer: 'It asks you to confirm your account details.' },
   { match: 'move-out-notes', answer: 'Your notes say to return the keys by December 31.' },
+  // T02 of Nov 20: the picked item only looks like the answer; the on-device check says no, so nothing is shared.
+  { match: 'vet visit', answer: 'Your vet visit is on Friday.', verify: false },
 ];
 
 /** Phrases the seam's injection check flags (bench/canaries.json and the test email's default trap). */

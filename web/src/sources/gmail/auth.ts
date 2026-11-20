@@ -1,9 +1,11 @@
-// Google Identity Services token client for gmail.readonly (20 section 15.1). The token lives only in this
-// module's memory: never in IndexedDB, localStorage, sessionStorage, Firestore, a URL or a log.
+// Google Identity Services token client for gmail.readonly (20 section 15.1). This module holds the token in memory;
+// the registry keeps the same token on the real database's Gmail row (tokenStore.ts), so every tab of this account
+// shares it for its lifetime (up to an hour). Never in localStorage, sessionStorage, Firestore, a URL or a log.
 // When the Google sign-in script is not there at click time (blocked, still loading, or no client id), the same click
 // asks through the Firebase popup instead (reauthenticateWithPopup with the gmail.readonly scope). It never waits for
 // the script: the popup must open inside the click.
-import { GoogleAuthProvider, reauthenticateWithPopup, type User, type UserCredential } from 'firebase/auth';
+import { getApps } from 'firebase/app';
+import { GoogleAuthProvider, onAuthStateChanged, reauthenticateWithPopup, type User, type UserCredential } from 'firebase/auth';
 import { env } from '@/app/env';
 import { getAuthInstance } from '@/app/firebase';
 import { GIS_LOAD_TIMEOUT_MS, GIS_SRC, GMAIL_SCOPE, GMAIL_TOKEN_SKEW_MS } from '../../index/config';
@@ -27,10 +29,18 @@ export const FIREBASE_TOKEN_MS = 55 * 60_000;
 const TOKENINFO_URL = 'https://oauth2.googleapis.com/tokeninfo';
 const REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 
-let token: { value: string; expiresAt: number } | null = null;
+/** An access token with its end and the scopes Google granted (the shape kept on the Gmail row). */
+export interface GmailToken { value: string; expiresAt: number; scope: string }
+
+let token: GmailToken | null = null;
 let gisPromise: Promise<void> | null = null;
 let client: TokenClient | null = null;
 let pending: { resolve: () => void; reject: (e: unknown) => void } | null = null;
+/** The Firebase popup is open. */
+let popupOpen = false;
+/** Tokens Gmail answered 401 to: never taken back from the store (memory only, a few at most). */
+const rejected = new Set<string>();
+const REJECTED_MAX = 8;
 
 function oauth2(): GoogleOauth2 | undefined {
   return (globalThis as unknown as { google?: GoogleGlobal }).google?.accounts?.oauth2;
@@ -118,7 +128,7 @@ function tokenClient(): TokenClient {
         p?.reject(new SourceError('scope-denied', SOURCE_COPY.scopeDenied));
         return;
       }
-      token = { value: resp.access_token, expiresAt: Date.now() + Number(resp.expires_in ?? 3599) * 1000 };
+      token = { value: resp.access_token, expiresAt: Date.now() + Number(resp.expires_in ?? 3599) * 1000, scope: resp.scope || GMAIL_SCOPE };
       p?.resolve();
     },
     error_callback: (err) => {
@@ -190,7 +200,7 @@ async function keepFirebaseToken(result: UserCredential): Promise<void> {
   const listed = (result as UserCredential & { _tokenResponse?: { scope?: unknown } })._tokenResponse?.scope;
   const scopes = typeof listed === 'string' ? listed : await grantedScopes(accessToken);
   if (scopes !== null && !scopes.split(/[\s,]+/).includes(GMAIL_SCOPE)) throw new SourceError('scope-denied', SOURCE_COPY.scopeDenied);
-  token = { value: accessToken, expiresAt: Date.now() + FIREBASE_TOKEN_MS };
+  token = { value: accessToken, expiresAt: Date.now() + FIREBASE_TOKEN_MS, scope: scopes || GMAIL_SCOPE };
 }
 
 /** The Firebase popup for the signed-in Google account, opened before any await. */
@@ -212,20 +222,98 @@ function requestWithFirebase(opts: TokenRequest): Promise<void> {
   } catch (e) {
     return Promise.reject(popupError(e));
   }
-  return popup.then(keepFirebaseToken).catch((e: unknown) => {
-    throw popupError(e);
-  });
+  popupOpen = true;
+  return popup
+    .then(keepFirebaseToken)
+    .catch((e: unknown) => {
+      throw popupError(e);
+    })
+    .finally(() => {
+      popupOpen = false;
+    });
+}
+
+/** Google Identity Services has loaded and a client id is set: a token can be asked for without the Firebase popup. */
+export function gisAvailable(): boolean {
+  return Boolean(oauth2() && gmailClientId());
+}
+
+/** A token request is waiting on Google (a GIS popup or the Firebase popup). */
+export function gmailTokenRequestOpen(): boolean {
+  return pending !== null || popupOpen;
+}
+
+/** Not run out (GMAIL_TOKEN_SKEW_MS early), granted gmail.readonly, and never refused by Gmail. */
+export function isUsableGmailToken(t: GmailToken | null | undefined, now = Date.now()): t is GmailToken {
+  if (!t) return false;
+  return now < t.expiresAt - GMAIL_TOKEN_SKEW_MS && t.scope.split(/[\s,]+/).includes(GMAIL_SCOPE) && !rejected.has(t.value);
 }
 
 /** The token, or null from GMAIL_TOKEN_SKEW_MS before it expires. */
 export function getGmailToken(): string | null {
-  if (!token) return null;
-  if (Date.now() >= token.expiresAt - GMAIL_TOKEN_SKEW_MS) return null;
-  return token.value;
+  return isUsableGmailToken(token) ? token.value : null;
 }
 
-export function clearGmailToken(): void {
-  token = null;
+/** The usable token with its end and scopes, to keep on the Gmail row. */
+export function currentGmailToken(): GmailToken | null {
+  return isUsableGmailToken(token) ? { ...token } : null;
+}
+
+/** When the token held in memory ends (even within the skew), or null. */
+export function gmailTokenExpiresAt(): number | null {
+  return token ? token.expiresAt : null;
+}
+
+/**
+ * Takes a token another tab (or an earlier page) kept on the Gmail row. A refused or spent token is ignored, and so
+ * is one that ends before the token already held. True when the held token changed.
+ */
+export function adoptGmailToken(t: GmailToken): boolean {
+  if (!isUsableGmailToken(t)) return false;
+  if (token?.value === t.value) return false;
+  if (isUsableGmailToken(token) && token.expiresAt >= t.expiresAt) return false;
+  token = { value: t.value, expiresAt: t.expiresAt, scope: t.scope };
+  return true;
+}
+
+/** Forget the token in memory; with `value`, only when that is the token held. The stored copy is the registry's. */
+export function clearGmailToken(value?: string): void {
+  if (value === undefined || token?.value === value) token = null;
+}
+
+/** Gmail answered 401 to this token: forget it, and never take it back from the store. */
+export function rejectGmailToken(value: string): void {
+  if (rejected.size >= REJECTED_MAX) rejected.delete(rejected.values().next().value as string);
+  rejected.add(value);
+  clearGmailToken(value);
+}
+
+/** Tokens Gmail refused, so the registry can drop them from the store. */
+export function rejectedGmailTokens(): string[] {
+  return [...rejected];
+}
+
+/**
+ * Calls `onSignedOut` when the Google account this page started with signs out of Sieve or changes. Only when the app
+ * has already started Firebase (never starts it); a no-op without it.
+ */
+export function watchGoogleSignOut(onSignedOut: () => void): () => void {
+  try {
+    if (getApps().length === 0) return () => undefined;
+    let owner: string | null = null;
+    return onAuthStateChanged(getAuthInstance(), (user) => {
+      const uid = user && !user.isAnonymous ? user.uid : null;
+      if (uid !== null && (owner === null || owner === uid)) {
+        owner = uid;
+        return;
+      }
+      if (owner === null) return;
+      owner = uid;
+      onSignedOut();
+    });
+  } catch {
+    return () => undefined;   // no Firebase on this page
+  }
 }
 
 export async function revokeGmailToken(): Promise<void> {
@@ -261,5 +349,7 @@ export function resetGmailAuth(): void {
   token = null;
   client = null;
   pending = null;
+  popupOpen = false;
   gisPromise = null;
+  rejected.clear();
 }

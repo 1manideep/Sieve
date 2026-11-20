@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { CATEGORIES, type Proposal, type StepOption } from '@sieve/shared';
 import { DEPOSIT_ANSWER, landlordReady, option, unavailable } from '@/components/__fixtures__/proposals';
-import { CONSOLE, HOME_BASE_DIALOG, REQUESTS, fillText } from '@/copy/screens-controls';
+import { CONSOLE, HOME_BASE_DIALOG, REQUESTS, SOURCES, fillText } from '@/copy/screens-controls';
 import { STATUS_POPOVER } from '@/copy/strings';
 import { useGrants } from '@/state/grants';
 import { useHomeBase, type HomeBaseState, type PendingEntry } from '@/state/homeBase';
@@ -13,7 +13,6 @@ import { useNetwork } from '@/state/network';
 import { useRecords } from '@/state/records';
 import { useSources, type SourcesState } from '@/state/sources';
 import type { GrantView, RelayRequestView } from '@/state/types';
-import { MAIL_COPY } from '@/robust/copy';
 import { expectNoAxeViolations } from '@/test/axe';
 import { makeFakeDb } from '@/components/__fixtures__/fakeDb';
 import { Component } from './index';
@@ -217,19 +216,37 @@ describe('Requests', () => {
     await expectNoAxeViolations();
   });
 
-  it('says when the Gmail sign-in expired, and "Continue syncing Gmail" re-authorizes from the click (70 R-MAIL-10)', async () => {
+  it('says Gmail syncing paused in a plain note, and Continue re-authorizes from the click (70 R-MAIL-10)', async () => {
     const user = userEvent.setup();
     const reauthorize = vi.fn<SourcesState['reauthorize']>(async () => undefined);
     useSources.setState({ reauthorize, busy: {} });
     await realDb.table('sources').put({ kind: 'gmail', connected: true, paused: false, progress: { done: 30, total: 30 }, needsAuth: true });
     try {
       renderRequests();
-      expect(await screen.findByText(MAIL_COPY.tokenExpiredBanner)).toBeInTheDocument();
+      const note = await screen.findByText(SOURCES.needsAuthGmail);
+      expect(note.closest('[data-tone]')).toHaveAttribute('data-tone', 'info');
       await expectNoAxeViolations();
-      await user.click(screen.getByRole('button', { name: MAIL_COPY.tokenExpiredButton }));
+      await user.click(screen.getByRole('button', { name: SOURCES.continue }));
       expect(reauthorize).toHaveBeenCalledWith('gmail');
       await realDb.table('sources').put({ kind: 'gmail', connected: true, paused: false, progress: { done: 30, total: 30 } });
-      await waitFor(() => expect(screen.queryByText(MAIL_COPY.tokenExpiredBanner)).not.toBeInTheDocument());
+      await waitFor(() => expect(screen.queryByText(SOURCES.needsAuthGmail)).not.toBeInTheDocument());
+    } finally {
+      await realDb.table('sources').clear();
+    }
+  });
+
+  it('warns, with the card\'s sentence, only when Google refused read-only Gmail access after Continue', async () => {
+    useSources.setState({ busy: {} });
+    await realDb.table('sources').put({
+      kind: 'gmail', connected: true, paused: false, progress: { done: 30, total: 30 },
+      needsAuth: true, errorCode: 'auth-needed', error: SOURCES.needsAuthGmailRefused,
+    });
+    try {
+      renderRequests();
+      const warning = await screen.findByText(SOURCES.needsAuthGmailRefused);
+      expect(warning.closest('[data-tone]')).toHaveAttribute('data-tone', 'warning');
+      expect(screen.getByRole('button', { name: SOURCES.continue })).toBeInTheDocument();
+      expect(screen.queryByText(SOURCES.needsAuthGmail)).not.toBeInTheDocument();
     } finally {
       await realDb.table('sources').clear();
     }

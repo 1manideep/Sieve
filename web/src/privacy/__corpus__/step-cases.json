@@ -537,7 +537,7 @@
     "expect": {
       "answer": {
         "available": true,
-        "text": "[name]'s number is (312) 555-0142."
+        "text": "Dana's number is (312) 555-0142."
       }
     }
   },

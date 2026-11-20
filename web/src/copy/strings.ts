@@ -275,6 +275,7 @@ export const ASK_FLOW = {
   foundMatch: 'Found a match on this device. Review what would be shared.',
   neverShared: (category: string) => `${category} is never shared. Nothing left this device.`,
   noMatch: 'Nothing on this device matched.',
+  unsupported: "Sieve answers from one item at a time, so counts aren't available.",
   needsConsent: 'This needs your OK before the cloud model can read it.',
   modelUnavailable: "The on-device model isn't available.",
   somethingWrong: 'Something went wrong on this device. Nothing was shared.',

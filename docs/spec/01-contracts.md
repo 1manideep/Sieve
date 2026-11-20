@@ -63,7 +63,7 @@ export interface Settings {
   pushEnabled: boolean;
 }
 
-export type PiiType = 'email' | 'phone' | 'card' | 'iban' | 'ssn' | 'account' | 'name' | 'address' | 'dob' | 'other';
+export type PiiType = 'email' | 'phone' | 'card' | 'iban' | 'ssn' | 'account' | 'name' | 'address' | 'dob' | 'secret-code' | 'other';   // secret-code: Nov 20, 11 section 5.2
 export interface PiiSpan {
   start: number; end: number;             // offsets into the sanitized text
   type: PiiType;
@@ -166,7 +166,7 @@ export interface StepOption {
 
 export interface SharedImage { mime: 'image/jpeg'; base64: string; width: number; height: number; bytes: number }
 
-export type ProposalOutcome = 'ready' | 'blocked-never' | 'no-match' | 'needs-cloud-consent' | 'model-unavailable' | 'error';
+export type ProposalOutcome = 'ready' | 'blocked-never' | 'no-match' | 'unsupported' | 'needs-cloud-consent' | 'model-unavailable' | 'error';   // unsupported: a count, Nov 20 (10 section 12.4)
 
 /** What the home base prepares for the person to approve. Local only (the extension gets a preview). */
 export interface Proposal {
@@ -198,7 +198,7 @@ export interface Decision {
 export interface RelayPayload { step: LadderStep; text: string; chars: number; itemCount: number; image?: SharedImage }
 
 export type RequestStatus =
-  | 'queued' | 'claimed' | 'awaiting-person' | 'answered' | 'declined' | 'blocked' | 'no-match'
+  | 'queued' | 'claimed' | 'awaiting-person' | 'answered' | 'declined' | 'blocked' | 'no-match' | 'unsupported'
   | 'collected' | 'expired' | 'revoked' | 'offline' | 'error';
 
 /** Firestore users/{uid}/requests/{requestId}. Written by functions (create) and the home base (claim/answer). */

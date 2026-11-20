@@ -318,6 +318,36 @@ describe('home base engine: requests', () => {
     expect(h.toast).not.toHaveBeenCalled();
   });
 
+  it('T08: a ready proposal with no option to approve ends at once as no match: no card, no decline', async () => {
+    const h = await activeHarness();
+    const none = LADDER_STEPS.map((st) => option(st, '', { available: false, unavailableReason: 'Nothing to share at this step.' }));
+    h.prepare.mockImplementationOnce(async (i: PrepareInput) => proposal({ requestId: i.requestId, maxStep: 'answer', options: none }));
+    h.push([request({ maxStep: 'answer' })]);
+    await flush();
+    expect(h.markAwaiting).not.toHaveBeenCalled();
+    expect(h.finish).toHaveBeenCalledTimes(1);
+    expect(h.finish.mock.calls[0][3]).toEqual({ status: 'no-match', message: MSG.noMatch });
+    expect(h.state.entries!.req1.result).toEqual({ kind: 'auto', status: 'no-match' });
+    expect(h.bridge.pendingCount).toBe(0);
+    expect(h.toast).not.toHaveBeenCalled();
+    // an answer that is only whitespace counts as nothing to approve too
+    const blank = LADDER_STEPS.map((st) => option(st, st === 'answer' ? '  ' : '', { available: st === 'answer' }));
+    h.prepare.mockImplementationOnce(async (i: PrepareInput) => proposal({ requestId: i.requestId, options: blank }));
+    h.push([request({ id: 'req2', createdAt: T0 + 1 })]);
+    await flush();
+    expect(h.finish.mock.calls[1][3]).toEqual({ status: 'no-match', message: MSG.noMatch });
+  });
+
+  it('T05: a count question finishes as unsupported with its line for the asker, and no receipt', async () => {
+    const h = await activeHarness();
+    h.prepare.mockImplementationOnce(async (i: PrepareInput) => proposal({ requestId: i.requestId, outcome: 'unsupported', item: undefined }));
+    h.push([request({ question: 'How many Strava emails did I get this month?' })]);
+    await flush();
+    expect(h.finish.mock.calls[0][3]).toEqual({ status: 'unsupported', message: "Sieve answers from one item at a time at this level, so counts aren't available." });
+    expect(h.markAwaiting).not.toHaveBeenCalled();
+    expect(h.toast).not.toHaveBeenCalled();
+  });
+
   it('model-unavailable and a thrown error finish with error and a toast', async () => {
     const h = await activeHarness();
     h.prepare.mockImplementationOnce(async (i: PrepareInput) => proposal({ requestId: i.requestId, outcome: 'model-unavailable' }));

@@ -40,15 +40,26 @@ async function run(over: Partial<PrepareInput> = {}): Promise<Proposal> {
 function nano(text: string) {
   setLanguageModelForTests(installFakeLanguageModel({ availability: { text, image: text } }));
 }
+/** What the verify-answer check says, call by call; the last one repeats (10 section 12.3 step 12b). */
+let verdicts: boolean[] = [true];
 /** The select replies, in order; the last one repeats. Source follows Nano availability unless given. */
 function selects(...replies: { item: string; answer?: string; source?: 'on_device' | 'in_cloud' }[]) {
-  hybrid = createFakeHybrid((spec, _p, { call }) => {
-    const r = replies[Math.min(call.n, replies.length) - 1];
-    const source = r.source ?? (spec.mode === 'ONLY_IN_CLOUD' ? 'in_cloud' : 'on_device');
-    return { text: JSON.stringify({ item: r.item, answer: r.answer ?? (r.item === 'none' ? '' : DEPOSIT_ANSWER) }), source };
+  let n = 0;
+  let v = 0;
+  hybrid = createFakeHybrid((spec) => {
+    const source = spec.mode === 'ONLY_IN_CLOUD' ? 'in_cloud' : 'on_device';
+    if (spec.purpose === 'verify-answer') {
+      const answers = verdicts[Math.min(v, verdicts.length - 1)];
+      v += 1;
+      return { text: JSON.stringify({ answers, reason: answers ? 'The passage states it.' : 'The passage does not answer it.' }), source };
+    }
+    n += 1;
+    const r = replies[Math.min(n, replies.length) - 1];
+    return { text: JSON.stringify({ item: r.item, answer: r.answer ?? (r.item === 'none' ? '' : DEPOSIT_ANSWER) }), source: r.source ?? source };
   });
   setHybridForTests(hybrid);
 }
+const selectCalls = () => hybrid.callsFor('select-answer');
 const labels = (p: Proposal) => p.trace.map((s) => s.label);
 const own = (r: IndexRecord, source: IndexRecord['source'] = 'folder'): IndexRecord => ({ ...r, id: `${source}:${r.sourceRef}`, source });
 
@@ -60,6 +71,7 @@ describe('prepareProposal (10 section 16.10)', () => {
     db = fakeDb();
     idx.resetIndexMock(Object.values(RECORDS));
     nano('available');
+    verdicts = [true];
     selects({ item: 'P1' });
   });
 
@@ -71,10 +83,12 @@ describe('prepareProposal (10 section 16.10)', () => {
     const p = await run({ question: 'What did my landlord say about the deposit? Draft a reply.' });
     expect(p.outcome).toBe('ready');
     expect(p.item?.title).toBe('Re: Deposit for the apartment');
-    expect(hybrid.calls).toHaveLength(1);
-    expect(hybrid.calls[0].spec.purpose).toBe('select-answer');
+    // one select-answer, then one verify-answer on the device (12b)
+    expect(hybrid.calls.map((c) => c.spec.purpose)).toEqual(['select-answer', 'verify-answer']);
+    expect(hybrid.calls[1].spec.mode).toBe('PREFER_ON_DEVICE');
     expect(idx.search.mock.calls[0][1]).toBe('What did my landlord say about the deposit?');
-    expect(p.trace.slice(0, 3).map((s) => s.kind)).toEqual(['retrieve', 'select', 'excerpt']);
+    expect(p.trace.slice(0, 4).map((s) => s.kind)).toEqual(['retrieve', 'select', 'answer', 'excerpt']);
+    expect(p.trace[2]).toMatchObject({ label: 'The item answers the question', where: 'device' });
     expect(p.trace[0].label).toMatch(/^Found 2 likely matches on this device in \d+ ms \(meaning search and keyword search\)$/);
     expect(p.options.map((o) => o.step)).toEqual([...LADDER_STEPS]);
     expect(p.options[0].text).toBe(DEPOSIT_ANSWER);
@@ -117,9 +131,9 @@ describe('prepareProposal (10 section 16.10)', () => {
     selects({ item: 'none' });
     const p = await run({ question: 'What do my test results say?' });
     expect(p.outcome).toBe('blocked-never');
-    expect(hybrid.calls).toHaveLength(1);
-    expect(hybrid.calls[0].meta?.recordIds).toEqual(['playground:flight']);
-    expect(promptText(hybrid.calls[0].parts)).not.toContain('lab results');
+    expect(selectCalls()).toHaveLength(1);
+    expect(selectCalls()[0].meta?.recordIds).toEqual(['playground:flight']);
+    expect(promptText(selectCalls()[0].parts)).not.toContain('lab results');
   });
 
   it('PP-4: Money asks first', async () => {
@@ -166,7 +180,7 @@ describe('prepareProposal (10 section 16.10)', () => {
     expect(second.outcome).toBe('ready');
     expect(second.warnings.map((w) => w.kind)).toContain('cloud-fallback');
     expect(second.trace.find((s) => s.kind === 'select')).toMatchObject({ where: 'cloud', sdkReported: 'in_cloud' });
-    expect(promptText(hybrid.calls[0].parts)).toContain(consent?.items[0].text);
+    expect(promptText(selectCalls()[0].parts)).toContain(consent?.items[0].text);
     expect(second.trace.find((s) => s.kind === 'select')?.label).toMatch(/: \d+ characters of your data left this device$/);
   });
 
@@ -191,7 +205,7 @@ describe('prepareProposal (10 section 16.10)', () => {
     await grantCloudConsent(db, [upload.id]);
     const second = await run();
     expect(second.outcome).toBe('ready');
-    expect(hybrid.calls[0].meta?.recordIds).toEqual(['playground:deposit', upload.id]);
+    expect(selectCalls()[0].meta?.recordIds).toEqual(['playground:deposit', upload.id]);
     expect(second.warnings.map((w) => w.kind)).toContain('cloud-fallback');
   });
 
@@ -243,8 +257,8 @@ describe('prepareProposal (10 section 16.10)', () => {
     selects({ item: 'P1' }, { item: 'none' });
     const p = await run();
     expect(labels(p)).toContain('That email was deleted, so it was skipped');
-    expect(hybrid.calls).toHaveLength(2);
-    expect(hybrid.calls[1].meta?.recordIds).toEqual(['playground:flight']);
+    expect(selectCalls()).toHaveLength(2);
+    expect(selectCalls()[1].meta?.recordIds).toEqual(['playground:flight']);
     expect(p.outcome).toBe('no-match');
   });
 
@@ -255,7 +269,7 @@ describe('prepareProposal (10 section 16.10)', () => {
       return 'changed';
     });
     const p = await run();
-    expect(hybrid.calls).toHaveLength(1);
+    expect(selectCalls()).toHaveLength(1);
     expect(labels(p)).toContain('That email changed since it was indexed. Sieve re-read it and the answer still holds');
     expect(p.outcome).toBe('ready');
   });
@@ -271,9 +285,9 @@ describe('prepareProposal (10 section 16.10)', () => {
     });
     selects({ item: 'P1' }, { item: 'P1', answer: 'Your deposit was $1,400, paid on March 3.' });
     const p = await run();
-    expect(hybrid.calls).toHaveLength(2);
+    expect(selectCalls()).toHaveLength(2);
     expect(labels(p)).toContain('That email changed since it was indexed, so Sieve read it again');
-    expect(promptText(hybrid.calls[1].parts)).toContain('$1,400');
+    expect(promptText(selectCalls()[1].parts)).toContain('$1,400');
     expect(p.outcome).toBe('ready');
     expect(p.options[0].text).toBe('Your deposit was $1,400, paid on March 3.');
   });
@@ -325,16 +339,20 @@ describe('prepareProposal (10 section 16.10)', () => {
     expect(idx.search.mock.calls[0][2]).toMatchObject({ hints });
     expect(labels(p)).toContain('Searched for "deposit landlord" (spelling fixed on this device)');
     expect(labels(p)).toContain('Read "1-2-2026" as 2026-01-02. It could mean another date; check the result.');
-    expect(promptText(hybrid.calls[0].parts)).toContain('The person means items dated from 2026-01-02 to 2026-01-02.');
+    expect(promptText(selectCalls()[0].parts)).toContain('The person means items dated from 2026-01-02 to 2026-01-02.');
   });
 
   it('PP-20: progress events arrive in order, and every step-end matches a step-start', async () => {
     idx.search.mockResolvedValue([idx.cand('playground:deposit')]);
-    hybrid = createFakeHybrid(() => ({
-      text: JSON.stringify({ item: 'P1', answer: DEPOSIT_ANSWER }),
-      chunks: ['{"item":"P1","answer":"Your dep', 'osit was $1,200, paid on March 3."}'],
-      source: 'on_device',
-    }));
+    hybrid = createFakeHybrid((spec) =>
+      spec.purpose === 'verify-answer'
+        ? { text: JSON.stringify({ answers: true, reason: 'It says so.' }), source: 'on_device' }
+        : {
+            text: JSON.stringify({ item: 'P1', answer: DEPOSIT_ANSWER }),
+            chunks: ['{"item":"P1","answer":"Your dep', 'osit was $1,200, paid on March 3."}'],
+            source: 'on_device',
+          },
+    );
     setHybridForTests(hybrid);
     const events: PipelineProgress[] = [];
     await run({ onProgress: (e) => events.push(e) });
@@ -388,7 +406,7 @@ describe('prepareProposal (10 section 16.10)', () => {
     idx.search.mockResolvedValue([idx.cand('playground:deposit')]);
     const now = new Date(2026, 10, 29, 12, 0).getTime();
     const p = await run({ now });
-    expect(promptText(hybrid.calls[0].parts).startsWith('Today is 2026-11-17.\n')).toBe(true);
+    expect(promptText(selectCalls()[0].parts).startsWith('Today is 2026-11-17.\n')).toBe(true);
     expect(idx.parseQuestion.mock.calls[0][1]).toEqual(new Date(2026, 10, 17, 9, 0));
     expect(p.createdAt).toBe(now);
   });

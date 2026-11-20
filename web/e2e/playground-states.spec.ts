@@ -19,6 +19,20 @@ test.describe('Playground states', () => {
     expect(calls.some((c) => c.prompt.includes(HEALTH_TEXT) || c.recordIds.includes('playground:pg-mail-15'))).toBe(false);
   });
 
+  test('an item that only looks like the answer: the on-device check says no, and nothing matched (T02)', async ({ page }, info) => {
+    desktopOnly(info.project.name);
+    const { errors } = await prepareStubs(page, { availability: 'available' });
+    await openPlayground(page, errors);
+    const field = page.getByLabel('Ask the Playground');
+    await field.fill("When is my dog's next vet visit?");
+    await field.press('Enter');
+    await expect(page.getByText('Nothing on this device matched').first()).toBeVisible({ timeout: 45_000 });
+    await expect(page.getByRole('button', { name: APPROVE })).toHaveCount(0);
+    const calls = await seamCalls(page);
+    expect(calls.map((c) => c.purpose)).toEqual(['select-answer', 'verify-answer']);
+    expect(calls[1].sdkReported).toBe('on_device');
+  });
+
   test('Money asks first: the banner sits directly above the buttons (Approve first), and approving still works', async ({ page }, info) => {
     desktopOnly(info.project.name);
     const { errors } = await prepareStubs(page, { availability: 'available' });

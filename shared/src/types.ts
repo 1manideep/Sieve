@@ -30,7 +30,7 @@ export interface Settings {
   pushEnabled: boolean;
 }
 
-export type PiiType = 'email' | 'phone' | 'card' | 'iban' | 'ssn' | 'account' | 'name' | 'address' | 'dob' | 'other';
+export type PiiType = 'email' | 'phone' | 'card' | 'iban' | 'ssn' | 'account' | 'name' | 'address' | 'dob' | 'secret-code' | 'other';   // secret-code: one-time codes and sign-in links (11 section 5.2)
 export interface PiiSpan {
   start: number; end: number;             // offsets into the sanitized text
   type: PiiType;
@@ -144,7 +144,7 @@ export interface StepOption {
 
 export interface SharedImage { mime: 'image/jpeg'; base64: string; width: number; height: number; bytes: number }
 
-export type ProposalOutcome = 'ready' | 'blocked-never' | 'no-match' | 'needs-cloud-consent' | 'model-unavailable' | 'error';
+export type ProposalOutcome = 'ready' | 'blocked-never' | 'no-match' | 'unsupported' | 'needs-cloud-consent' | 'model-unavailable' | 'error';   // unsupported: a count (10 section 12.4)
 
 /** What the home base prepares for the person to approve. Local only (the extension gets a preview). */
 export interface Proposal {
@@ -176,7 +176,7 @@ export interface Decision {
 export interface RelayPayload { step: LadderStep; text: string; chars: number; itemCount: number; image?: SharedImage }
 
 export type RequestStatus =
-  | 'queued' | 'claimed' | 'awaiting-person' | 'answered' | 'declined' | 'blocked' | 'no-match'
+  | 'queued' | 'claimed' | 'awaiting-person' | 'answered' | 'declined' | 'blocked' | 'no-match' | 'unsupported'
   | 'collected' | 'expired' | 'revoked' | 'offline' | 'error';
 
 /** Firestore users/{uid}/requests/{requestId}. Written by functions (create) and the home base (claim/answer). */
@@ -197,7 +197,7 @@ export interface RelayRequest {
   expireAt: Timestamp;                    // TTL field: createdAt + REQUEST_TTL_HOURS
   claimedBy?: string;                     // deviceId of the home base
   response?: RelayPayload;                // present only between answer and collection
-  message?: string;                       // declined/blocked/no-match/error (home base), expired/revoked (functions): one sentence the AI receives, at most 300 chars, never content
+  message?: string;                       // declined/blocked/no-match/unsupported/error (home base), expired/revoked (functions): one sentence the AI receives, at most 300 chars, never content
 }
 
 export type ReceiptStatus = 'pending-collection' | 'delivered' | 'declined' | 'blocked' | 'revoked' | 'expired';
@@ -231,7 +231,7 @@ export interface GrantMeta {
 
 /** MCP tool result (01 section 7). snake_case because it is MCP output, not Firestore. */
 export interface ToolResult {
-  status: 'answered' | 'pending' | 'declined' | 'blocked' | 'no-match' | 'offline' | 'expired' | 'not-allowed' | 'error';
+  status: 'answered' | 'pending' | 'declined' | 'blocked' | 'no-match' | 'unsupported' | 'offline' | 'expired' | 'unknown' | 'not-allowed' | 'error';
   request_id?: string;
   step?: LadderStep;
   text?: string;          // the approved payload text, only when status = 'answered'
@@ -246,6 +246,7 @@ export interface LadderToolInput {
   source?: 'mail' | 'files' | 'photos';
   from?: string;
   terms?: string[];
+  idempotency_key?: string;   // 1 to 64 characters: a retry with the same key returns the same request (30 section 9.4)
 }
 
 /** MCP sieve_check arguments (01 section 7). */

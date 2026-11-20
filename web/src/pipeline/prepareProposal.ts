@@ -1,18 +1,21 @@
-// prepareProposal (10 section 12): from a question to a Proposal the person approves. Retrieval, then rules (before
-// any model reads anything), then one Nano call to pick and answer (one more only when the chosen item was deleted or
-// changed at its source), then plain-code excerpts and privacy steps, then the share-time Gemini Nano check of the
-// text that would leave (11 section 10.7: one injection-check and one pii-check at most, cached on the item). Never
-// rejects: failures are outcomes.
-import { LADDER_STEPS, MAX_PAYLOAD_CHARS, MAX_QUESTION_CHARS, RELATED_MAX } from '@sieve/shared';
+// prepareProposal (10 section 12): from a question to a Proposal the person approves. Counts stop at once
+// (unsupported). Retrieval with the sender and dates as filters, then rules (before any model reads anything), then
+// one Nano call to pick and answer (one more only when the chosen item was deleted or changed at its source), then one
+// on-device check that the item answers the question (12b), then plain-code excerpts and privacy steps, then the
+// share-time Gemini Nano check of the text that would leave (11 section 10.7: one injection-check and one pii-check at
+// most, cached on the item). Never rejects: failures are outcomes.
+import { LADDER_STEPS, MAX_PAYLOAD_CHARS, MAX_QUESTION_CHARS, RELATED_MAX, VECTOR_K } from '@sieve/shared';
 import type {
   Candidate, Category, CategoryRule, IndexRecord, KnownEntity, Proposal, ProposalOutcome, StepOption, TraceKind, TraceStep, Warning, Where,
 } from '@sieve/shared';
 import {
   CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, codeTrace, deriveExcerpt, fitPassages, getNanoAvailability, hasFreshConsent,
-  recordBody, selectAndAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
+  recordBody, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
 } from '@/ai';
-import { clockFor, flushUrgentEmbeds, getRecord, parseQuestion, relatedFor, removeRecord, search, type SieveDb } from '@/index';
-import { buildStepOption, checkOutgoing, privacyWarnings } from '@/privacy';
+import {
+  asksCount, asksLatest, clockFor, flushUrgentEmbeds, getRecord, parseQuestion, relatedFor, removeRecord, search, type HardFilter, type SieveDb,
+} from '@/index';
+import { buildStepOption, checkOutgoing, holdsSecretCode, privacyWarnings } from '@/privacy';
 import { forgetCloudConsentRequest, rememberCloudConsentRequest } from './consent';
 import { LABELS, RUNNING, UNAVAILABLE, WARNINGS, WHERE_PHRASE } from './copy';
 import { answerStillHolds, confirmFresh, type FreshResult } from './fresh';
@@ -56,6 +59,7 @@ export async function screenCandidates(
   let revoked = 0;
   let source = 0;
   let grant = 0;
+  let secret = 0;
   unique.forEach((cand, i) => {
     const rec = recs[i];
     if (!rec) {
@@ -83,11 +87,18 @@ export async function screenCandidates(
       never.set(rec.category, (never.get(rec.category) ?? 0) + 1);
       return;
     }
+    // 11 section 5.2: one-time codes and sign-in links are never shared, so no model reads an item that holds one
+    if (holdsSecretCode(rec)) {
+      neverBlocked.push(rec);
+      secret += 1;
+      return;
+    }
     if (allowed.length < SELECT_MAX_PASSAGES) allowed.push({ rec, cand });
   });
   const aiName = input.requester.aiName;
   const parts = [
     ...[...never].map(([category, n]) => LABELS.ruleNever(category, n)),
+    ...(secret ? [LABELS.ruleSecret(secret)] : []),
     ...(grant ? [LABELS.ruleGrant(grant, aiName)] : []),
     ...(revoked ? [LABELS.ruleBlocked(revoked, aiName)] : []),
     ...(source ? [LABELS.ruleSource(source, aiName)] : []),
@@ -161,17 +172,21 @@ class Run {
     this.unverified = w;
   }
 
+  /** The line every unavailable option carries (and the engine's table of automatic outcomes, 40 section 11.6). */
+  private reasonFor(outcome: ProposalOutcome, item: IndexRecord | undefined): string {
+    if (outcome === 'blocked-never' && item) {
+      const secret = ruleFor(this.input.settings, item.category) !== 'never' && holdsSecretCode(item);
+      return secret ? UNAVAILABLE.secretCode : UNAVAILABLE.never(item.category);
+    }
+    if (outcome === 'no-match') return UNAVAILABLE.noMatch;
+    if (outcome === 'unsupported') return UNAVAILABLE.unsupported;
+    if (outcome === 'needs-cloud-consent') return UNAVAILABLE.needsConsent;
+    if (outcome === 'model-unavailable') return UNAVAILABLE.modelUnavailable;
+    return UNAVAILABLE.error;
+  }
+
   finish(outcome: ProposalOutcome, extra: { item?: IndexRecord; rule?: CategoryRule; options?: StepOption[]; related?: Candidate[] } = {}): Proposal {
-    const reason =
-      outcome === 'blocked-never' && extra.item
-        ? UNAVAILABLE.never(extra.item.category)
-        : outcome === 'no-match'
-          ? UNAVAILABLE.noMatch
-          : outcome === 'needs-cloud-consent'
-            ? UNAVAILABLE.needsConsent
-            : outcome === 'model-unavailable'
-              ? UNAVAILABLE.modelUnavailable
-              : UNAVAILABLE.error;
+    const reason = this.reasonFor(outcome, extra.item);
     const i = this.input;
     return {
       requestId: i.requestId,
@@ -255,7 +270,9 @@ async function prepare(run: Run): Promise<Proposal> {
     try {
       const locale = (typeof navigator !== 'undefined' && navigator.language) || 'en-US';
       const p = parseQuestion(lookup, new Date(today), locale, { db });
-      hints = p.hints;
+      // The parsed `from` stays a boost: search finds the sender the question names itself (20 section 10.2).
+      const { from: _from, ...parsed } = p.hints;
+      hints = parsed;
       if (p.corrected) lookup = p.corrected;
       if (p.corrected && p.corrected !== p.normalized) run.code('retrieve', LABELS.spellingFixed(p.corrected));
       for (const it of p.hints.interpreted ?? []) if (it.ambiguous) run.code('retrieve', LABELS.ambiguousDate(it.text, it.as));
@@ -265,6 +282,12 @@ async function prepare(run: Run): Promise<Proposal> {
   }
   const verb = actionVerb(lookup);
   if (verb) run.warn(WARNINGS.action(verb));
+
+  // 3a. A count needs every item, and this level answers from one: unsupported, before any search (12.4).
+  if (asksCount(lookup)) {
+    run.code('rule', LABELS.countUnsupported);
+    return run.finish('unsupported');
+  }
 
   // 4. Retrieve.
   if (run.aborted) return run.stopped();
@@ -282,11 +305,15 @@ async function prepare(run: Run): Promise<Proposal> {
   }
   const t0 = performance.now();
   let cands: Candidate[];
+  let filters: HardFilter | undefined;
   try {
     cands = await search(db, lookup, {
       ...(input.allowedSources ? { sources: input.allowedSources } : {}),
       ...(hints ? { hints } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
+      onReport: (r) => {
+        filters = r.filters;
+      },
     });
   } catch (e) {
     const ms = Math.round(performance.now() - t0);
@@ -311,6 +338,14 @@ async function prepare(run: Run): Promise<Proposal> {
   const { neverBlocked } = screened;
   let allowed = screened.allowed;
   if (allowed.length === 0) return run.blockedOrNoMatch(neverBlocked);
+
+  // 6a. "The latest": newest first by the item's date; with a sender or date filter, only the newest VECTOR_K.
+  const latest = asksLatest(lookup);
+  if (latest && allowed.length > 1) {
+    allowed = [...allowed].sort((a, b) => b.rec.date - a.rec.date);
+    if (filters?.sender || filters?.after || filters?.before) allowed = allowed.slice(0, VECTOR_K);
+    run.code('retrieve', LABELS.newestFirst);
+  }
 
   // 7. Data class and the own-data cloud policy.
   const ownCloud: OwnCloudPolicy = {
@@ -386,6 +421,7 @@ async function prepare(run: Run): Promise<Proposal> {
       ownCloud,
       hints,
       today,
+      latest,
       onAnswerText: (t) => run.answerProgress(t),
     });
     run.end(selectId, res.trace);
@@ -443,6 +479,26 @@ async function prepare(run: Run): Promise<Proposal> {
       list = list.map((a) => (a.rec.id === reread.id ? { rec: reread, cand: { ...a.cand, chunk: undefined } } : a));
     }
     reruns += 1;
+  }
+
+  // 12b. One more on-device call: does the item really answer the question (sender, date, the fact itself)? No:
+  // nothing to share. A check that could not run leaves the answer for the person to read, with a warning.
+  if (run.aborted) return run.stopped();
+  const chosenData = recordDataClass(chosen);
+  const verifyId = run.start('answer', RUNNING.verify, nano.text === 'available' ? 'device' : chosenData === 'sample' ? 'cloud' : 'code');
+  const checked = await verifyAnswer(lookup, chosen, value.answer, chosenData, {
+    ...(recomputeExcerpt || !value.passage ? {} : { passage: value.passage }),
+    ...(input.signal ? { signal: input.signal } : {}),
+    ownCloud,
+    today,
+  });
+  if (!checked.ok) {
+    run.end(verifyId, { ...checked.trace, label: LABELS.verifyFailed });
+    if (checked.error.code === 'aborted' || run.aborted) return run.stopped();
+    run.warn(WARNINGS.unchecked());
+  } else {
+    run.end(verifyId, { ...checked.trace, label: checked.value.answers ? LABELS.verifyYes : LABELS.verifyNo });
+    if (!checked.value.answers) return run.finish('no-match');
   }
 
   // 13. The excerpt, chosen by plain code.

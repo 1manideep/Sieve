@@ -17,7 +17,7 @@ const SIGNOFF_NAME = new RegExp(String.raw`^${NAME_WORD}(?:\s+${NAME_WORD}){0,2}
 export const GREETING_EXCLUDE: ReadonlySet<string> = new Set(['All', 'Team', 'There', 'Everyone', 'Folks', 'Friends', 'Sir', 'Madam', 'Customer', 'Member', 'User', 'Neighbor', 'Neighbour', 'Tenant', 'Resident', 'Valued', 'Colleagues', 'Support']);
 const SIGNOFFS = ['best', 'thanks', 'thank you', 'regards', 'kind regards', 'best regards', 'warm regards', 'cheers', 'sincerely', 'yours', 'love', 'take care'];
 const SIGNOFFS_LONGEST_FIRST = [...SIGNOFFS].sort((a, b) => b.length - a.length);
-const ORG_WORDS: ReadonlySet<string> = new Set(['Management', 'Inc', 'LLC', 'Ltd', 'Team', 'Services', 'Bank', 'Group', 'Support', 'Office', 'Department', 'Company', 'Property', 'Health', 'Clinic', 'Store', 'Desk', 'Bot']);
+export const ORG_WORDS: ReadonlySet<string> = new Set(['Management', 'Inc', 'LLC', 'Ltd', 'Team', 'Services', 'Bank', 'Group', 'Support', 'Office', 'Department', 'Company', 'Property', 'Health', 'Clinic', 'Store', 'Desk', 'Bot']);
 
 function isSignoff(t: string): boolean {
   return SIGNOFFS.includes(t.trim().toLowerCase().replace(/[\s.,!:;]+$/, ''));
@@ -101,4 +101,22 @@ function titleNames(text: string): PiiSpan[] {
 
 export function findNames(text: string): PiiSpan[] {
   return [...greetingNames(text), ...signoffNames(text), ...titleNames(text)];
+}
+
+const ACTOR_START: ReadonlySet<string> = new Set(['The', 'Your', 'My', 'This', 'That', 'Our', 'Their', 'His', 'Her', 'A', 'An', 'Someone', 'Nobody', 'Everyone']);
+const ACTOR = new RegExp(
+  String.raw`(?<![\p{L}\p{N}])(${NAME_WORD}(?:\s+${NAME_WORD}){1,2})\s+(?:sent you|emailed you|wrote to you|wrote|replied|asked you|asked|said|told you|invited you|shared|messaged you|texted you|mentioned|signed)\b`,
+  'gu',
+);
+
+/** "Priya Shah sent you an email": a first and last name in front of what they did (answers are written this way). */
+export function findActorNames(text: string): PiiSpan[] {
+  const out: PiiSpan[] = [];
+  for (const m of text.matchAll(ACTOR)) {
+    const name = m[1]!;
+    const ws = name.split(/\s+/);
+    if (ACTOR_START.has(ws[0]!) || ws.some((w) => ORG_WORDS.has(w) || GREETING_EXCLUDE.has(w))) continue;
+    out.push(vspan(m.index, m.index + name.length, 'name'));
+  }
+  return out;
 }

@@ -10,6 +10,8 @@ export { detectPii } from './pii/detect';
 export { redact } from './redact';
 export { checkInjection } from './injection/check';
 export { buildStepOption } from './steps/build';
+export { findSecretCodes, holdsSecretCode } from './pii/validators/secretCode';
+export { keepAskerWords, personSender, senderEntities } from './steps/asker';
 
 // Ingest-time scan and cache (11 section 6; 01 section 11.1: scanRecord is a task handler for 20's queue)
 export { scanRecord, scanNow, isScanCurrent, expectedStages, knownEntities, scanText } from './scan/scan';

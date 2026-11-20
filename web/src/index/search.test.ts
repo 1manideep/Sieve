@@ -59,9 +59,35 @@ describe('search', () => {
     for (const c of work) expect((await db.records.get(c.recordId))?.category).toBe('Work');
   });
 
-  it('A-SR-4: a date hint that excludes the right item still returns it', async () => {
-    const res = await search(db, 'Where is order 88231?', { hints: { after: '2026-01-01', before: '2026-01-31' } });
-    expect(res.slice(0, 5).map((c) => c.recordId)).toContain('playground:pg-mail-21');
+  it('A-SR-4: dates are a filter: an item outside them is dropped, one that mentions a day inside them stays', async () => {
+    const out = await search(db, 'Where is order 88231?', { hints: { after: '2026-01-01', before: '2026-01-31' } });
+    expect(out.map((c) => c.recordId)).not.toContain('playground:pg-mail-21');
+    // the flight email of Nov 8 says "Friday, December 4"
+    let report: SearchReport | undefined;
+    const flight = await search(db, 'When does my flight to Seattle leave?', { hints: { after: '2026-12-04', before: '2026-12-04' }, onReport: (r) => (report = r) });
+    expect(flight.map((c) => c.recordId)).toContain('playground:pg-mail-19');
+    expect(report?.filters).toEqual({ after: '2026-12-04', before: '2026-12-04' });
+  });
+
+  it('a sender the question or the request names is a filter, not a boost (T06, T07, T10)', async () => {
+    // no HelloSign, Gymshark or Google email in the seed data: nothing, instead of the best match
+    expect(await search(db, 'Did HelloSign send me a document to sign?')).toEqual([]);
+    expect(await search(db, 'When did my latest Gymshark order ship?')).toEqual([]);
+    expect(await search(db, 'Show me my Google verification emails')).toEqual([]);
+    const voltwren = await search(db, 'Where is my order?', { hints: { from: 'Voltwren' } });
+    expect(voltwren.map((c) => c.recordId)).toEqual(['playground:pg-mail-22']);
+    // a role stays a boost
+    let report: SearchReport | undefined;
+    const landlord = await search(db, 'What did my landlord say about the deposit?', { hints: { from: 'my landlord' }, onReport: (r) => (report = r) });
+    expect(landlord.length).toBeGreaterThan(3);
+    expect(report?.filters).toBeUndefined();
+  });
+
+  it("the sender's newest items join the list when the question asks for the latest (T04)", async () => {
+    const res = await search(db, "What did Kestrelmoor's latest email say?");
+    const ids = res.map((c) => c.recordId);
+    expect(ids).toContain('playground:pg-mail-12');
+    expect(ids.every((id) => id === 'playground:pg-mail-11' || id === 'playground:pg-mail-12')).toBe(true);
   });
 
   it('A-SR-5: embedder not ready gives keyword results and says so', async () => {
@@ -79,7 +105,7 @@ describe('search', () => {
     await db.records.delete(id);   // behind the in-memory indexes
     const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
     let report: SearchReport | undefined;
-    const res = await search(db, 'This week in AI: 5 papers worth reading on-device models retrieval benchmark', { onReport: (r) => (report = r) });
+    const res = await search(db, 'Tensorfield Digest: 5 papers worth reading on-device models retrieval benchmark', { onReport: (r) => (report = r) });
     info.mockRestore();
     expect(res.map((c) => c.recordId)).not.toContain(id);
     expect(report?.repaired).toBeGreaterThanOrEqual(1);

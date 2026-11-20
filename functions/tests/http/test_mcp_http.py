@@ -148,7 +148,9 @@ def test_h12_open_request_limit(db):
     with HomeBaseSim(db, o.uid, o.device, never()):
         outs = [ladder(s, question=f"Different question {i}?")[1] for i in range(4)]
     assert [x["status"] for x in outs[:3]] == ["pending"] * 3
-    assert outs[3] == {"status": "error", "message": tools.MSG_OPEN_LIMIT}
+    assert outs[3]["status"] == "error" and "request_id" not in outs[3]
+    assert outs[3]["message"].startswith("At most 3 requests can wait per connection, and 3 are waiting now: ")
+    assert all(f"\"{x['request_id']}\"" in outs[3]["message"] for x in outs[:3])
 
 
 def test_h13_modern_header_mismatch(db):
@@ -189,9 +191,13 @@ def test_h18_instructions(db):
     o = owner(db, online=False)
     s = emu.LegacySession(o.secret)
     today = datetime.now(timezone.utc).date()
-    assert s.initialize_result["instructions"] == tools.instructions(today)
+    assert s.initialize_result["instructions"] == tools.instructions(today, "full")
     r = emu.modern_call(o.secret, "server/discover")
-    assert r.status_code == 200 and r.json()["result"]["instructions"] == tools.instructions(today)
+    assert r.status_code == 200 and r.json()["result"]["instructions"] == tools.instructions(today, "full")
+    low = owner(db, online=False, max_step="answer")
+    text = emu.LegacySession(low.secret).initialize_result["instructions"]
+    assert text == tools.instructions(today, "answer")
+    assert "sieve_excerpt" not in text and "sieve_full_item" not in text
 
 
 def test_r_mcp_01_malformed(db):
@@ -250,7 +256,7 @@ def test_r_mcp_07_foreign_and_unknown_ids(db):
     s = emu.LegacySession(a.secret)
     for rid in (foreign_id, "Q" * 20):
         _, out = check(s, rid)
-        assert out == {"status": "expired", "message": tools.MSG_UNKNOWN_ID}
+        assert out == {"status": "unknown", "message": tools.MSG_UNKNOWN_ID}
     assert offline["status"] == "offline"
 
 
@@ -258,7 +264,7 @@ def test_r_mcp_08_rate_limit(db):
     o = owner(db, online=False)
     s = emu.LegacySession(o.secret)
     outs = [check(s, f"{i:020d}")[1] for i in range(31)]
-    assert all(x["status"] == "expired" for x in outs[:30])
+    assert all(x["status"] == "unknown" for x in outs[:30])
     assert outs[30] == {"status": "error", "message": tools.MSG_RATE_LIMITED}
 
 

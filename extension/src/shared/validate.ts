@@ -44,7 +44,7 @@ export const IN_APP_AI_NAME = 'Gemini (in Sieve)';
 export const ITEM_KINDS = ['email', 'document', 'photo', 'note'] as const satisfies readonly ItemKind[];
 export const RULES = ['approve', 'ask-first', 'never'] as const satisfies readonly CategoryRule[];
 export const OUTCOMES = [
-  'ready', 'blocked-never', 'no-match', 'needs-cloud-consent', 'model-unavailable', 'error',
+  'ready', 'blocked-never', 'no-match', 'unsupported', 'needs-cloud-consent', 'model-unavailable', 'error',
 ] as const satisfies readonly ProposalOutcome[];
 export const WARNING_KINDS = [
   'ask-first', 'injection', 'hidden-text-removed', 'pii-redacted', 'pii-check-limited', 'cloud-fallback',

@@ -266,6 +266,23 @@ describe('Sources', () => {
     await expectNoAxeViolations();
   });
 
+  it('Gmail asks with a plain note; the warning is only for Google refusing access after Continue', async () => {
+    fake.rows = [row('gmail', { needsAuth: true })];
+    const view = renderSources();
+    const note = (await within(card('Gmail')).findByText(SOURCES.needsAuthGmail)).closest('[data-tone]');
+    expect(note).toHaveAttribute('data-tone', 'info');
+    view.unmount();
+
+    fake.rows = [row('gmail', { needsAuth: true, errorCode: 'auth-needed', error: SOURCES.needsAuthGmailRefused })];
+    renderSources();
+    const gmail = card('Gmail');
+    const warning = (await within(gmail).findByText(SOURCES.needsAuthGmailRefused)).closest('[data-tone]');
+    expect(warning).toHaveAttribute('data-tone', 'warning');
+    expect(within(gmail).getAllByText(SOURCES.needsAuthGmailRefused)).toHaveLength(1);   // not repeated as an error line
+    expect(within(gmail).getByRole('button', { name: SOURCES.continue })).toBeInTheDocument();
+    expect(within(gmail).queryByRole('button', { name: SOURCES.tryAgain })).toBeNull();
+  });
+
   it('asks Chrome again for a folder it can no longer read', async () => {
     const user = userEvent.setup();
     fake.rows = [row('folder', { needsAuth: true, folderName: 'Taxes' })];

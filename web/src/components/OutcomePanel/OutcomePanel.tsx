@@ -11,16 +11,20 @@ export type OutcomePanelOutcome = Exclude<ProposalOutcome, 'ready' | 'needs-clou
 export interface OutcomePanelProps {
   outcome: OutcomePanelOutcome;
   category?: Category;
+  /** blocked-never because the item holds a one-time code or a sign-in link (11 section 5.2), not because of its category. */
+  secret?: boolean;
   variant: 'real' | 'playground';
   onRetry?(): void;
 }
 
-export function outcomeTitle(outcome: OutcomePanelOutcome, category?: Category): string {
+export function outcomeTitle(outcome: OutcomePanelOutcome, category?: Category, secret = false): string {
   switch (outcome) {
     case 'blocked-never':
-      return fill(OUTCOME_COPY.blockedTitle, { category: category ?? '' }).trim();
+      return secret ? OUTCOME_COPY.secretTitle : fill(OUTCOME_COPY.blockedTitle, { category: category ?? '' }).trim();
     case 'no-match':
       return OUTCOME_COPY.noMatchTitle;
+    case 'unsupported':
+      return OUTCOME_COPY.countsTitle;
     case 'model-unavailable':
       return OUTCOME_COPY.modelTitle;
     case 'error':
@@ -28,7 +32,7 @@ export function outcomeTitle(outcome: OutcomePanelOutcome, category?: Category):
   }
 }
 
-export function OutcomePanel({ outcome, category, variant, onRetry }: OutcomePanelProps) {
+export function OutcomePanel({ outcome, category, secret = false, variant, onRetry }: OutcomePanelProps) {
   const real = variant === 'real';
   let tone: NoticeTone;
   let body: string;
@@ -36,13 +40,17 @@ export function OutcomePanel({ outcome, category, variant, onRetry }: OutcomePan
   switch (outcome) {
     case 'blocked-never':
       tone = 'never';
-      body = fill(OUTCOME_COPY.blockedBody, { category: category ?? '' });
-      if (real) actions = <LinkButton to="/settings#rules" variant="secondary" size="sm">{OUTCOME_COPY.changeRules}</LinkButton>;
+      body = secret ? OUTCOME_COPY.secretBody : fill(OUTCOME_COPY.blockedBody, { category: category ?? '' });
+      if (real && !secret) actions = <LinkButton to="/settings#rules" variant="secondary" size="sm">{OUTCOME_COPY.changeRules}</LinkButton>;
       break;
     case 'no-match':
       tone = 'info';
       body = real ? OUTCOME_COPY.noMatchReal : OUTCOME_COPY.noMatchPlayground;
       if (real) actions = <LinkButton to="/sources" variant="secondary" size="sm">{OUTCOME_COPY.sources}</LinkButton>;
+      break;
+    case 'unsupported':
+      tone = 'info';
+      body = OUTCOME_COPY.countsBody;
       break;
     case 'model-unavailable':
       tone = 'warning';
@@ -64,7 +72,7 @@ export function OutcomePanel({ outcome, category, variant, onRetry }: OutcomePan
   }
   return (
     <div className={styles.outcome} data-outcome={outcome}>
-      <Notice tone={tone} title={outcomeTitle(outcome, category)} actions={actions}>
+      <Notice tone={tone} title={outcomeTitle(outcome, category, secret)} actions={actions}>
         <p>{body}</p>
       </Notice>
     </div>

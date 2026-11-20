@@ -782,6 +782,9 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
       const extra = questionWarnings(req.questionRemoved);
       if (extra.length > 0) proposal = { ...proposal, warnings: [...extra, ...proposal.warnings] };
     }
+    // A card with nothing to approve would only end as "declined" (T08): it ends here, like no match. Declined is
+    // only ever the person's own choice. (The consent card has its own action.)
+    if (proposal.outcome === 'ready' && !proposal.options.some((o) => o.available && o.text.trim())) proposal = { ...proposal, outcome: 'no-match' };
     switch (proposal.outcome) {
       case 'ready':
       case 'needs-cloud-consent':
@@ -817,6 +820,9 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
       }
       case 'no-match':
         await finishAuto(id, { status: 'no-match', message: MSG.noMatch }, 'no-match', proposal);
+        return;
+      case 'unsupported':
+        await finishAuto(id, { status: 'unsupported', message: MSG.unsupported }, 'no-match', proposal);
         return;
       case 'model-unavailable':
         deps.toast({ tone: 'warning', title: HOME_BASE.modelUnavailableToast(aiName) });

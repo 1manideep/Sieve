@@ -1,6 +1,8 @@
 """Request lifecycle: create, wait, collect, check, receipts (30 section 9; 70 R-MCP-06; 00 D6)."""
 from __future__ import annotations
 
+import hashlib
+import json
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -13,10 +15,15 @@ from pydantic import ValidationError
 from . import config, fb, logs, push, tools
 from .models import GrantMeta, RelayPayload, ToolResult
 
-WAIT_DONE = frozenset({"answered", "declined", "blocked", "no-match", "error", "expired", "revoked", "collected",
-                       "offline"})
+WAIT_DONE = frozenset({"answered", "declined", "blocked", "no-match", "unsupported", "error", "expired", "revoked",
+                       "collected", "offline"})
 OPEN_STATUSES = ("queued", "claimed", "awaiting-person")
 OPEN_AND_ANSWERED = ["queued", "claimed", "awaiting-person", "answered"]
+# 30 section 9.4. Without a client key, only a request that is still waiting or holds an uncollected answer is
+# reused, so asking again after a delivered or declined answer makes a new request. With a client key, any
+# request is reused except one that ended without a decision by the person: then a retry asks again.
+REUSED_WITHOUT_KEY = frozenset(OPEN_AND_ANSWERED)
+NOT_REUSED = frozenset({"offline", "error", "expired", "revoked"})
 MSG_DECISION_EXPIRED = "The person did not answer in time."
 MSG_COLLECT_EXPIRED = "The answer was not collected in time."
 MSG_UNDELIVERABLE = "Sieve could not deliver this answer."
@@ -50,37 +57,49 @@ def home_base_online(presence: Mapping[str, Any] | None) -> bool:
                for v in presence.values())
 
 
-def open_requests(db: Any, uid: str, grant_id: str, limit: int) -> list[Any]:
-    query = (_requests(db, uid).where(filter=FieldFilter("requester.grantId", "==", grant_id))
-             .where(filter=FieldFilter("status", "in", OPEN_AND_ANSWERED)).limit(limit))
-    return list(query.stream())
-
-
-def count_open_requests(db: Any, uid: str, grant_id: str, limit: int) -> int:
-    return len(open_requests(db, uid, grant_id, limit))
-
-
 def question_key(question: str) -> str:
     return " ".join(question.split()).casefold()
 
 
-def find_duplicate(snaps: list[Any], *, tool: str, question: str, now: datetime) -> Any | None:
-    """70 R-MCP-06: an open (queued, claimed, awaiting-person) request of this grant with the same tool and
-    question asked within DEDUPE_WINDOW_SECONDS."""
-    key = question_key(question)
-    cutoff = now - timedelta(seconds=config.DEDUPE_WINDOW_SECONDS)
+def request_key(grant_id: str, tool: str, args: tools.LadderArgs) -> str:
+    """The idempotency key stored on the request doc: sha256 hex, scoped to the grant and the tool.
+    With the client's idempotency_key it is that key; without one it is derived from the question (whitespace
+    and case folded, 70 R-MCP-06) and the hints. The client's raw key is never stored."""
+    if args.idempotency_key is not None:
+        material: list[Any] = ["key", grant_id, tool, args.idempotency_key]
+    else:
+        hints = args.hints.to_firestore() if args.hints is not None else {}
+        material = ["derived", grant_id, tool, question_key(args.question), hints]
+    canonical = json.dumps(material, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def reusable_status(status: Any, *, explicit_key: bool) -> bool:
+    if explicit_key:
+        return isinstance(status, str) and status not in NOT_REUSED
+    return status in REUSED_WITHOUT_KEY
+
+
+def pick_reusable(snaps: list[Any], *, key: str, grant_id: str, tool: str, now: datetime,
+                  explicit_key: bool) -> Any | None:
+    """The newest request with this key, grant and tool, created within IDEMPOTENCY_WINDOW_SECONDS, whose status
+    reusable_status accepts."""
+    cutoff = now - timedelta(seconds=config.IDEMPOTENCY_WINDOW_SECONDS)
+    best, best_at = None, None
     for snap in snaps:
         d = snap.to_dict() or {}
         created = d.get("createdAt")
-        if (d.get("status") in OPEN_STATUSES and d.get("tool") == tool and isinstance(d.get("question"), str)
-                and question_key(d["question"]) == key and isinstance(created, datetime) and created >= cutoff):
-            return snap
-    return None
+        if (d.get("idempotencyKey") != key or (d.get("requester") or {}).get("grantId") != grant_id
+                or d.get("tool") != tool or not reusable_status(d.get("status"), explicit_key=explicit_key)
+                or not isinstance(created, datetime) or created < cutoff):
+            continue
+        if best_at is None or created > best_at:
+            best, best_at = snap, created
+    return best
 
 
-def create_request(db: Any, ctx: CallCtx, *, tool: str, args: tools.LadderArgs,
-                   status: Literal["queued", "offline"], now: datetime) -> str:
-    ref = _requests(db, ctx.uid).document()
+def request_data(ctx: CallCtx, *, tool: str, args: tools.LadderArgs, status: Literal["queued", "offline"],
+                 now: datetime, key: str) -> dict[str, Any]:
     data: dict[str, Any] = {
         "requester": {"kind": "outside", "grantId": ctx.grant_id, "aiName": ctx.grant.ai_name},
         "tool": tool,
@@ -92,18 +111,78 @@ def create_request(db: Any, ctx: CallCtx, *, tool: str, args: tools.LadderArgs,
         "status": status,
         "createdAt": now,
         "expireAt": now + timedelta(hours=config.REQUEST_TTL_HOURS),
+        "idempotencyKey": key,
     }
     if args.hints is not None:
         data["hints"] = args.hints.to_firestore()
-    ref.create(data)
+    return data
+
+
+def create_request(db: Any, ctx: CallCtx, *, tool: str, args: tools.LadderArgs,
+                   status: Literal["queued", "offline"], now: datetime) -> str:
+    ref = _requests(db, ctx.uid).document()
+    ref.create(request_data(ctx, tool=tool, args=args, status=status, now=now,
+                            key=request_key(ctx.grant_id, tool, args)))
     return ref.id
 
 
-def wait_deadline(t0: float, wait_seconds: int) -> float:
-    return t0 + min(wait_seconds, config.WAIT_CAP_SECONDS)
+def wait_deadline(t0: float, wait_seconds: int, cap: float = config.WAIT_CAP_SECONDS) -> float:
+    """t0 plus the shortest of the configured wait, the cap for this kind of call and WAIT_CAP_SECONDS."""
+    return t0 + min(wait_seconds, cap, config.WAIT_CAP_SECONDS)
+
+
+def ladder_deadline(t0: float, wait_seconds: int) -> float:
+    return wait_deadline(t0, wait_seconds, config.SHORT_WAIT_SECONDS)
+
+
+def check_deadline(t0: float, wait_seconds: int) -> float:
+    return wait_deadline(t0, wait_seconds, config.CHECK_WAIT_SECONDS)
+
+
+@dataclass(frozen=True)
+class Admitted:
+    kind: Literal["created", "offline", "existing", "key-reused", "limit"]
+    request_id: str | None = None
+    snap: Any = None
+    waiting: tuple[str, ...] = ()
+
+
+def _admit_request_txn(txn: Any, coll: Any, new_ref: Any, *, key: str, grant_id: str, tool: str, question: str,
+                       explicit_key: bool, online: bool, data: dict[str, Any], now: datetime) -> Admitted:
+    """One transaction: find a request with this key, else check the pending limit and create the new one.
+    The key lookup and the create commit together, so parallel retries never make two requests."""
+    hits = list(coll.where(filter=FieldFilter("idempotencyKey", "==", key)).limit(20).stream(transaction=txn))
+    match = pick_reusable(hits, key=key, grant_id=grant_id, tool=tool, now=now, explicit_key=explicit_key)
+    if match is not None:
+        asked = (match.to_dict() or {}).get("question")
+        if explicit_key and (not isinstance(asked, str) or question_key(asked) != question_key(question)):
+            return Admitted("key-reused")
+        return Admitted("existing", request_id=match.id, snap=match)
+    if not online:
+        txn.create(new_ref, {**data, "status": "offline"})
+        return Admitted("offline", request_id=new_ref.id)
+    waiting = list(coll.where(filter=FieldFilter("requester.grantId", "==", grant_id))
+                   .where(filter=FieldFilter("status", "in", OPEN_AND_ANSWERED))
+                   .limit(config.MAX_OPEN_REQUESTS_PER_GRANT).stream(transaction=txn))
+    if len(waiting) >= config.MAX_OPEN_REQUESTS_PER_GRANT:
+        return Admitted("limit", waiting=tuple(s.id for s in waiting))
+    txn.create(new_ref, data)
+    return Admitted("created", request_id=new_ref.id)
+
+
+def admit_request(db: Any, ctx: CallCtx, *, tool: str, args: tools.LadderArgs, online: bool,
+                  now: datetime) -> Admitted:
+    coll = _requests(db, ctx.uid)
+    key = request_key(ctx.grant_id, tool, args)
+    data = request_data(ctx, tool=tool, args=args, status="queued", now=now, key=key)
+    return fb.transact(db, _admit_request_txn, coll, coll.document(), key=key, grant_id=ctx.grant_id, tool=tool,
+                       question=args.question, explicit_key=args.idempotency_key is not None, online=online,
+                       data=data, now=now, lock_key=f"users/{ctx.uid}/requests#{ctx.grant_id}")
 
 
 def handle_ladder_tool(deps: Any, ctx: CallCtx, *, tool: str, args: tools.LadderArgs, t0: float) -> ToolResult:
+    """Create the request (or find the one a retry refers to), wait at most SHORT_WAIT_SECONDS, then answer
+    or return pending with the request_id. 30 section 9.4."""
     db = deps.db
     if ctx.playground:
         online = True          # the Playground page is its own home base and is the caller
@@ -113,29 +192,26 @@ def handle_ladder_tool(deps: Any, ctx: CallCtx, *, tool: str, args: tools.Ladder
         except Exception as exc:  # noqa: BLE001 - presence is advisory: queue and let sieve_check collect later
             logs.log_exception("presence_error", exc, grant=ctx.grant_id)
             online = True
-    now = deps.now()
-    if not online:
-        create_request(db, ctx, tool=tool, args=args, status="offline", now=now)
+    admitted = admit_request(db, ctx, tool=tool, args=args, online=online, now=deps.now())
+    if admitted.kind == "offline":
         return tools.offline_result()
-
-    open_snaps = open_requests(db, ctx.uid, ctx.grant_id, limit=20)
-    dup = find_duplicate(open_snaps, tool=tool, question=args.question, now=now)
-    if dup is not None:
-        logs.log_event("tool_call_deduped", grant=ctx.grant_id, tool=tool)
-        outcome = wait_for_change(dup.reference, deadline=wait_deadline(t0, deps.wait_seconds()),
-                                  monotonic=deps.monotonic)
-        return finish(deps, ctx, dup.id, outcome, t0)
-    if len(open_snaps) >= config.MAX_OPEN_REQUESTS_PER_GRANT:
-        return tools.error_result(tools.MSG_OPEN_LIMIT)
-
-    request_id = create_request(db, ctx, tool=tool, args=args, status="queued", now=now)
-    if not ctx.playground:
+    if admitted.kind == "key-reused":
+        return tools.error_result(tools.MSG_KEY_REUSED)
+    if admitted.kind == "limit":
+        return tools.open_limit_result(list(admitted.waiting))
+    request_id = str(admitted.request_id)
+    ref = _requests(db, ctx.uid).document(request_id)
+    if admitted.kind == "existing":
+        data = admitted.snap.to_dict() or {}
+        logs.log_event("tool_call_deduped", grant=ctx.grant_id, tool=tool, status=str(data.get("status")))
+        if data.get("status") not in OPEN_STATUSES:
+            return finish(deps, ctx, request_id, data, t0)
+    elif not ctx.playground:
         try:
             push.notify_request_waiting(db, deps.push, uid=ctx.uid, request_id=request_id)
         except Exception as exc:  # noqa: BLE001 - a missed push never fails the request
             logs.log_exception("push_error", exc, grant=ctx.grant_id)
-    ref = _requests(db, ctx.uid).document(request_id)
-    outcome = wait_for_change(ref, deadline=wait_deadline(t0, deps.wait_seconds()), monotonic=deps.monotonic)
+    outcome = wait_for_change(ref, deadline=ladder_deadline(t0, deps.wait_seconds()), monotonic=deps.monotonic)
     return finish(deps, ctx, request_id, outcome, t0)
 
 
@@ -319,7 +395,7 @@ def handle_check(deps: Any, ctx: CallCtx, request_id: str, *, t0: float) -> Tool
         return ToolResult(status="expired", request_id=request_id, message=tools.MSG_REQUEST_EXPIRED)
     status = data.get("status")
     if status in OPEN_STATUSES:
-        data = wait_for_change(ref, deadline=wait_deadline(t0, deps.wait_seconds()), monotonic=deps.monotonic)
+        data = wait_for_change(ref, deadline=check_deadline(t0, deps.wait_seconds()), monotonic=deps.monotonic)
     elif status == "collected":
         return tools.error_result(tools.MSG_COLLECTED, request_id)
     return finish(deps, ctx, request_id, data, t0)

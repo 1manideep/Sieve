@@ -1,4 +1,5 @@
 """U13: config.py mirrors shared/src/constants.ts (01 section 1)."""
+import copy
 import json
 import pathlib
 import re
@@ -40,11 +41,35 @@ def test_u13_constants_match_shared():
     assert dict(re.findall(r"(\w+): '([^']+)'", block)) == config.MCP_TOOLS
 
 
+# The server took these before shared/src/schemas did (30 section 8.5, Nov 20). Until shared has them, the
+# comparison leaves them out of the server copy; once shared has them, they are compared like everything else.
+SERVER_AHEAD_STATUSES = ("unsupported", "unknown")
+SERVER_AHEAD_LADDER_FIELDS = ("idempotency_key",)
+
+
+def _without_server_additions(ours: dict, shared: dict, *, statuses=(), fields=()) -> dict:
+    out = copy.deepcopy(ours)
+    if statuses:
+        known = shared["properties"]["status"]["enum"]
+        enum = out["properties"]["status"]["enum"]
+        out["properties"]["status"]["enum"] = [s for s in enum if s not in statuses or s in known]
+    for name in fields:
+        if name not in shared["properties"]:
+            out["properties"].pop(name, None)
+    return out
+
+
 def test_schemas_match_shared():
     from sieve import tools
     base = CONSTANTS.parent / "schemas"
     if not base.exists():
         pytest.skip("shared/src/schemas not found")
-    assert json.loads((base / "mcp-tool-result.json").read_text()) == tools.TOOL_RESULT_SCHEMA
-    assert json.loads((base / "mcp-ladder-input.json").read_text()) == tools.LADDER_INPUT_SCHEMA
+    result = json.loads((base / "mcp-tool-result.json").read_text())
+    ladder = json.loads((base / "mcp-ladder-input.json").read_text())
+    assert result == _without_server_additions(tools.TOOL_RESULT_SCHEMA, result, statuses=SERVER_AHEAD_STATUSES)
+    assert ladder == _without_server_additions(tools.LADDER_INPUT_SCHEMA, ladder, fields=SERVER_AHEAD_LADDER_FIELDS)
     assert json.loads((base / "mcp-check-input.json").read_text()) == tools.CHECK_INPUT_SCHEMA
+    # the additions themselves are what 30 section 8.5 says
+    assert set(SERVER_AHEAD_STATUSES) <= set(tools.TOOL_RESULT_SCHEMA["properties"]["status"]["enum"])
+    key = tools.LADDER_INPUT_SCHEMA["properties"]["idempotency_key"]
+    assert (key["type"], key["minLength"], key["maxLength"]) == ("string", 1, 64)

@@ -15,7 +15,7 @@ interface NanoValue { items: NanoItem[] }
 
 const BARE_TOKEN: Record<PiiType, string> = {
   name: '[name]', address: '[address]', phone: '[phone]', email: '[email]', card: '[card]', iban: '[account]',
-  account: '[account]', ssn: '[ssn]', dob: '[date of birth]', other: '[id number]',
+  account: '[account]', ssn: '[ssn]', dob: '[date of birth]', 'secret-code': '[code]', other: '[id number]',
 };
 
 /** Paragraph-sized pieces of at most NANO_CHUNK_CHARS; a longer paragraph is split at sentence boundaries. */
