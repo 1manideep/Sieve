@@ -111,3 +111,49 @@
 .checkItem { display: flex; align-items: center; gap: 8px; }
 .checkDone { color: var(--color-ok, #6dd58c); display: inline-flex; }
 .checkWaiting { width: 16px; height: 16px; border: 2px solid rgba(255, 255, 255, 0.25); border-radius: 50%; display: inline-block; }
+
+/* The assistant marks (F5B, Nov 20): one row at the top of Settings; a pressed mark filters the connections below. */
+.marks { display: flex; flex-wrap: wrap; gap: 14px 18px; margin: 0; padding: 0; list-style: none; }
+.mark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 92px;
+  padding: 10px 4px 8px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text, #ffffff);
+  font: 400 13px/1.3 var(--font-sans, 'Google Sans', system-ui, sans-serif);
+  cursor: pointer;
+  text-align: center;
+}
+.mark:hover { background: rgba(255, 255, 255, 0.06); }
+.mark[aria-pressed='true'] { border-color: rgba(138, 180, 248, 0.6); background: rgba(138, 180, 248, 0.1); }
+.markName { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.markState { display: inline-flex; align-items: center; gap: 5px; font: 400 11px/1.2 var(--font-mono, 'Google Sans Code', ui-monospace, monospace); letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-text-muted, rgba(255, 255, 255, 0.55)); }
+.markState.on { color: var(--color-ok, #6dd58c); }
+.markDot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.grantHead { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.more { display: grid; gap: 22px; }
+.more[hidden] { display: none; }
+.moreButton {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: var(--color-text, #ffffff);
+  font: 500 14px/1.4 var(--font-sans, 'Google Sans', system-ui, sans-serif);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.moreButton:hover { background: rgba(255, 255, 255, 0.06); }
+.moreSub { font: 400 13px/1.4 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text-muted, rgba(255, 255, 255, 0.55)); margin-left: auto; }
+.top { display: grid; gap: 22px; }
+.moreWrap { display: grid; gap: 22px; }

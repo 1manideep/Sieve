@@ -44,7 +44,7 @@ function renderCard() {
   );
 }
 
-const rowOf = (name: string) => screen.getByText(name).closest('li') as HTMLElement;
+const rowOf = (name: string) => (screen.getAllByText(name).find((el) => el.tagName === 'BDI') as HTMLElement).closest('li') as HTMLElement;
 
 beforeEach(() => {
   useGrants.setState({
@@ -118,5 +118,24 @@ describe('AisCard: auto-approve', () => {
     expect(revoke).toHaveBeenCalledWith('g1');
     expect(autoApproveOn('u1', 'g1')).toBe(false);
     expect(autoApproveOn('u1', 'g2')).toBe(true);
+  });
+});
+
+describe('AisCard: the assistant marks (F5B)', () => {
+  it('shows every assistant, live ones pressed to filter, grey ones opening Connect with the name filled', async () => {
+    const user = userEvent.setup();
+    renderCard();
+    const row = screen.getByRole('list', { name: SETTINGS.marksLabel });
+    const buttons = within(row).getAllByRole('button');
+    expect(buttons).toHaveLength(7);
+    const claude = within(row).getByRole('button', { name: /^Claude, Live/ });
+    expect(claude).toHaveAttribute('aria-pressed', 'false');
+    expect(within(row).getByRole('button', { name: /^Gemini, Not connected/ })).not.toHaveAttribute('aria-pressed');
+    await user.click(claude);
+    expect(claude).toHaveAttribute('aria-pressed', 'true');
+    expect(rowOf('Claude')).toBeInTheDocument();
+    await user.click(within(row).getByRole('button', { name: /^Cursor, Not connected/ }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Cursor')).toBeInTheDocument();
   });
 });

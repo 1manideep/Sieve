@@ -1,5 +1,5 @@
 // Settings (40 section 13.8): every card's states with axe and exact copy, and the store calls behind each control.
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
@@ -71,7 +71,14 @@ function renderSettings(path = '/settings') {
   return router;
 }
 
+/** The default step and cloud fallback sit under "More settings" (F5B): open it when a test needs them. */
+function openMore(): void {
+  const more = screen.getByRole('button', { name: new RegExp(`^${SETTINGS.moreHeading}`) });
+  if (more.getAttribute('aria-expanded') !== 'true') fireEvent.click(more);
+}
+
 function cardOf(heading: string): HTMLElement {
+  if (!screen.queryByRole('heading', { level: 2, name: heading })) openMore();
   const h = screen.getByRole('heading', { level: 2, name: heading });
   const section = h.closest('section');
   if (!section) throw new Error(`no card for ${heading}`);
@@ -101,6 +108,7 @@ describe('Settings', () => {
     expect(document.title).toBe('Settings · Sieve');
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: CONSOLE.tryNow })).toHaveAttribute('href', '/try');
+    openMore();
     for (const h of [
       SETTINGS.aisHeading, SETTINGS.rulesHeading, SETTINGS.defaultStepHeading, SETTINGS.cloudHeading,
       SETTINGS.notificationsHeading, SETTINGS.accountHeading,

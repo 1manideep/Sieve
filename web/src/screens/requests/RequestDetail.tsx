@@ -22,7 +22,7 @@ import kit from '../settings/kit/kit.module.css';
 import { formatClock, isoTime } from '../settings/kit/when';
 import { capLabel } from '../settings/settingsText';
 import { useRecordCount } from '../sources/sourcesDb';
-import { phaseTag } from './PendingList';
+import { phaseTag } from './labels';
 import styles from './requests.module.css';
 
 /**

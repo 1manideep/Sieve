@@ -136,11 +136,11 @@ describe('Requests', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Requests' })).toBeInTheDocument();
     // The head ends with the white link to the demo computer.
     expect(screen.getByRole('link', { name: CONSOLE.tryNow })).toHaveAttribute('href', '/try');
-    expect(screen.getByText(REQUESTS.emptyTitle)).toBeInTheDocument();
-    expect(screen.getByText(REQUESTS.emptyBody)).toBeInTheDocument();
+    // F11: the list pane says nothing is waiting; the right pane explains how a request arrives.
+    expect(screen.getByRole('region', { name: REQUESTS.listLabel })).toBeInTheDocument();
+    expect(screen.getByText(REQUESTS.noneWaitingTitle)).toBeInTheDocument();
     expect(screen.getByRole('heading', { level: 2, name: REQUESTS.howTitle })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2, name: REQUESTS.recentHeading })).toBeInTheDocument();
-    expect(screen.getByText(REQUESTS.recentEmpty)).toBeInTheDocument();
+    expect(screen.getByText(REQUESTS.pickOne)).toBeInTheDocument();
     expect(screen.getByText('Only what you approve leaves your computer.')).toBeInTheDocument();
     await expectNoAxeViolations();
   });
@@ -161,7 +161,7 @@ describe('Requests', () => {
     useHomeBase.setState({ role: 'not-home-base' });
     renderRequests();
     expect(screen.getByText(REQUESTS.bannerNotHomeBase)).toBeInTheDocument();
-    expect(screen.queryByText(REQUESTS.emptyTitle)).not.toBeInTheDocument();
+    // F11: the list pane is always there; the banner carries the home-base action.
     await expectNoAxeViolations();
     await user.click(screen.getByRole('button', { name: REQUESTS.makeHomeBase }));
     const dialog = screen.getByRole('dialog', { name: HOME_BASE_DIALOG.title });
@@ -184,9 +184,9 @@ describe('Requests', () => {
     });
     renderRequests();
     expect(screen.getByText(sentence(fillText(REQUESTS.bannerOtherDevice, { label: 'Chrome on Windows' })))).toBeInTheDocument();
-    const rail = screen.getByRole('navigation', { name: REQUESTS.pendingNav });
-    expect(within(rail).getByText(fillText(REQUESTS.waitingOn, { label: 'Chrome on Windows' }))).toBeInTheDocument();
-    expect(within(rail).queryByRole('link')).not.toBeInTheDocument();
+    const list = screen.getByRole('listbox', { name: REQUESTS.listLabel });
+    expect(within(list).getAllByText(fillText(REQUESTS.waitingOn, { label: 'Chrome on Windows' })).length).toBeGreaterThan(0);
+    expect(within(list).queryByRole('link')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: `Approve, ${DEPOSIT_ANSWER.length} characters` })).not.toBeInTheDocument();
     await expectNoAxeViolations();
   });
@@ -280,8 +280,8 @@ describe('Requests', () => {
     expect(screen.getByText(sentence(`${AI} asks · Answers only`))).toBeInTheDocument();
     expect(screen.getByText((_, el) => el?.tagName === 'BLOCKQUOTE' && el.textContent === '"What did my landlord say about the deposit?"')).toBeInTheDocument();
     expect(screen.queryByText(REQUESTS.cellPicked)).not.toBeInTheDocument();
-    // One entry and nothing done: no rail.
-    expect(screen.queryByRole('navigation', { name: REQUESTS.pendingNav })).not.toBeInTheDocument();
+    // F11: the list always shows, with the one request pinned under Waiting.
+    expect(within(screen.getByRole('listbox', { name: REQUESTS.listLabel })).getAllByRole('option')).toHaveLength(1);
     await expectNoAxeViolations();
   });
 
@@ -336,11 +336,11 @@ describe('Requests', () => {
     const waiting = entry({ requestId: 'req-2', request: request({ id: 'req-2', question: 'When is my flight?' }), proposal: { ...relayProposal, requestId: 'req-2' } });
     setEntries([done, waiting]);
     renderRequests('/requests?id=req-1');
-    const rail = screen.getByRole('navigation', { name: REQUESTS.pendingNav });
-    expect(within(rail).getByRole('heading', { name: fillText(REQUESTS.pendingHeading, { n: 1 }) })).toBeInTheDocument();
-    const selected = within(rail).getAllByRole('link').find((a) => a.getAttribute('aria-current') === 'true');
+    const list = screen.getByRole('listbox', { name: REQUESTS.listLabel });
+    expect(within(list).getByText(REQUESTS.groupWaiting)).toBeInTheDocument();
+    const selected = within(list).getAllByRole('option').find((a) => a.getAttribute('aria-selected') === 'true');
     expect(selected).toHaveTextContent(REQUESTS.phaseSent);
-    expect(within(rail).getByText(REQUESTS.phaseWaiting)).toBeInTheDocument();
+    expect(within(list).getByText(REQUESTS.phaseWaiting)).toBeInTheDocument();
     expect(screen.getByText(`Sent the answer to ${AI}. Receipt saved.`)).toBeInTheDocument();
     await expectNoAxeViolations();
     await user.click(screen.getByRole('button', { name: 'Done' }));
@@ -352,8 +352,8 @@ describe('Requests', () => {
     const waiting = entry({ requestId: 'req-2', request: request({ id: 'req-2', question: 'When is my flight?' }), proposal: { ...relayProposal, requestId: 'req-2' } });
     setEntries([done, waiting]);
     renderRequests('/requests?id=nope');
-    const rail = screen.getByRole('navigation', { name: REQUESTS.pendingNav });
-    const selected = within(rail).getAllByRole('link').find((a) => a.getAttribute('aria-current') === 'true');
+    const list = screen.getByRole('listbox', { name: REQUESTS.listLabel });
+    const selected = within(list).getAllByRole('option').find((a) => a.getAttribute('aria-selected') === 'true');
     expect(selected).toHaveTextContent('When is my flight?');
   });
 
@@ -367,12 +367,18 @@ describe('Requests', () => {
       ],
     });
     renderRequests();
-    const table = screen.getByRole('table', { name: REQUESTS.recentCaption });
-    expect(within(table).getByText(`Sent, waiting for ${AI} to collect`)).toBeInTheDocument();
-    expect(within(table).getByText(`Collected by ${AI}`)).toBeInTheDocument();
-    expect(within(table).getByText(REQUESTS.status.blocked)).toBeInTheDocument();
-    expect(within(table).queryByText('Old one')).not.toBeInTheDocument();
-    expect(within(table).getAllByRole('row')).toHaveLength(4);
+    // F11: every request is a row grouped by day; the status is the row's hidden label, and the detail shows it as a tag.
+    const list = screen.getByRole('listbox', { name: REQUESTS.listLabel });
+    expect(within(list).getByText(`Sent, waiting for ${AI} to collect`)).toBeInTheDocument();
+    expect(within(list).getByText(`Collected by ${AI}`)).toBeInTheDocument();
+    expect(within(list).getByText(REQUESTS.status.blocked)).toBeInTheDocument();
+    expect(within(list).getByText('Old one')).toBeInTheDocument();
+    expect(within(list).getByText(REQUESTS.groupYesterday)).toBeInTheDocument();
+    expect(within(list).getAllByRole('option')).toHaveLength(4);
+    await userEvent.click(within(list).getByRole('option', { name: /Test results\?/ }));
+    const detail = screen.getByRole('article', { name: REQUESTS.selectedLabel });
+    expect(within(detail).getByText('Test results?')).toBeInTheDocument();
+    expect(within(detail).getByText(REQUESTS.status.blocked)).toBeInTheDocument();
     await expectNoAxeViolations();
   });
 });

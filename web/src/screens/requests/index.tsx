@@ -1,10 +1,10 @@
-// Requests (40 section 13.5; docs/design/final-flow.md F5): requests from connected assistants wait here for the
-// person. The pending card sits left; "How a request reaches you" and "Earlier today" sit right.
+// Requests (40 section 13.5; docs/design/final-flow.md F11 since Nov 20): two panes. Left, every request in one
+// searchable list with the waiting ones pinned on top. Right, the selected request: the approval card for a waiting
+// one, or the outcome and the way to its receipt for a finished one. The notices stay above both.
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
-import { EmptyState } from '@/components/EmptyState/EmptyState';
 import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary';
 import { REQUESTS, SENTENCE, fillText } from '@/copy/screens-controls';
 import { SCREENS, TITLES } from '@/copy/strings';
@@ -12,9 +12,9 @@ import { useHomeBase, type PendingEntry } from '@/state/homeBase';
 import kit from '../settings/kit/kit.module.css';
 import { MakeHomeBaseDialog } from '../settings/kit/MakeHomeBaseDialog';
 import { ScreenHead } from '../settings/kit/ScreenHead';
-import { PendingList } from './PendingList';
-import { RecentRequests } from './RecentRequests';
+import { HistoryDetail } from './HistoryDetail';
 import { RequestDetail } from './RequestDetail';
+import { RequestList } from './RequestList';
 import { AutoApproveNotice, ClickNotice, GmailTokenBanner, MemorySaverTip, RoleBanner, ShortcutTip } from './RequestNotices';
 import styles from './requests.module.css';
 
@@ -32,15 +32,8 @@ export function Component() {
   const [params] = useSearchParams();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [now] = useState(() => Date.now());
-  const { role, entries, order, recent, label, awaitingCount } = useHomeBase(
-    useShallow((s) => ({
-      role: s.role,
-      entries: s.entries,
-      order: s.order,
-      recent: s.recent,
-      label: s.homeBaseLabel,
-      awaitingCount: s.awaitingCount,
-    })),
+  const { role, entries, order, recent, label } = useHomeBase(
+    useShallow((s) => ({ role: s.role, entries: s.entries, order: s.order, recent: s.recent, label: s.homeBaseLabel })),
   );
 
   const list = order.map((id) => entries[id]).filter((e): e is PendingEntry => e !== undefined);
@@ -53,12 +46,11 @@ export function Component() {
     role === 'standby'
       ? REQUESTS.waitingInOtherTab
       : fillText(REQUESTS.waitingOn, { label: label ?? REQUESTS.otherDeviceFallback });
-  const selected = selectEntry(list, params.get('id'));
-  const hasDone = list.some((e) => e.phase === 'done');
-  // The list is hidden when there is exactly one entry and no done entries.
-  const showRail = !(list.length === 1 && readOnly.length === 0 && !hasDone);
-  const waiting = awaitingCount + readOnly.filter((r) => r.status === 'awaiting-person').length;
-  const nothing = list.length === 0 && readOnly.length === 0;
+  const id = params.get('id');
+  const selectedEntry = selectEntry(list, id);
+  // A history row selected by ?id= (not a live entry) shows its outcome instead.
+  const selectedHistory = !list.some((e) => e.requestId === id) ? recent.find((r) => r.id === id) : undefined;
+  const selectedId = selectedHistory?.id ?? selectedEntry?.requestId;
 
   return (
     <div className={kit.screen}>
@@ -70,42 +62,24 @@ export function Component() {
       <MemorySaverTip />
       <ShortcutTip />
 
-      <div className={styles.grid}>
-        <div className={styles.main}>
-          {nothing ? (
-            role === 'active' ? (
-              <div className={`${kit.glass} ${styles.empty}`}>
-                <EmptyState icon="shield" title={REQUESTS.emptyTitle} body={REQUESTS.emptyBody} />
-              </div>
-            ) : null
+      <div className={styles.panes}>
+        <RequestList entries={list} recent={recent} readOnly={readOnly} readOnlyLabel={readOnlyLabel} selectedId={selectedId} now={now} />
+        <section className={styles.detailPane} aria-label={REQUESTS.selectedLabel}>
+          {selectedHistory ? (
+            <HistoryDetail request={selectedHistory} now={now} />
+          ) : selectedEntry ? (
+            <ErrorBoundary>
+              <RequestDetail key={selectedEntry.requestId} entry={selectedEntry} />
+            </ErrorBoundary>
           ) : (
-            <>
-              {showRail ? (
-                <PendingList
-                  entries={list}
-                  readOnly={readOnly}
-                  readOnlyLabel={readOnlyLabel}
-                  selectedId={selected?.requestId}
-                  waitingCount={waiting}
-                />
-              ) : null}
-              {selected ? (
-                <ErrorBoundary>
-                  <RequestDetail key={selected.requestId} entry={selected} />
-                </ErrorBoundary>
-              ) : null}
-            </>
+            <div className={`${kit.glassSm} ${styles.sideCard}`}>
+              <h2 className={kit.sectionTitle}>{REQUESTS.howTitle}</h2>
+              <p className={kit.small}>{REQUESTS.howBody}</p>
+              <p className={kit.note}>{REQUESTS.pickOne}</p>
+            </div>
           )}
-        </div>
-
-        <div className={styles.side}>
-          <div className={`${kit.glassSm} ${styles.sideCard}`}>
-            <h2 className={kit.sectionTitle}>{REQUESTS.howTitle}</h2>
-            <p className={kit.small}>{REQUESTS.howBody}</p>
-          </div>
-          <RecentRequests recent={recent} now={now} />
           <p className={kit.sentence}>{SENTENCE}</p>
-        </div>
+        </section>
       </div>
 
       <MakeHomeBaseDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />

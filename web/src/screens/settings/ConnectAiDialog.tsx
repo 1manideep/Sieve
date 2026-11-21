@@ -72,11 +72,13 @@ export interface ConnectAiDialogProps {
   onClose(): void;
   /** Connected real sources; when none are connected, all three are ticked. */
   connected: RealSource[];
+  /** The assistant's name to start with (a grey mark in the Settings row was pressed). */
+  initialName?: string;
 }
 
 type Step = 1 | 2 | 3;
 
-export function ConnectAiDialog({ open, onClose, connected }: ConnectAiDialogProps) {
+export function ConnectAiDialog({ open, onClose, connected, initialName = '' }: ConnectAiDialogProps) {
   const rules = useSettings((s) => s.settings.categoryRules);
   const online = useNetwork((s) => s.online);
   const [step, setStep] = useState<Step>(1);
@@ -109,7 +111,7 @@ export function ConnectAiDialog({ open, onClose, connected }: ConnectAiDialogPro
     setShownOpen(open);
     if (open) {
       setStep(1);
-      setName('');
+      setName(initialName);
       setNameInvalid(false);
       setMaxStep('answer');
       setCategories(CATEGORIES.filter((c) => c !== 'Health'));

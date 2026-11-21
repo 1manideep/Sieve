@@ -1,10 +1,14 @@
-// "Assistants" (40 sections 13.8.1 to 13.8.3; F5): each connected assistant as a glass card with its state, its
-// limits, Change limits and Revoke; past connections under a disclosure; the blue "Connect an assistant" button
-// that opens the dialog (also opened by ?connect=1, which is then removed from the URL); the explainer line.
-// Next to Revoke, the "Auto-approve answers" switch (13.8.9, testing mode): on this computer only, for 2 hours.
+// "Assistants" (40 sections 13.8.1 to 13.8.3; F5B since Nov 20): a row of assistant marks at the top, in colour
+// when that assistant has a live connection and grey when it has none. Pressing a live mark shows only its
+// connections below (each as a glass card with its state, its limits, Change limits, Revoke and the Auto-approve
+// answers switch of 13.8.9); pressing it again shows every connection. Pressing a grey mark opens the Connect
+// dialog with that assistant's name filled in. Past connections stay under a disclosure; the blue "Connect an
+// assistant" button opens the dialog (also opened by ?connect=1, which is then removed from the URL).
 import { useEffect, useId, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
+import { AssistantMark } from '@/components/AssistantMark/AssistantMark';
+import { ASSISTANT_KINDS, ASSISTANTS, assistantKindOf, type AssistantKind } from '@/components/AssistantMark/assistants';
 import { Button } from '@/components/Button/Button';
 import { Icon } from '@/components/icons';
 import { Skeleton } from '@/components/Skeleton/Skeleton';
@@ -59,12 +63,16 @@ interface GrantRowProps {
 function GrantRow({ grant, onNarrow, onRevoke, autoUntil, onAutoApprove }: GrantRowProps) {
   const tag = STATE_TAGS[grant.state];
   const noteId = useId();
+  const live = grant.state === 'active' || grant.state === 'expiring';
   return (
     <li className={`${kit.glassSm} ${styles.grantRow}`}>
       <div className={styles.grantTop}>
-        <p className={styles.grantName}>
-          <bdi>{grant.aiName}</bdi>
-        </p>
+        <div className={styles.grantHead}>
+          <AssistantMark kind={assistantKindOf(grant.aiName)} size={28} live={live} />
+          <p className={styles.grantName}>
+            <bdi>{grant.aiName}</bdi>
+          </p>
+        </div>
         <span className={`${kit.status} ${tag.className}`}>{tag.label}</span>
       </div>
       <p className={styles.grantLimits}>{grantLimits(grant)}</p>
@@ -108,6 +116,52 @@ function GrantRow({ grant, onNarrow, onRevoke, autoUntil, onAutoApprove }: Grant
   );
 }
 
+/** The marks row: every kind Sieve knows, live when a current connection maps to it. */
+function MarksRow({
+  live,
+  auto,
+  selected,
+  onSelect,
+  onConnect,
+}: {
+  live: Set<AssistantKind>;
+  auto: Set<AssistantKind>;
+  selected: AssistantKind | null;
+  onSelect(kind: AssistantKind | null): void;
+  onConnect(kind: AssistantKind): void;
+}) {
+  return (
+    <ul className={styles.marks} aria-label={SETTINGS.marksLabel}>
+      {ASSISTANT_KINDS.map((kind) => {
+        const spec = ASSISTANTS[kind];
+        const isLive = live.has(kind);
+        const stateText = isLive ? (auto.has(kind) ? SETTINGS.markLiveAuto : SETTINGS.markLive) : SETTINGS.markNotConnected;
+        const name = isLive
+          ? fillText(selected === kind ? SETTINGS.markShowAll : SETTINGS.markShow, { name: spec.name })
+          : fillText(SETTINGS.markConnect, { name: spec.name });
+        return (
+          <li key={kind}>
+            <button
+              type="button"
+              className={styles.mark}
+              aria-label={`${spec.name}, ${stateText}. ${name}`}
+              aria-pressed={isLive ? selected === kind : undefined}
+              onClick={() => (isLive ? onSelect(selected === kind ? null : kind) : onConnect(kind))}
+            >
+              <AssistantMark kind={kind} size={44} live={isLive} />
+              <span className={styles.markName}>{spec.name}</span>
+              <span className={`${styles.markState} ${isLive ? styles.on : ''}`}>
+                {isLive ? <span className={styles.markDot} aria-hidden="true" /> : null}
+                {stateText}
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 export function AisCard({ connected }: { connected: RealSource[] }) {
   const { status, grants } = useGrants(useShallow((s) => ({ status: s.status, grants: s.grants })));
   const autoUntil = useAutoApprove((s) => s.until);
@@ -116,9 +170,11 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [connectOpen, setConnectOpen] = useState(false);
+  const [connectName, setConnectName] = useState('');
   const [narrowing, setNarrowing] = useState<GrantView | null>(null);
   const [revoking, setRevoking] = useState<GrantView | null>(null);
   const [pastOpen, setPastOpen] = useState(false);
+  const [selected, setSelected] = useState<AssistantKind | null>(null);
   const pastId = useId();
 
   // ?connect=1 opens the dialog once, then the param is removed from the URL (the hash stays).
@@ -126,7 +182,10 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
   const [handledConnect, setHandledConnect] = useState(false);
   if (wantsConnect !== handledConnect) {
     setHandledConnect(wantsConnect);
-    if (wantsConnect) setConnectOpen(true);
+    if (wantsConnect) {
+      setConnectName('');
+      setConnectOpen(true);
+    }
   }
   useEffect(() => {
     if (!wantsConnect) return;
@@ -138,6 +197,15 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
 
   const current = grants.filter((g) => g.state === 'active' || g.state === 'expiring');
   const past = grants.filter((g) => g.state === 'expired' || g.state === 'revoked');
+  const live = new Set(current.map((g) => assistantKindOf(g.aiName)));
+  const auto = new Set(current.filter((g) => autoUntil[g.id] !== undefined).map((g) => assistantKindOf(g.aiName)));
+  // A selected kind that lost its last connection falls back to every connection.
+  const shown = selected !== null && live.has(selected) ? current.filter((g) => assistantKindOf(g.aiName) === selected) : current;
+
+  const openConnect = (name: string) => {
+    setConnectName(name);
+    setConnectOpen(true);
+  };
 
   const revoke = async (grant: GrantView) => {
     useAutoApprove.getState().turnOff(grant.id);   // at once, whatever the call returns
@@ -168,7 +236,7 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
           <p className={`${kit.glassSm} ${styles.emptyRow} ${kit.text}`}>{SETTINGS.aisEmpty}</p>
         ) : (
           <ul className={styles.grantList}>
-            {current.map((g) => (
+            {shown.map((g) => (
               <GrantRow
                 key={g.id}
                 grant={g}
@@ -205,12 +273,13 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
 
   return (
     <SettingsCard id="ais" title={SETTINGS.aisHeading} bare>
+      <MarksRow live={live} auto={auto} selected={selected} onSelect={setSelected} onConnect={(kind) => openConnect(kind === 'other' ? '' : ASSISTANTS[kind].name)} />
       {body}
-      <Button variant="primary" tone="blue" size="lg" className={styles.connect} onClick={() => setConnectOpen(true)}>
+      <Button variant="primary" tone="blue" size="lg" className={styles.connect} onClick={() => openConnect('')}>
         {SETTINGS.connectAi}
       </Button>
       <p className={kit.help}>{SETTINGS.aisSub}</p>
-      <ConnectAiDialog open={connectOpen} onClose={() => setConnectOpen(false)} connected={connected} />
+      <ConnectAiDialog open={connectOpen} onClose={() => setConnectOpen(false)} connected={connected} initialName={connectName} />
       <NarrowDialog grant={narrowing} onClose={() => setNarrowing(null)} />
       <Confirm
         open={revoking !== null}
