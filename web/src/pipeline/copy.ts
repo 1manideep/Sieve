@@ -164,6 +164,7 @@ export const UNAVAILABLE = {
   noMatch: 'Nothing on this device matched.',
   unsupported: "Sieve answers from one item at a time at this level, so counts aren't available.",
   oneFact: 'Sieve shares one fact at a time at this level.',
+  badOutput: 'The answer was not one clean sentence, so it is not offered.',   // the privacy build's line (15.0)
   needsConsent: 'This needs your OK before the cloud model can read it.',
   modelUnavailable: "The on-device model isn't available.",
   error: 'Nothing was prepared.',

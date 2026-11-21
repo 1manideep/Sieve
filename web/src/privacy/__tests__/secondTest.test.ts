@@ -110,11 +110,15 @@ describe('B05: never the subject line or the sender address, unless asked', () =
     expect(o).toMatchObject({ available: true, text: 'Your latest email is from Amazon.' });
   });
 
-  it('nothing left once the subject is out: not offered', async () => {
+  it('an answer that states what the subject says is kept: only a citation of the subject is taken out', async () => {
     const o = await buildStepOption('answer', { answer: 'Your order of Echo Dot has shipped.' }, AMAZON, 'own', opts('What happened with my Amazon order?'));
-    expect(o).toMatchObject({ available: false, unavailableReason: UNAVAILABLE.metadataOnly });
-    expect(stripSubject('Your order of Echo Dot has shipped and arrives Friday.', AMAZON.title)).toBe('It arrives Friday.');
+    expect(o).toMatchObject({ available: true, text: 'Your order of Echo Dot has shipped.' });
+    expect(stripSubject('Your order of Echo Dot has shipped and arrives Friday.', AMAZON.title)).toBe('Your order of Echo Dot has shipped and arrives Friday.');
+    expect(stripSubject('The email titled "Your order of Echo Dot has shipped" says it arrives Friday.', AMAZON.title)).toBe('The email says it arrives Friday.');
     expect(stripSubject('Re: the lease is ready', 'Re: Lease')).toBe('Re: the lease is ready');   // a short subject is never stripped
+    // an answer that is only the cited subject stays whole
+    const only = await buildStepOption('answer', { answer: 'The subject is "Your order of Echo Dot has shipped".' }, AMAZON, 'own', opts('What happened with my Amazon order?'));
+    expect(only.available).toBe(true);
   });
 
   it('a question that asks for the subject or the address gets it', async () => {

@@ -18,8 +18,19 @@ function fold(s: string): string {
   return s.normalize('NFD').replace(/\p{M}/gu, '').normalize('NFC');
 }
 
+/**
+ * A pet's insurance or vet. Health is the person's own health; mail about a pet was filed under Health by the model
+ * ("If an item could be Health, choose Health") and so was never shared (Nov 21, 2026: "when does my dog's cover
+ * end?" found nothing). Such mail is Personal, and it is the one thing moved out of Health.
+ */
+const PET_CARE = /\b(pet (health |medical )?insurance|pet (wellness|care|health) plans?|veterinar\w+|vet (clinic|hospital|visit|appointment|bill)|animal (hospital|clinic)|trupanion|healthy paws|banfield|embrace pet|pets best|figo pet|lemonade pet)\b/i;
+
+export function isPetCare(item: Pick<IndexRecord, 'title' | 'from' | 'preview'>): boolean {
+  return PET_CARE.test(fold(`${item.from ?? ''}\n${item.title}\n${item.preview ?? ''}`));
+}
+
 /** Raised whenever the rules below change, so a testing readout can say which rules a page runs. */
-export const CODE_LABEL_VERSION = 3;
+export const CODE_LABEL_VERSION = 4;
 
 // Order matters: the first category with a matching pattern wins.
 export const CODE_LABEL_RULES: [Category, RegExp[]][] = [
@@ -29,8 +40,15 @@ export const CODE_LABEL_RULES: [Category, RegExp[]][] = [
     // Nov 21, 2026 (measured on 300 labelled emails): what a bank, a card or a bill says about an account.
     /\b(invoice|(available |account )?balance|overdrawn|overdraft|declined|transactions?|budget|spend cap|auto[- ]?reload|direct deposit|account snapshot|credit score|billing statement|amount due|past due)\b/i,
     /:\s*\$\d[\d,]*(\.\d\d)?\s*usd\b/i,                       // "Apple Services: $9.99 USD"
+    // Nov 21, 2026: an investment order is Money, not a store order ("SIP order summary" was filed under Shopping).
+    // By what the mail says, not by the company's name: a broker's or a payment app's promotions stay newsletters.
+    /\b(sip order|mutual funds?|brokerage|demat|dividends?|contract note|trade confirmation|payment plan|pay in 4|autopay|auto-pay)\b/i,
   ]],
-  ['Travel', [/\b(flight|airline|air|boarding|check in now|booking reference|hotel|inn|reservation|rental car|car rental|itinerary|trip|passport|visa)\b/i]],
+  ['Travel', [
+    /\b(flight|airline|air|boarding|check in now|booking reference|hotel|inn|reservation|rental car|car rental|itinerary|trip|passport|visa)\b/i,
+    // Nov 21, 2026: a bus or train booking is Travel ("Booking Confirmation #..." from a bus line was a newsletter).
+    /\b(booking (confirmation|confirmed|number)|boarding pass|departure station|(bus|train|rail|coach|ferry) (ticket|booking|station))\b/i,
+  ]],
   ['Home', [/\b(rent|landlord|lease|apartment|unit \d+\w?|property management|maintenance request|electricity|power|water bill|gas bill|utility|utilities|package room|package locker|concierge|move-out|move-in|inspection|residents?|leasing office|your delivery was picked up)\b/i]],
   ['Work', [
     /\b(meeting|agenda|q[1-4] planning|interview|recruit\w*|offer letter|pr #?\d+|code review|pull request|timesheet|hr operations|slides|customer demo|standup|1:1)\b/i,
@@ -111,6 +129,7 @@ export function codeLabel(item: LabelInput): { category: Category; matched: bool
     return { category: 'Photos', matched: true };
   }
   const text = fold(`${item.from ?? ''}\n${item.title}\n${item.preview ?? ''}`);
+  if (isPetCare(item)) return { category: 'Personal', matched: true };
   const system = item.kind === 'email' && isSystemSender(item.from);
   // Sent to many: a company's system by its address, or the source's own word for it (Gmail's tabs).
   const many = system || (item.kind === 'email' && item.bulk === true);
@@ -129,12 +148,13 @@ export function codeLabel(item: LabelInput): { category: Category; matched: bool
  * The category an indexed item should have under the current rules, when it differs from the one it has; else
  * null. Two kinds of item qualify: one that only plain code has sorted, and one whose model label plain code
  * disagreed with. A model label plain code agreed with, a rule (the Health safety net) and a seed are never
- * touched, and nothing is moved out of Health.
+ * touched, and nothing is moved out of Health except mail about a pet (isPetCare).
  */
 export function codeRelabel(
   rec: Pick<IndexRecord, 'title' | 'from' | 'preview' | 'kind' | 'bulk' | 'category' | 'categoryBy' | 'enrich'>,
 ): Category | null {
   if (rec.kind === 'photo') return null;
+  if (rec.category === 'Health' && rec.categoryBy !== 'seed' && isPetCare(rec)) return 'Personal';
   // A model's label that plain code disagreed with (marked low): plain code's category is the better one, measured.
   const disputed = (rec.categoryBy === 'device' || rec.categoryBy === 'cloud') && rec.enrich?.label?.confidence === 'low';
   if (rec.categoryBy !== 'code' && !disputed) return null;
@@ -145,6 +165,7 @@ export function codeRelabel(
 }
 
 export function isHealthStrong(item: Pick<IndexRecord, 'title' | 'from' | 'preview'>): boolean {
+  if (isPetCare(item)) return false;   // a vet "clinic" or an animal "hospital" is not the person's health
   const text = fold(`${item.from ?? ''}\n${item.title}\n${item.preview ?? ''}`);
   return HEALTH_STRONG.some((r) => r.test(text));
 }

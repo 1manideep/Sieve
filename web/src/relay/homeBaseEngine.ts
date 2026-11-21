@@ -30,7 +30,7 @@ import { MSG } from './messagesToAi';
 import { pendingPreviews } from './preview';
 import { resilientSnapshot, type ListenerState } from './resilient';
 import { checkBeforeSend, type SendBlock } from './sendCheck';
-import { errorLine } from '@/robust/errorLine';
+import { errorLine, errorName } from '@/robust/errorLine';
 import { expandMoved } from '@/robust/media';
 import { questionWarnings } from '@/robust/questionWarnings';
 
@@ -767,6 +767,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
       : undefined;
     let proposal: Proposal | undefined;
     let failed = false;
+    let thrown = '';
     try {
       const blockedRecordIds = await blockedIds(req.requester.grantId);
       proposal = await deps.pipeline.prepareProposal({
@@ -788,6 +789,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
       });
     } catch (error) {
       failed = true;
+      thrown = errorName(error);
       // A stop or an expiry is expected; any other throw is logged, since nothing else would show it in production.
       if (!ctl.signal.aborted) console.error('Sieve: the home base could not prepare a request.', errorLine(error));
     } finally {
@@ -830,7 +832,8 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
     }
     if (failed || reason === 'timeout' || !proposal) {
       deps.toast({ tone: 'error', title: HOME_BASE.prepareFailed(aiName) });
-      await finishAuto(id, { status: 'error', message: MSG.error }, 'error');
+      const code = reason === 'timeout' ? 'timeout' : failed ? `threw-${thrown}` : 'no-proposal';
+      await finishAuto(id, { status: 'error', message: MSG.errorWith(code) }, 'error');
       return;
     }
     if (req.questionRemoved) {
@@ -861,7 +864,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
           receipt = undefined;
         }
         if (!receipt) {
-          await finishAuto(id, { status: 'error', message: MSG.error }, 'error');
+          await finishAuto(id, { status: 'error', message: MSG.errorWith('receipt') }, 'error');
           return;
         }
         deps.toast({ tone: 'info', title: HOME_BASE.blockedToast(aiName) });
@@ -887,7 +890,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
         return;
       default:
         deps.toast({ tone: 'error', title: HOME_BASE.prepareFailed(aiName) });
-        await finishAuto(id, { status: 'error', message: MSG.error }, 'error', proposal);
+        await finishAuto(id, { status: 'error', message: MSG.errorWith(proposal.errorCode ?? 'unknown') }, 'error', proposal);
     }
   }
 

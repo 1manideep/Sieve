@@ -21,7 +21,7 @@ import { SELECT_CLOUD_SCHEMA, SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
 import { runModel } from '../runModel';
 import { cleanModelSentence, collapseWhitespace, escapeDelimiters, localDay, promptField, sentences, stems, type Range } from '../text';
 import { codeTrace } from '../trace';
-import { isYesNoQuestion } from '../../privacy/steps/answerShape';
+import { isYesNoQuestion, leaksStructure } from '../../privacy/steps/answerShape';
 import type { OwnCloudPolicy, RunModelResult } from '../types';
 
 export { SELECT_CLOUD_SCHEMA, SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
@@ -390,7 +390,8 @@ export async function selectAndAnswer(
         if (item === 'none') return v;
         const k = /^P(\d+)$/.exec(item);
         if (!k || Number(k[1]) < 1 || Number(k[1]) > passages.length) return null;
-        return answer.trim() ? v : null;
+        // JSON or a fence inside the answer ("...21st.}]") is bad output: retried once, never trimmed into a sentence
+        return answer.trim() && !leaksStructure(answer) ? v : null;
       },
     });
 

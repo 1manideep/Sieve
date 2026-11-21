@@ -2,7 +2,7 @@
 // matching no category's words was all filed under Personal. Senders and subjects here are made up.
 import { describe, expect, it } from 'vitest';
 import type { Category, IndexRecord } from '@sieve/shared';
-import { codeLabel, codeRelabel, isBulkTab, isSystemSender } from '../tasks/codeLabel';
+import { codeLabel, codeRelabel, isBulkTab, isHealthStrong, isPetCare, isSystemSender } from '../tasks/codeLabel';
 
 const email = (from: string, title: string, over: Partial<IndexRecord> = {}) => ({ kind: 'email' as const, from, title, preview: '', ...over });
 const label = (from: string, title: string, over: Partial<IndexRecord> = {}) => codeLabel(email(from, title, over));
@@ -120,5 +120,45 @@ describe('codeRelabel: the index catches up with better rules', () => {
     const quiet = { ...email('virgil@taplane.example', 'A new thing in Taplane'), category: 'Newsletters' as Category, categoryBy: 'code' as const };
     expect(codeRelabel({ ...quiet, bulk: true })).toBeNull();
     expect(codeRelabel(quiet)).toBe('Personal');
+  });
+
+  it('moves mail about a pet out of Health, whoever filed it there, and nothing else', () => {
+    const high = { v: 1, by: 'device' as const, at: 1, confidence: 'high' as const };
+    const pet = { ...email('Pawlow Pet Insurance <hello@pawlow.example>', 'Welcome to your pet insurance plan'), category: 'Health' as Category };
+    for (const categoryBy of ['device', 'cloud', 'rule', 'code'] as const) expect(codeRelabel({ ...pet, categoryBy, enrich: { label: high } })).toBe('Personal');
+    expect(codeRelabel({ ...pet, categoryBy: 'seed' })).toBeNull();
+    const own = { ...email('Marlow Clinic <noreply@marlowclinic.example>', 'Your lab results are ready'), category: 'Health' as Category, categoryBy: 'device' as const };
+    expect(codeRelabel({ ...own, enrich: { label: high } })).toBeNull();
+  });
+});
+
+describe('rules added on Nov 21, 2026', () => {
+  it('a pet\'s insurance or vet is Personal, and never trips the Health safety net', () => {
+    for (const [from, title] of [
+      ['Pawlow Pet Insurance <hello@pawlow.example>', 'Your dog is covered from nose to tail'],
+      ['Harbor Animal Hospital <front@harborvet.example>', 'Your appointment on Friday'],
+      ['Dr. Reyes <reyes@northsidevet.example>', 'Veterinary visit summary'],
+    ] as const) {
+      const item = email(from, title);
+      expect(isPetCare(item)).toBe(true);
+      expect(isHealthStrong(item)).toBe(false);
+      expect(codeLabel(item)).toEqual({ category: 'Personal', matched: true });
+    }
+    const own = email('Marlow Clinic <noreply@marlowclinic.example>', 'Your lab results are ready');
+    expect(isPetCare(own)).toBe(false);
+    expect(isHealthStrong(own)).toBe(true);
+    expect(codeLabel(own).category).toBe('Health');
+  });
+
+  it('an investment order and a payment plan are Money, not Shopping', () => {
+    expect(codeLabel(email('Finchley Invest <noreply@mailer.finchley.example>', 'SIP order summary')).category).toBe('Money');
+    expect(codeLabel(email('Paylater <noreply@paylater.example>', 'Updated payment plan for your order')).category).toBe('Money');
+    expect(codeLabel(email('Tindle Store <orders@tindle.example>', 'Your order #A1024 has shipped')).category).toBe('Shopping');
+  });
+
+  it('a bus or train booking is Travel; the same company\'s sale stays a newsletter', () => {
+    expect(codeLabel(email('Northline Bus <noreply@booking.northline.example>', 'Booking Confirmation #5520018842')).category).toBe('Travel');
+    expect(codeLabel(email('Coastrail <tickets@coastrail.example>', 'Your train ticket and boarding pass')).category).toBe('Travel');
+    expect(codeLabel(email('Coastrail <news@e-mail.coastrail.example>', 'Flash sale! Weekend fares from $29')).category).toBe('Newsletters');
   });
 });

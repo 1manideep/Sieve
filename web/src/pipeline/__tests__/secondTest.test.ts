@@ -128,6 +128,26 @@ describe('the second test (Nov 21)', () => {
     expect(excerpt.options[0]).toMatchObject({ available: false, unavailableReason: ONE_FACT });
   });
 
+  it('Nov 21 live: an answer still carrying JSON ends like the model refusing the shape (B14), with the same lines', async () => {
+    expect(UNAVAILABLE.badOutput).toBe(BUILD_LINES.badOutput);
+    idx.search.mockResolvedValue([idx.cand(AWS.id)]);
+    model('P1', 'Your free plan ended on October 26.');
+    const leak = (step: StepOption['step']): StepOption =>
+      step === 'answer' ? { step, text: '', chars: 0, redactions: 0, available: false, unavailableReason: BUILD_LINES.badOutput } : { step, text: 'x', chars: 1, redactions: 0, available: true };
+    privacy.buildStepOption.mockImplementation(async (step) => leak(step));
+    const p = await prepareProposal(input({ question: 'When did my free plan end?' }));
+    expect(p.outcome).toBe('unsupported');
+    expect(p.options.every((o) => !o.available && o.unavailableReason === ONE_FACT)).toBe(true);
+    expect(labels(p)).toContain("The model couldn't put the answer in one fact, so nothing was offered.");
+    // the model writing "}]" into the answer twice never reaches the build
+    privacy.buildStepOption.mockClear();
+    model('P1', 'It ended October 26.}]');
+    const shape = await prepareProposal(input({ question: 'When did my free plan end?' }));
+    expect(shape.outcome).toBe('unsupported');
+    expect(hybrid.callsFor('select-answer')).toHaveLength(2);
+    expect(privacy.buildStepOption).not.toHaveBeenCalled();
+  });
+
   it('B13: "local files only" ends as no match when no file answers, and the trace says what was searched', async () => {
     idx.search.mockImplementation(async (_db, _q, o) => {
       (o as { onReport?: (r: unknown) => void }).onReport?.({ filters: { source: 'files' } });

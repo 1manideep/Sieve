@@ -358,7 +358,7 @@ describe('home base engine: requests', () => {
     h.prepare.mockRejectedValueOnce(new Error('boom'));
     h.push([request({ id: 'req2', createdAt: T0 + 1 })]);
     await flush();
-    expect(h.finish.mock.calls[1][3]).toEqual({ status: 'error', message: MSG.error });
+    expect(h.finish.mock.calls[1][3]).toEqual({ status: 'error', message: MSG.errorWith('threw-Error') });
   });
 
   it('expiry aborts the preparation: the entry is removed and nothing is written', async () => {

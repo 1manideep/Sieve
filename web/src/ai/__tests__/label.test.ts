@@ -48,6 +48,17 @@ describe('labelBatch (10 section 16.6)', () => {
     expect(res.trace).toMatchObject({ where: 'device', label: 'Sorted 50 items on this device', sdkReported: 'on_device', charsSent: 0 });
   });
 
+  it('mail about a pet that the model files under Health is Personal: it is not the person\'s health', async () => {
+    const items: LabelItem[] = [
+      { id: 'gmail:pet', title: 'Welcome to your pet insurance plan', from: 'Pawlow Pet Insurance <hello@pawlow.example>', preview: '', kind: 'email' },
+      { id: 'gmail:own', title: 'A note about your visit', from: 'Corvane <hello@e.corvane.example>', preview: '', kind: 'email' },
+    ];
+    setHybridForTests(createFakeHybrid(() => ({ text: JSON.stringify({ labels: [{ i: 1, c: 'Health' }, { i: 2, c: 'Health' }] }), source: 'on_device' })));
+    const res = await labelBatch(items, 'own');
+    expect(res.labels).toEqual({ 'gmail:pet': 'Personal', 'gmail:own': 'Health' });
+    expect(res.confidence?.['gmail:pet']).toBe('low');
+  });
+
   it('when the model and plain code disagree, plain code\'s category is kept, marked low; never out of Health', async () => {
     // Made-up mail: a store's promotion (plain code says Newsletters by its sender), an order (both agree), and a
     // message plain code has no words for (the model's answer stands).

@@ -47,6 +47,7 @@ export interface ScanPatch { pii: PiiSpan[]; injection: InjectionFinding; privac
 export interface BuildStepOptions {
   maxStep?: LadderStep;              // default 'full'
   question?: string;                 // enables the answer-step exemptions (section 10.3)
+  terms?: readonly string[];         // the request's exact terms (booking or order numbers): typed by the caller, never masked
   photo?: Blob;                      // the original photo; required for a photo's full step
   rule?: CategoryRule;               // used only if buildStepOption must scan the record itself; default 'approve'
   signal?: AbortSignal;

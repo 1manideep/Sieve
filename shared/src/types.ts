@@ -163,6 +163,8 @@ export interface Proposal {
   trace: TraceStep[];
   outcome: ProposalOutcome;
   createdAt: number;
+  /** Outcome 'error' only: which step failed, as a short fixed code with no content (for example "model-timeout"). */
+  errorCode?: string;
 }
 
 export interface Decision {

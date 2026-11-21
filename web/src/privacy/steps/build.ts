@@ -18,12 +18,13 @@ import { expectedStages, isScanCurrent, knownEntities, memoScan, scanText } from
 import { collapseSpaces, ensureWellFormed, isAbortError, plural, type Range } from '../text';
 import type { BuildStepOptions } from '../types';
 import { answerKeepTypes, cleanAnswer } from './answer';
-import { dropSubject, shapeAnswer } from './answerShape';
+import { dropSubject, leaksStructure, shapeAnswer } from './answerShape';
 import { keepAskerWords, notTheCompany, personSender, senderEntities, senderWordsOf } from './asker';
 import { excerptHeader, locateExcerpt } from './excerpt';
 import { capFull, fullHeader, lastCutBefore } from './full';
 import { copiesTooMuch, hiddenLeak } from './invariants';
 import { photoExcerptText, photoFullText, preparePhotoForShare } from './photo';
+import { dropPublicValues } from './publicValues';
 
 export const UNAVAILABLE = {
   maxAnswer: 'This assistant may only receive the answer.',
@@ -43,6 +44,7 @@ export const UNAVAILABLE = {
   oneFact: 'Sieve shares one fact at a time at this level.',
   notYesNo: "The answer wasn't a plain yes or no.",
   metadataOnly: 'Nothing is left once the subject line and the address are left out.',
+  badOutput: 'The answer was not one clean sentence, so it is not offered.',
 } as const;
 
 function unavailable(step: LadderStep, reason: string): StepOption {
@@ -173,12 +175,15 @@ export async function buildStepOption(
     // An ID number must read as one, and a sender of the index is never one ("Z1llow", "1Password", 5.6 step 1).
     // The company sender's own name is never masked as a person's: in "Good Dog sent you" (every step), and in the
     // answer whatever found it (10.3a: organisation names stay, they are often the answer).
+    // Dates, times, labelled reference numbers and places that are not a street address are not personal details
+    // (publicValues.ts), and the identifiers the caller gave as terms count as typed.
     const known = [...knownEntities(rec), ...senderEntities(rec), ...(opts.extraEntities ?? [])];
     const actors = step === 'answer' ? findActorNames(text) : notTheCompany(text, findActorNames(text), rec);
     const senders = senderWordsOf(rec, opts.knownSenders);
     const finalized = finalizeSpans(text, [...runValidators(text), ...findSecretCodes(text), ...actors, ...locateEntities(text, known)], { senders });
-    const found = step === 'answer' ? notTheCompany(text, finalized, rec) : finalized;
-    const spans = keepAskerWords(text, found, opts.question);
+    const found = dropPublicValues(text, step === 'answer' ? notTheCompany(text, finalized, rec) : finalized, scanText(rec));
+    const asked = [opts.question, ...(opts.terms ?? [])].filter((t) => t?.trim()).join('\n');
+    const spans = keepAskerWords(text, found, asked || undefined);
 
     // 7, 8. answer exemptions, then redaction
     const keepTypes = step === 'answer' && opts.question ? answerKeepTypes(opts.question) : [];
@@ -197,6 +202,7 @@ export async function buildStepOption(
       const cap = step === 'answer' ? ANSWER_MAX_CHARS : MAX_PAYLOAD_CHARS;
       if (text.length > cap) text = text.slice(0, lastCutBefore(text, cap)).trimEnd();
     }
+    if (step === 'answer' && leaksStructure(text)) return unavailable(step, UNAVAILABLE.badOutput);                   // never "...}]."
     if (hiddenLeak(text, rec)) return unavailable(step, UNAVAILABLE.hidden);                                         // S4
     if (step !== 'answer' && matchInjectionPatterns(text).suspicious) return unavailable(step, UNAVAILABLE.stillInstruction);   // S5
     if (!text.trim()) return unavailable(step, UNAVAILABLE.empty);

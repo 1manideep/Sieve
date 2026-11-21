@@ -88,13 +88,21 @@ function inQuestion(q: string, value: string): boolean {
   return new RegExp(`(?<![\\p{L}\\p{N}])${body}(?![\\p{L}\\p{N}])`, 'u').test(q);
 }
 
+/** Numbers of 4 or more digits in the question, by their digits, so "552 001 8842" counts as typed when "5520018842" was. */
+function askedNumbers(question: string): Set<string> {
+  const runs = [...(question.match(/\d[\d\s().-]*\d/g) ?? []), ...(question.match(/\d+/g) ?? [])];
+  return new Set(runs.map((r) => r.replace(/\D/g, '')).filter((d) => d.length >= 4));
+}
+
 /**
- * Drops the spans the asker typed: a whole value in the question stays as it is; in a name, the words the asker typed
- * stay and the rest is masked ("Kay [name]"). One-time codes are always masked.
+ * Drops the spans the asker typed: a whole value in the question stays as it is, and so does a number with the same
+ * digits; in a name, the words the asker typed stay and the rest is masked ("Kay [name]"). One-time codes are always
+ * masked.
  */
 export function keepAskerWords(text: string, spans: readonly PiiSpan[], question: string | undefined): PiiSpan[] {
   if (!question?.trim()) return [...spans];
   const q = question.normalize('NFKC').toLowerCase();
+  const numbers = askedNumbers(q);
   const nameWords = nameWordsOf(question.normalize('NFKC'));
   const out: PiiSpan[] = [];
   const WORD = /[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu;
@@ -105,7 +113,7 @@ export function keepAskerWords(text: string, spans: readonly PiiSpan[], question
       out.push(s);
       continue;
     }
-    if (inQuestion(q, value)) continue;
+    if (inQuestion(q, value) || numbers.has(value.replace(/\D/g, ''))) continue;
     if (s.type !== 'name' || ![...value.matchAll(WORD)].some((m) => typed(m[0]))) {
       out.push(s);
       continue;

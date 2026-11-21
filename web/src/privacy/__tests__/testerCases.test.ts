@@ -75,11 +75,10 @@ describe('one-time codes and sign-in links (secret-code, T10)', () => {
     expect(await answer(zillow, 'Your Zillow verification code is 733211.', 'Show me my Google verification emails')).toBe('Your Zillow verification code is [code].');
     expect(await answer(zillow, 'Your Zillow verification code is 733211.', 'What is 733211 for?')).toBe('Your Zillow verification code is [code].');
     expect(await answer(zillow, 'Yes, your Zillow verification code is 733211.', 'Is 733211 my Zillow code?')).toBe('Yes.');
-    // Nov 21: the subject line is dropped after redaction, so the code check still saw "verification code is"; here
-    // the subject and a masked code are all there was, so nothing is left to share
+    // the same when the subject holds the same words: the words stay (they are the answer's own), the code never does
     const subject = { ...zillow, title: 'Your Zillow verification code' };
     const o = await buildStepOption('answer', { answer: 'Your Zillow verification code is 733211.' }, subject, 'own', { question: 'What is 733211 for?', maxStep: 'answer' });
-    expect(o).toMatchObject({ available: false, unavailableReason: 'Nothing is left once the subject line and the address are left out.' });
+    expect(o).toMatchObject({ available: true, text: 'Your Zillow verification code is [code].' });
   });
 });
 

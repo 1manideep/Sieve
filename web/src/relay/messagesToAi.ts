@@ -9,6 +9,8 @@ export const MSG = {
   oneFact: 'Sieve shares one fact at a time at this level.',
   modelUnavailable: "Sieve can't read the person's data on this device right now. Try again later.",
   error: "Sieve couldn't prepare an answer on the person's device. Try again later.",
+  /** The same line with which step failed, as a short code with no content ("model-timeout", "search-TypeError"). */
+  errorWith: (code: string) => `Sieve couldn't prepare an answer on the person's device. Try again later. (${code.replace(/[^A-Za-z0-9-]/g, '').slice(0, 48) || 'unknown'})`,
   badRequest: "Sieve couldn't read this request. Ask again.",
   noReadableWords: 'The question had no readable words. Ask again in plain text.',   // 70 R-MCP-04
 } as const;

@@ -17,7 +17,7 @@ import {
   type HardFilter, type ParsedQuestion, type SearchReport, type SieveDb,
 } from '@/index';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
-import { errorLine } from '@/robust/errorLine';
+import { errorLine, errorName } from '@/robust/errorLine';
 import { forgetCloudConsentRequest, rememberCloudConsentRequest } from './consent';
 import { LABELS, RUNNING, UNAVAILABLE, WARNINGS, WHERE_PHRASE } from './copy';
 import { answerStillHolds, confirmFresh, type FreshResult } from './fresh';
@@ -209,16 +209,25 @@ class Run {
       trace: [...this.trace],
       outcome,
       createdAt: this.now,
+      ...(outcome === 'error' ? { errorCode: this.errorCode ?? 'unknown' } : {}),
     };
   }
 
+  /**
+   * Which step ended the run in `error`, as a short fixed code (letters, digits and dashes; never content). It goes
+   * out with the "couldn't prepare an answer" result, so a failure on someone's device can be told apart.
+   */
+  errorCode: string | undefined;
+
   fail(label: string): Proposal {
     this.code('rule', label);
+    this.errorCode ??= 'invalid';
     return this.finish('error');
   }
 
   stopped(): Proposal {
     this.code('rule', LABELS.stopped);
+    this.errorCode ??= 'stopped';
     return this.finish('error');
   }
 
@@ -288,6 +297,7 @@ export async function prepareProposal(input: PrepareInput): Promise<Proposal> {
     // In production too: this line is the only evidence a crash leaves (the error's name and message, no content).
     console.error('Sieve: preparing an answer crashed.', errorLine(e));
     run.code('rule', LABELS.crashed);
+    run.errorCode = `crashed-${errorName(e)}`;
     return run.finish('error');
   }
 }
@@ -372,6 +382,7 @@ async function prepare(run: Run): Promise<Proposal> {
   }
   if (run.aborted) {
     run.end(retrieveId, codeTrace('retrieve', LABELS.stopped, 0));
+    run.errorCode = 'stopped';
     return run.finish('error');
   }
   const t0 = performance.now();
@@ -396,11 +407,13 @@ async function prepare(run: Run): Promise<Proposal> {
     const ms = Math.round(performance.now() - t0);
     if (run.aborted || isAbortError(e)) {
       run.end(retrieveId, codeTrace('retrieve', LABELS.stopped, ms));
+      run.errorCode = run.aborted ? 'stopped' : 'search-aborted';
       return run.finish('error');
     }
     // A lazy chunk that is gone after a deploy fails here: the line names it (the error's name and message, no content).
     console.error('Sieve: the search on this device failed.', errorLine(e));
     run.end(retrieveId, codeTrace('retrieve', 'The search on this device failed. Nothing was shared.', ms));
+    run.errorCode = `search-${errorName(e)}`;
     return run.finish('error');
   }
   const retrieveMs = Math.round(performance.now() - t0);
@@ -523,13 +536,17 @@ async function prepare(run: Run): Promise<Proposal> {
         run.code('rule', LABELS.shapeRefused);
         return run.finish('unsupported', { reason: UNAVAILABLE.oneFact });
       }
+      run.errorCode = `model-${res.error.code}`;
       return run.finish('error');
     }
     if (res.trace.where === 'cloud') run.warn(callData === 'sample' ? WARNINGS.sampleDataCloud() : WARNINGS.cloudFallback());
     if (res.value.recordId === null) return run.blockedOrNoMatch(neverBlocked);
 
     const pick = list.find((a) => a.rec.id === res.value.recordId);
-    if (!pick) return run.finish('error');
+    if (!pick) {
+      run.errorCode = 'pick-not-listed';
+      return run.finish('error');
+    }
 
     // 12a. Freshness, before any step option is built.
     const freshId = run.start('retrieve', RUNNING.fresh, 'code');
@@ -546,6 +563,7 @@ async function prepare(run: Run): Promise<Proposal> {
     }
     if (fresh.status === 'unreachable') {
       run.end(freshId, codeTrace('retrieve', LABELS.freshGmailFailed, freshMs));
+      run.errorCode = 'gmail-check';
       return run.finish('error');
     }
     if (reruns >= 1) {
@@ -555,6 +573,7 @@ async function prepare(run: Run): Promise<Proposal> {
     const reread: IndexRecord | undefined = fresh.status === 'changed' ? fresh.fresh : undefined;
     if (reread && answerStillHolds(pick.rec, reread, res.value.answer)) {
       run.end(freshId, codeTrace('retrieve', LABELS.freshChangedHolds(kind), freshMs));
+      if (fresh.status === 'changed' && fresh.unchecked) run.warn(WARNINGS.sourceUnchecked());
       chosen = reread;
       value = res.value;
       recomputeExcerpt = true;
@@ -647,6 +666,7 @@ async function prepare(run: Run): Promise<Proposal> {
         buildStepOption(step, parts, rec, data, {
           maxStep: input.maxStep,
           question: lookup,
+          ...(hints?.terms?.length ? { terms: hints.terms } : {}),
           rule,
           allowNano: false,
           ...(knownSenders ? { knownSenders } : {}),
@@ -668,10 +688,12 @@ async function prepare(run: Run): Promise<Proposal> {
   let options = enforceAll(built);
   // 15.0 One fact per answer (11 section 10.3a, Nov 21, B05 and B13): at the answer level, an answer that packs a
   // list or two facts makes the outcome unsupported, with the same line as a question that asks for several things.
+  // An answer that still carries the model's JSON ("...}].") ends like the model's bad output after its retry (B14).
   const answerOpt = options[0];
-  if (answerOpt && !answerOpt.available && answerOpt.unavailableReason === UNAVAILABLE.oneFact &&
+  const shape = answerOpt && !answerOpt.available ? answerOpt.unavailableReason : undefined;
+  if ((shape === UNAVAILABLE.oneFact || shape === UNAVAILABLE.badOutput) &&
       (input.requestedStep === 'answer' || !options.some((o) => o.available))) {
-    run.end(piiId, codeTrace('pii', LABELS.oneFactAnswer, Math.round(performance.now() - p0)));
+    run.end(piiId, codeTrace('pii', shape === UNAVAILABLE.oneFact ? LABELS.oneFactAnswer : LABELS.shapeRefused, Math.round(performance.now() - p0)));
     return run.finish('unsupported', { reason: UNAVAILABLE.oneFact });
   }
   const optionTraces = built.flatMap((o) => o.trace ?? []);

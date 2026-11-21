@@ -86,6 +86,25 @@ describe('selectAndAnswer (10 section 16.7)', () => {
     expect(empty.calls).toHaveLength(2);
   });
 
+  it('Nov 21: an answer that carries JSON or a fence is retried once, then bad-output; never trimmed into a sentence', async () => {
+    const leak = useReplies(reply('P1', 'It today, November 21st.}]'));
+    const res = await selectAndAnswer('When is my deposit due?', [RECORDS.deposit], 'own');
+    expect(!res.ok && res.error.code).toBe('bad-output');
+    expect(leak.calls).toHaveLength(2);
+    expect(promptText(leak.calls[1].parts)).toContain('Reply again with JSON only');
+    for (const bad of ['Your deposit was $1,200."}', '{"item":"P1","answer":"Your deposit was $1,200."}', '```json Your deposit was $1,200.```', 'Your deposit was $1,200,']) {
+      const fixed = useReplies(reply('P1', bad), reply('P1', 'Your deposit was $1,200, paid on March 3.'));
+      const ok = await selectAndAnswer('How much was my deposit?', [RECORDS.deposit], 'own');
+      expect(ok.ok && ok.value.answer, bad).toBe('Your deposit was $1,200, paid on March 3.');
+      expect(fixed.calls).toHaveLength(2);
+    }
+    // wrapping quotes are not structure: the answer is cleaned, not retried
+    const quoted = useReplies(reply('P1', '"Your deposit was $1,200."'));
+    const clean = await selectAndAnswer('How much was my deposit?', [RECORDS.deposit], 'own');
+    expect(clean.ok && clean.value.answer).toBe('Your deposit was $1,200.');
+    expect(quoted.calls).toHaveLength(1);
+  });
+
   it('SE-7: "none" gives no record and no answer', async () => {
     useReplies(reply('none', ''));
     const res = await selectAndAnswer('What is my wifi password?', [RECORDS.missing], 'sample');

@@ -7,7 +7,7 @@ import type { IndexRecord } from '@sieve/shared';
 export type FreshResult =
   | { status: 'ok' | 'unknown'; record: IndexRecord }
   | { status: 'gone' }
-  | { status: 'changed'; fresh: IndexRecord | undefined }
+  | { status: 'changed'; fresh: IndexRecord | undefined; unchecked?: true }   // unchecked: the source could not be asked
   | { status: 'unreachable' };   // verifyFresh threw for a Gmail item
 
 export async function confirmFresh(db: SieveDb, record: IndexRecord, signal?: AbortSignal): Promise<FreshResult> {
@@ -19,7 +19,14 @@ export async function confirmFresh(db: SieveDb, record: IndexRecord, signal?: Ab
     // Offline or a Gmail error: local files and Playground items are answered from the local copy.
     return record.source === 'gmail' ? { status: 'unreachable' } : { status: 'ok', record };
   }
-  if (status === 'ok' || status === 'unknown') return { status, record };
+  if (status === 'ok' || status === 'unknown') {
+    // The source still has the item, but the copy here may have been written again while the answer was being
+    // prepared: a Gmail body that search or a sync fetched gives a new version, and Gmail's check never says
+    // 'changed'. A new version is read again like a changed file; a copy removed meanwhile is gone.
+    const current = await getRecord(db, record.id);
+    if (current?.version === record.version) return { status, record };
+    return { status: 'changed', fresh: current, ...(status === 'unknown' ? { unchecked: true as const } : {}) };
+  }
   if (status === 'gone') return { status: 'gone' };
   return { status: 'changed', fresh: await getRecord(db, record.id) };
 }

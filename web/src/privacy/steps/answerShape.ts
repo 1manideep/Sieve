@@ -80,7 +80,40 @@ function endMatches(piece: string, kind: Kind, end: 'head' | 'tail'): boolean {
 
 const LIST_SEP = /\s*(?:,\s*(?:and|or|&)\s+|,\s+|;\s+|\s+(?:and|or|&)\s+)/i;
 
-/** Three or more items of one kind in a row, separated by commas or "and" ("[name 1], [name 2] and [name 3]"). */
+const DETERMINER = new Set(['a', 'an', 'the', 'this', 'that', 'your', 'my', 'our', 'their', 'his', 'her', 'its']);
+const NOT_A_HEAD = new Set(
+  'of in on at for with from to by via and or but is are was were be has have had will would can could may sent said says'.split(' '),
+);
+
+/**
+ * "A Python, Django and GCP developer role": the items only describe one thing named after the last of them (a job
+ * title, a product, the skills of one role), so they are one fact. The first item follows a determiner, and a singular
+ * word follows the last one. After a determiner other than "a" or "an", that word must be lowercase when the items are
+ * names, so a run of full names stays a list.
+ */
+function describesOneThing(first: string, last: string, kind: Kind): boolean {
+  const before = first.match(TOKENS) ?? [];
+  let led = '';
+  for (let k = 1; k < before.length && k <= 4 && !led; k += 1) {
+    const d = before[before.length - k - 1]!.toLowerCase();
+    if (DETERMINER.has(d) && kindOf(before.slice(-k).join(' ')) === kind) led = d;
+  }
+  if (!led) return false;
+  const after = last.match(TOKENS) ?? [];
+  for (let k = 1; k < after.length && k <= 4; k += 1) {
+    if (kindOf(after.slice(0, k).join(' ')) !== kind) continue;
+    const head = after[k]!.replace(/[.,!?;:)"”’]+$/, '');
+    if (!/^\p{L}/u.test(head) || NOT_A_HEAD.has(head.toLowerCase())) return false;
+    if (/[^s]s$/i.test(head) && !/(?:us|is)$/i.test(head)) return false;   // a plural names several things
+    return led === 'a' || led === 'an' || kind !== 'proper' || /^\p{Ll}/u.test(head);
+  }
+  return false;
+}
+
+/**
+ * Three or more items of one kind in a row, separated by commas or "and" ("[name 1], [name 2] and [name 3]"). Not when
+ * they only describe one thing (describesOneThing).
+ */
 export function hasList(text: string): boolean {
   const pieces = text.split(LIST_SEP).filter((p) => p.trim());
   if (pieces.length < 3) return false;
@@ -92,14 +125,17 @@ export function hasList(text: string): boolean {
     if (whole) kinds.add(whole);
     if (nextIsLast) for (const k of ['slot', 'money', 'date', 'time', 'number', 'proper', 'word'] as const) if (endMatches(next, k, 'head')) kinds.add(k);
     for (const kind of kinds) {
+      // counted from where the run starts, so the tail of a run that describes one thing is not a list either
+      if (s > 0 && kindOf(pieces[s]!) === kind && endMatches(pieces[s - 1]!, kind, 'tail')) continue;
       let n = endMatches(pieces[s]!, kind, 'tail') ? 1 : 0;
       let j = s + 1;
       while (j < pieces.length - 1 && kindOf(pieces[j]!) === kind) {
         n += 1;
         j += 1;
       }
-      if (j === pieces.length - 1 && endMatches(pieces[j]!, kind, 'head')) n += 1;
-      if (n >= 3) return true;
+      const headed = j === pieces.length - 1 && endMatches(pieces[j]!, kind, 'head');
+      if (headed) n += 1;
+      if (n >= 3 && !(headed && describesOneThing(pieces[s]!, pieces[j]!, kind))) return true;
     }
   }
   return false;
@@ -153,12 +189,35 @@ export function packsSeveralFacts(text: string): boolean {
   return hasNumberedItems(text) || hasList(text) || hasTwoFactClauses(text);
 }
 
+// ---------- output structure ----------
+
+const SLOT = /\[[^[\]{}"]*\]/g;   // a masked value or a "[...]" cut is text, not structure
+const STRUCTURE = /```|\}\s*\]|\]\s*\}|\{\s*"|"\s*\}|"\s*:\s*["{[]/;
+
+/**
+ * JSON or Markdown structure in an answer (Nov 21: "It today, November 21st.}]."): "}]", '{"', '"}', a key with its
+ * value, a code fence, or a bracket, brace, backtick, comma or unpaired quote at either end. Such an answer is bad
+ * output, never a sentence to share.
+ */
+export function leaksStructure(answer: string): boolean {
+  const t = answer.replace(SLOT, 'x').trim();
+  if (STRUCTURE.test(t)) return true;
+  const core = t.replace(/[.!?]+$/, '');
+  if (/^[[\]{}`,]|[[\]{}`,]$/.test(core)) return true;
+  return /^"|"$/.test(core) && (core.match(/"/g) ?? []).length % 2 === 1;
+}
+
 // ---------- the subject line and the sender's address ----------
 
 const WORD = /[\p{L}\p{N}]+(?:['’][\p{L}]+)?/gu;
 const LEAD_IN = /(?:,?\s*(?:with|has|had|having|under|about)?\s*(?:the|a|its)?\s*(?:subject(?:\s+line)?|title|heading|headline)\s*(?:of|is|was|reads|reading)?\s*:?|,?\s*(?:titled|entitled|called|named|headed|saying)\s*:?)\s*["'“‘]?\s*$/i;
 
-/** Removes every run of 4 or more words in a row from the subject line, with its quotes and "with the subject". */
+/**
+ * Removes the subject line where the answer cites it: a run of 4 or more of its words in a row that stands in quotes
+ * or after "with the subject", "titled" and the like. The same words used as the answer's own statement stay: the
+ * fact a person asks for is often in the subject ("Your order has shipped", a role, a place, a booking number), and
+ * taking those words out left "It departs from at 06:40 AM." or nothing at all (Nov 21, 2026 live test).
+ */
 export function stripSubject(text: string, title: string | undefined): string {
   if (!title) return text;
   const t = title.replace(/^(?:\s*(?:re|fwd?|fw|aw|wg)\s*:\s*)+/i, '');
@@ -174,7 +233,11 @@ export function stripSubject(text: string, title: string | undefined): string {
       best = Math.max(best, k);
     }
     if (best >= 4) {
-      runs.push({ start: aw[i]!.start, end: aw[i + best - 1]!.end });
+      const start = aw[i]!.start;
+      const end = aw[i + best - 1]!.end;
+      const before = text.slice(0, start);
+      const cited = LEAD_IN.test(before) || (/["'“‘]\s*$/.test(before) && /^\s*["'”’]/.test(text.slice(end)));
+      if (cited) runs.push({ start, end });
       i += best;
     } else {
       i += 1;
@@ -279,7 +342,7 @@ export function shapeAnswer(
 export function dropSubject(text: string, record: Pick<IndexRecord, 'title'>, question: string | undefined): AnswerShape {
   if (question && (asksSubject(question) || isYesNoQuestion(question))) return { ok: true, text };
   const out = stripSubject(text, record.title);
-  if (out === text) return { ok: true, text };
-  if (!hasContent(out)) return { ok: false, reason: 'empty' };
+  // an answer that was only the cited subject is kept as it is: it is still what the item says
+  if (out === text || !hasContent(out)) return { ok: true, text };
   return { ok: true, text: ended(out, text) };
 }
