@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import type { Category, ItemKind, SourceKind } from '@sieve/shared';
+import { CODE_LABEL_VERSION } from '@/ai/tasks/codeLabel';
 import { SETTINGS, SOURCES, fillText } from '@/copy/screens-controls';
 import { useIndexing } from '@/state/indexing';
 import { useReceipts } from '@/state/receipts';
@@ -501,7 +502,7 @@ describe('Sources: the label export (a testing tool)', () => {
     const tool = await screen.findByRole('region', { name: SOURCES.exportLabel });
     expect(within(tool).getByRole('button', { name: SOURCES.exportButton })).toBeInTheDocument();
     // The readout says which rules this page runs and whether this tab is the one indexing.
-    expect(await within(tool).findByText(fillText(SOURCES.statusRules, { v: 2 }))).toBeInTheDocument();
+    expect(await within(tool).findByText(fillText(SOURCES.statusRules, { v: CODE_LABEL_VERSION }))).toBeInTheDocument();
     expect(within(tool).getByText(fillText(SOURCES.statusLeader, { answer: SOURCES.statusLeaderNo }))).toBeInTheDocument();
     expect(within(tool).getByText(SOURCES.statusNoQueue)).toBeInTheDocument();
     await expectNoAxeViolations();

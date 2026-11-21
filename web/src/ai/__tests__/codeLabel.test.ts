@@ -104,6 +104,18 @@ describe('codeRelabel: the index catches up with better rules', () => {
     expect(codeRelabel(rec({ kind: 'photo' }))).toBeNull();
   });
 
+  it('settles a model label that plain code disagreed with, never out of Health and only when plain code matched', () => {
+    const low = { v: 1, by: 'device' as const, at: 1, confidence: 'low' as const };
+    const high = { v: 1, by: 'device' as const, at: 1, confidence: 'high' as const };
+    const promo = { ...email('hello@e.crestmarrow.example', 'Consider this your official warning'), categoryBy: 'device' as const };
+    expect(codeRelabel({ ...promo, category: 'Shopping', enrich: { label: low } })).toBe('Newsletters');
+    expect(codeRelabel({ ...promo, category: 'Shopping', enrich: { label: high } })).toBeNull();      // they agreed then
+    expect(codeRelabel({ ...promo, category: 'Health', enrich: { label: low } })).toBeNull();         // fails closed
+    expect(codeRelabel({ ...promo, category: 'Newsletters', enrich: { label: low } })).toBeNull();    // already there
+    const person = { ...email('Jordan Ellis <jordan.ellis@gmail.com>', 'quick question'), categoryBy: 'device' as const };
+    expect(codeRelabel({ ...person, category: 'Work', enrich: { label: low } })).toBeNull();          // plain code has no words for it
+  });
+
   it('keeps what the source said about mail sent to many', () => {
     const quiet = { ...email('virgil@taplane.example', 'A new thing in Taplane'), category: 'Newsletters' as Category, categoryBy: 'code' as const };
     expect(codeRelabel({ ...quiet, bulk: true })).toBeNull();

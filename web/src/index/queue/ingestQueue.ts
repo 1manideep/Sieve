@@ -458,7 +458,8 @@ function createIngestQueue(db: SieveDb): IngestQueue {
     if (!m) return true;
     if (m.by === 'seed') return false;
     if (m.v < aiApi.promptVersions().label) return true;
-    return (m.by === 'code' || m.confidence === 'low') && (m.attempts ?? 0) < 2;
+    // A model label that plain code disagreed with (low) is settled by plain code: asking again changes nothing.
+    return m.by === 'code' && (m.attempts ?? 0) < 2;
   };
 
   const needsCaption = (rec: IndexRecord): boolean => {
@@ -958,14 +959,14 @@ function createIngestQueue(db: SieveDb): IngestQueue {
   };
 
   /**
-   * An item that only plain code has sorted gets the category the current rules give it (the rules improve between
-   * releases; Nov 21, 2026). Nothing a model, a rule or a seed chose is touched, and the Health safety net holds.
+   * An item that only plain code has sorted, or whose model label plain code disagreed with, gets the category the
+   * current rules give it (Nov 21, 2026; see codeRelabel). The Health safety net holds.
    */
   const relabelByCode = async (rec: IndexRecord): Promise<IndexRecord> => {
     const next = aiApi.codeRelabel(rec);
     if (next === null) return rec;
     const { outcome, record } = await writeIfCurrentDetailed(db, rec.id, rec.version, (cur) =>
-      cur.categoryBy === 'code' ? { category: next } : {},
+      aiApi.codeRelabel(cur) === next ? { category: next } : {},
     );
     if (outcome !== 'ok' || !record) return rec;
     applyRecordInMemory(db, record);

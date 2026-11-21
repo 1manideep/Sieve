@@ -48,6 +48,23 @@ describe('labelBatch (10 section 16.6)', () => {
     expect(res.trace).toMatchObject({ where: 'device', label: 'Sorted 50 items on this device', sdkReported: 'on_device', charsSent: 0 });
   });
 
+  it('when the model and plain code disagree, plain code\'s category is kept, marked low; never out of Health', async () => {
+    // Made-up mail: a store's promotion (plain code says Newsletters by its sender), an order (both agree), and a
+    // message plain code has no words for (the model's answer stands).
+    const items: LabelItem[] = [
+      { id: 'gmail:promo', title: 'Consider this your official warning', from: 'Crestmarrow <hello@e.crestmarrow.example>', preview: '', kind: 'email' },
+      { id: 'gmail:order', title: 'Your order has shipped', from: 'Crestmarrow <orders@crestmarrow.example>', preview: '', kind: 'email' },
+      { id: 'gmail:note', title: 'quick question', from: 'Jordan Ellis <jordan.ellis@gmail.com>', preview: '', kind: 'email' },
+      { id: 'gmail:care', title: 'A note about your visit', from: 'Corvane <hello@e.corvane.example>', preview: '', kind: 'email' },
+    ];
+    const said: Category[] = ['Shopping', 'Shopping', 'Work', 'Health'];
+    setHybridForTests(createFakeHybrid(() => ({ text: JSON.stringify({ labels: said.map((c, i) => ({ i: i + 1, c })) }), source: 'on_device' })));
+    const res = await labelBatch(items, 'own');
+    expect(res.labels).toEqual({ 'gmail:promo': 'Newsletters', 'gmail:order': 'Shopping', 'gmail:note': 'Work', 'gmail:care': 'Health' });
+    expect(res.confidence).toEqual({ 'gmail:promo': 'low', 'gmail:order': 'high', 'gmail:note': 'high', 'gmail:care': 'low' });
+    expect(Object.values(res.by ?? {}).every((w) => w === 'device')).toBe(true);
+  });
+
   it('LB-3: a missing entry and an unknown category fall back to plain code, low confidence', async () => {
     const items = subjectItems.slice(0, 10);
     setHybridForTests(

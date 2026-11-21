@@ -19,7 +19,7 @@ function fold(s: string): string {
 }
 
 /** Raised whenever the rules below change, so a testing readout can say which rules a page runs. */
-export const CODE_LABEL_VERSION = 2;
+export const CODE_LABEL_VERSION = 3;
 
 // Order matters: the first category with a matching pattern wins.
 export const CODE_LABEL_RULES: [Category, RegExp[]][] = [
@@ -126,14 +126,22 @@ export function codeLabel(item: LabelInput): { category: Category; matched: bool
 }
 
 /**
- * The category the current rules give an item that only plain code has sorted, when it differs from the one it
- * has; null when the item is not code-sorted or would not change. Rules improve between releases, and this lets
- * the index catch up without touching anything a model, a rule or a seed chose.
+ * The category an indexed item should have under the current rules, when it differs from the one it has; else
+ * null. Two kinds of item qualify: one that only plain code has sorted, and one whose model label plain code
+ * disagreed with. A model label plain code agreed with, a rule (the Health safety net) and a seed are never
+ * touched, and nothing is moved out of Health.
  */
-export function codeRelabel(rec: Pick<IndexRecord, 'title' | 'from' | 'preview' | 'kind' | 'bulk' | 'category' | 'categoryBy'>): Category | null {
-  if (rec.categoryBy !== 'code' || rec.kind === 'photo') return null;
-  const next = codeLabel(rec).category;
-  return next === rec.category ? null : next;
+export function codeRelabel(
+  rec: Pick<IndexRecord, 'title' | 'from' | 'preview' | 'kind' | 'bulk' | 'category' | 'categoryBy' | 'enrich'>,
+): Category | null {
+  if (rec.kind === 'photo') return null;
+  // A model's label that plain code disagreed with (marked low): plain code's category is the better one, measured.
+  const disputed = (rec.categoryBy === 'device' || rec.categoryBy === 'cloud') && rec.enrich?.label?.confidence === 'low';
+  if (rec.categoryBy !== 'code' && !disputed) return null;
+  const code = codeLabel(rec);
+  // Never out of Health, and only for words or a sender that plain code recognised.
+  if (disputed && (rec.category === 'Health' || !code.matched)) return null;
+  return code.category === rec.category ? null : code.category;
 }
 
 export function isHealthStrong(item: Pick<IndexRecord, 'title' | 'from' | 'preview'>): boolean {
