@@ -318,6 +318,15 @@ export const SOURCES = {
   exportText: 'Testing tool: download how each Gmail item was sorted. The file has message ids and categories only, never a subject or any text.',
   exportButton: 'Download labels',
   exportDone: '{n} items written to {file}',
+  statusHeading: 'Indexer status',
+  statusRules: 'Label rules: version {v}',
+  statusLeader: 'This tab does the indexing: {answer}',
+  statusLeaderYes: 'yes',
+  statusLeaderNo: 'no, another Sieve tab does (or none has started yet)',
+  statusNoQueue: 'No queue is running in this tab.',
+  statusLane: '{stage}: {done} of {total} done{waiting}',
+  statusWaiting: ', waiting: {why}',
+  statusRefresh: 'Refresh',
 } as const;
 
 /** What has AI seen? (40 section 13.7). */

@@ -500,6 +500,10 @@ describe('Sources: the label export (a testing tool)', () => {
     renderSources('/sources?tool=labels');
     const tool = await screen.findByRole('region', { name: SOURCES.exportLabel });
     expect(within(tool).getByRole('button', { name: SOURCES.exportButton })).toBeInTheDocument();
+    // The readout says which rules this page runs and whether this tab is the one indexing.
+    expect(await within(tool).findByText(fillText(SOURCES.statusRules, { v: 2 }))).toBeInTheDocument();
+    expect(within(tool).getByText(fillText(SOURCES.statusLeader, { answer: SOURCES.statusLeaderNo }))).toBeInTheDocument();
+    expect(within(tool).getByText(SOURCES.statusNoQueue)).toBeInTheDocument();
     await expectNoAxeViolations();
   });
 });

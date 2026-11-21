@@ -1,7 +1,7 @@
 // LabelExport (a testing tool, shown only at /sources?tool=labels): downloads how each Gmail item was sorted, one
-// JSON object per line, to compare with labels made elsewhere. The file holds message ids, categories and who chose
+// JSON object per line, to compare with labels made elsewhere, and says what the indexer is doing in this tab. The file holds message ids, categories and who chose
 // them. It never holds a subject, a sender or any text, and it is written on this computer only.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/Button/Button';
 import { tablesOf } from '@/components/dbTables';
 import { SOURCES, fillText } from '@/copy/screens-controls';
@@ -34,9 +34,51 @@ export async function buildLabelExport(db: SieveDb): Promise<{ text: string; cou
   return { text: lines.join('\n') + (lines.length > 0 ? '\n' : ''), count: lines.length };
 }
 
+/** What the indexer is doing, in plain lines: which rules this page runs, whether this tab indexes, each lane. */
+export async function readIndexerStatus(db: SieveDb): Promise<string[]> {
+  const [{ isLeader }, { peekQueue }, { CODE_LABEL_VERSION }] = await Promise.all([
+    import('@/index/locks'),
+    import('@/index/queue/ingestQueue'),
+    import('@/ai/tasks/codeLabel'),
+  ]);
+  const lines = [
+    fillText(SOURCES.statusRules, { v: CODE_LABEL_VERSION }),
+    fillText(SOURCES.statusLeader, { answer: isLeader(db) ? SOURCES.statusLeaderYes : SOURCES.statusLeaderNo }),
+  ];
+  const queue = peekQueue(db);
+  if (!queue) return [...lines, SOURCES.statusNoQueue];
+  for (const p of queue.progress()) {
+    lines.push(
+      fillText(SOURCES.statusLane, {
+        stage: p.stage,
+        done: formatCount(p.done),
+        total: formatCount(p.total),
+        waiting: p.waiting ? fillText(SOURCES.statusWaiting, { why: p.waiting }) : '',
+      }),
+    );
+  }
+  return lines;
+}
+
 export function LabelExport({ db }: { db: SieveDb | null }) {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<number | null>(null);
+  const [status, setStatus] = useState<string[] | null>(null);
+  const refresh = () => {
+    if (db) readIndexerStatus(db).then(setStatus).catch(console.error);
+  };
+  useEffect(() => {
+    if (!db) return undefined;
+    let live = true;
+    readIndexerStatus(db)
+      .then((lines) => {
+        if (live) setStatus(lines);
+      })
+      .catch(console.error);
+    return () => {
+      live = false;
+    };
+  }, [db]);
 
   const download = async () => {
     if (!db) return;
@@ -68,6 +110,21 @@ export function LabelExport({ db }: { db: SieveDb | null }) {
         <span className={kit.small} role="status">
           {fillText(SOURCES.exportDone, { n: formatCount(done), file: LABEL_EXPORT_FILE })}
         </span>
+      ) : null}
+      {status ? (
+        <div className={ground.grp}>
+          <span className={ground.label}>{SOURCES.statusHeading}</span>
+          <ul className={ground.rows}>
+            {status.map((line) => (
+              <li key={line} className={kit.note}>
+                {line}
+              </li>
+            ))}
+          </ul>
+          <Button variant="secondary" size="sm" onClick={refresh}>
+            {SOURCES.statusRefresh}
+          </Button>
+        </div>
       ) : null}
     </section>
   );

@@ -18,6 +18,9 @@ function fold(s: string): string {
   return s.normalize('NFD').replace(/\p{M}/gu, '').normalize('NFC');
 }
 
+/** Raised whenever the rules below change, so a testing readout can say which rules a page runs. */
+export const CODE_LABEL_VERSION = 2;
+
 // Order matters: the first category with a matching pattern wins.
 export const CODE_LABEL_RULES: [Category, RegExp[]][] = [
   ['Health', HEALTH_STRONG],
