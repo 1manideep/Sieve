@@ -120,7 +120,7 @@ def test_instructions_and_tools_name_only_allowed_tools(step, allowed, hidden):
     assert "At most 3 requests can wait per connection; wait for sieve_check before asking more." in text
     assert "otherwise today is 2026-11-16." in text
     if step == "answer":
-        assert "4. Ask with sieve_answer. This connection shares one-sentence answers only." in text
+        assert "5. Ask with sieve_answer. This connection shares one-sentence answers only." in text
         assert "Use this first" not in listed[0]["description"]
     else:
         assert "Use this first: it shares the least." in listed[0]["description"]
@@ -177,6 +177,24 @@ def test_u15_example_and_normalisation():
     assert tools.parse_ladder_args({"question": "Q", "before": "2027-01-10"}, today=TODAY).hints.before == "2027-01-10"
     assert tools.parse_ladder_args({"question": "Q", "after": "2026-11-17"}, today=TODAY).hints.after == "2026-11-17"
     assert tools.parse_ladder_args({"question": "line one\n\tline two"}, today=TODAY).question
+
+
+def test_categories_hint():
+    """One or two of Sieve's own categories; the home base then looks only there."""
+    args = tools.parse_ladder_args({"question": "Q", "categories": ["Money"]}, today=TODAY)
+    assert args.hints.to_firestore() == {"categories": ["Money"]}
+    args = tools.parse_ladder_args({"question": "Q", "categories": [" Home ", "Money", "Home"]}, today=TODAY)
+    assert args.hints.to_firestore() == {"categories": ["Home", "Money"]}
+    assert tools.parse_ladder_args({"question": "Q", "categories": []}, today=TODAY).hints is None
+    for bad in (["Bills"], ["Home", "Work", "Money"], "Money", [7], ["money"]):
+        with pytest.raises(tools.ArgError) as error:
+            tools.parse_ladder_args({"question": "Q", "categories": bad}, today=TODAY)
+        assert str(error.value) == tools.MSG_CATEGORIES
+    schema = tools.LADDER_INPUT_SCHEMA["properties"]["categories"]
+    assert schema["maxItems"] == 2 and schema["items"]["enum"] == list(tools.config.CATEGORIES)
+    text = tools.instructions(TODAY)
+    assert "4. Set categories (one or two) only when the question clearly belongs there" in text
+    assert "different hints or no categories" in text
 
 
 DATE_MSG = "{f} must be a real date written as YYYY-MM-DD, for example 2026-10-01."

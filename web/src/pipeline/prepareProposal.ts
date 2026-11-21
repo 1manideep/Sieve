@@ -331,6 +331,7 @@ async function prepare(run: Run): Promise<Proposal> {
   const t0 = performance.now();
   let cands: Candidate[];
   let filters: HardFilter | undefined;
+  let categoryRelaxed: string[] | undefined;
   try {
     cands = await search(db, lookup, {
       ...(input.allowedSources ? { sources: input.allowedSources } : {}),
@@ -338,6 +339,7 @@ async function prepare(run: Run): Promise<Proposal> {
       ...(input.signal ? { signal: input.signal } : {}),
       onReport: (r) => {
         filters = r.filters;
+        categoryRelaxed = r.categoryRelaxed;
       },
     });
   } catch (e) {
@@ -352,6 +354,9 @@ async function prepare(run: Run): Promise<Proposal> {
   const retrieveMs = Math.round(performance.now() - t0);
   run.end(retrieveId, codeTrace('retrieve', LABELS.retrieveFound(cands, retrieveMs), retrieveMs));
   if (filters?.source) run.code('retrieve', LABELS.sourceOnly(filters.source));
+  // An outside assistant named the categories to look under: say so, or say that too little was there.
+  if (categoryRelaxed) run.code('retrieve', LABELS.categoryRelaxed((categoryRelaxed as string[]).join(' and ')));
+  else if (filters?.categories) run.code('retrieve', LABELS.categoryOnly(filters.categories.join(' and ')));
   if (cands.some((c) => c.matchedBy === 'gmail-search')) {
     run.push({ kind: 'retrieve', label: LABELS.gmailSearch, where: 'cloud', ms: 0, charsSent: lookup.length, at: Date.now() });
   }

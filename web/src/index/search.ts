@@ -29,10 +29,22 @@ export interface SearchReport {
   hydrated?: { fetched: number; skipped: number };
   repaired: number;                     // orphan hits dropped (20 section 5.7)
   filters?: HardFilter;                 // the sender and dates every candidate had to fit (10.2)
+  categoryRelaxed?: Category[];         // a category hint left too few results, so the search ran again without it
 }
 
 /** Hard filters (20 section 10.2): an item that fails one never becomes a candidate. */
-export interface HardFilter { sender?: string; after?: string; before?: string; source?: QueryHints['source'] }
+export interface HardFilter { sender?: string; after?: string; before?: string; source?: QueryHints['source']; categories?: Category[] }
+
+/** A category hint that leaves fewer results than this is dropped, and the search runs again without it. */
+export const CATEGORY_MIN_RESULTS = 3;
+
+/**
+ * Whether an item's category fits an outside assistant's category hint. Personal always fits: it is also where
+ * mail that nothing has sorted yet sits, and a filter must not hide what it cannot judge.
+ */
+export function categoryFits(wanted: Category[], category: Category): boolean {
+  return category === 'Personal' || wanted.includes(category);
+}
 
 export interface SearchOptions {
   k?: number; sources?: SourceKind[]; categories?: Category[]; hints?: QueryHints;
@@ -95,6 +107,8 @@ export function hardFilterOf(p: Pick<ParsedQuestion, 'sender' | 'only'>, explici
   if (merged.before) out.before = merged.before;
   const source = explicit?.source ?? p.only;
   if (source) out.source = source;
+  // Only what an outside assistant sent: Sieve never guesses a category from the question's words.
+  if (explicit?.categories && explicit.categories.length > 0) out.categories = explicit.categories;
   return out;
 }
 
@@ -104,8 +118,9 @@ export function kindFits(source: NonNullable<QueryHints['source']>, kind: ItemKi
 }
 
 /** The sender fits, and the item's own day or a day it mentions falls inside the dates ("the flight on Dec 4"). */
-export function passesFilter(f: HardFilter, r: { from?: string; date: number; mentionedDays?: string[]; kind?: ItemKind }): boolean {
+export function passesFilter(f: HardFilter, r: { from?: string; date: number; mentionedDays?: string[]; kind?: ItemKind; category?: Category }): boolean {
   if (f.source && !kindFits(f.source, r.kind)) return false;
+  if (f.categories && r.category && !categoryFits(f.categories, r.category)) return false;
   if (f.sender && !senderMatches(f.sender, r.from)) return false;
   if ((f.after || f.before) && !inRange(iso(new Date(r.date)), f) && !(r.mentionedDays ?? []).some((d) => inRange(d, f))) return false;
   return true;
@@ -146,7 +161,27 @@ function boostFor(rec: IndexRecord, meta: RecordMeta | undefined, hints: QueryHi
   return { boost, fromBoost, termMatched };
 }
 
+/**
+ * The search. With a category hint from an outside assistant it looks only in those categories first; when that
+ * leaves fewer than CATEGORY_MIN_RESULTS, the hint was probably a wrong guess, so it runs again without it.
+ */
 export async function search(db: SieveDb, question: string, opts: SearchOptions = {}): Promise<Candidate[]> {
+  const hinted = opts.hints?.categories;
+  if (!hinted || hinted.length === 0) return searchOnce(db, question, opts);
+  let narrowReport: SearchReport | undefined;
+  const narrow = await searchOnce(db, question, { ...opts, onReport: (r) => (narrowReport = r) });
+  if (narrow.length >= CATEGORY_MIN_RESULTS) {
+    if (narrowReport) opts.onReport?.(narrowReport);
+    return narrow;
+  }
+  const { categories: _dropped, ...rest } = opts.hints ?? {};
+  let wideReport: SearchReport | undefined;
+  const wide = await searchOnce(db, question, { ...opts, hints: rest, onReport: (r) => (wideReport = r) });
+  if (wideReport) opts.onReport?.({ ...(wideReport as SearchReport), categoryRelaxed: hinted });
+  return wide;
+}
+
+async function searchOnce(db: SieveDb, question: string, opts: SearchOptions = {}): Promise<Candidate[]> {
   if (!question.trim()) return [];
   await ready(db);
   abortIfNeeded(opts.signal);

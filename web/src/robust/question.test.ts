@@ -141,6 +141,14 @@ describe('parseStoredHints: hints-stored.json (R-MCP-03)', () => {
     });
   }
 
+  it('keeps one or two of Sieve\'s own categories and drops anything else', () => {
+    expect(parseStoredHints({ categories: ['Money'] })).toEqual({ categories: ['Money'] });
+    expect(parseStoredHints({ categories: ['Money', 'Home', 'Work'] })).toEqual({ categories: ['Money', 'Home'] });
+    expect(parseStoredHints({ categories: ['Money', 'Money', 'Bills', 7, null] })).toEqual({ categories: ['Money'] });
+    expect(parseStoredHints({ categories: ['Bills'] })).toBeUndefined();
+    expect(parseStoredHints({ categories: 'Money' })).toBeUndefined();
+  });
+
   it('keeps every valid field', () => {
     expect(parseStoredHints({ after: '2026-10-01', before: '2026-10-31', source: 'mail', from: 'Dana Whitfield', terms: ['4471', 'A1'] }))
       .toEqual({ after: '2026-10-01', before: '2026-10-31', source: 'mail', from: 'Dana Whitfield', terms: ['4471', 'A1'] });

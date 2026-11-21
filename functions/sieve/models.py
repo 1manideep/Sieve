@@ -63,10 +63,11 @@ class RelayPayload(FsModel):
         return v
 
 
-class QueryHints(FsModel):            # 01 QueryHints; functions write only these five fields
+class QueryHints(FsModel):            # 01 QueryHints; functions write only these six fields
     after: str | None = None           # 'YYYY-MM-DD', inclusive
     before: str | None = None          # 'YYYY-MM-DD', inclusive
     source: Literal["mail", "files", "photos"] | None = None
+    categories: list[Category] | None = None   # one or two; the home base looks only there, with a fallback
     from_: str | None = Field(default=None, alias="from")   # explicit alias wins over to_camel
     terms: list[str] | None = None     # 1 to 5 entries
     # 'interpreted' is set only by the in-app parser (20-index); never by functions

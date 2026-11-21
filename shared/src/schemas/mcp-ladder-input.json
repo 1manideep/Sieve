@@ -17,6 +17,11 @@
       "type": "string", "enum": ["mail", "files", "photos"],
       "description": "Optional. Where the item is: mail (email), files (documents and other files) or photos. Set only when the person said where it is."
     },
+    "categories": {
+      "type": "array", "minItems": 1, "maxItems": 2,
+      "items": { "type": "string", "enum": ["Home", "Work", "Money", "Health", "Travel", "Shopping", "Personal", "Newsletters", "Photos"] },
+      "description": "Optional. One or two categories the item is filed under, when the question clearly belongs there. Sieve then looks only in those. Leave out when unsure."
+    },
     "from": {
       "type": "string", "minLength": 1, "maxLength": 100,
       "description": "Optional. The person or organisation the item is from, as the person said it, for example \"my landlord\", \"Delta\" or \"dr.patel@clinic.example\"."

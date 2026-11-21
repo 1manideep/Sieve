@@ -11,7 +11,7 @@ import { wipeDb } from './lifecycle';
 import { peekQueue } from './queue/ingestQueue';
 import { relativeWhen } from './reasons';
 import { relatedFor } from './related';
-import { duplicatesOf, search, type SearchReport } from './search';
+import { CATEGORY_MIN_RESULTS, categoryFits, duplicatesOf, search, type SearchReport } from './search';
 
 vi.mock('@/ai', async () => (await import('../../../tests/harness/aiMock')).aiModule);
 vi.mock('@/privacy', async () => (await import('../../../tests/harness/privacyMock')).privacyModule);
@@ -67,6 +67,33 @@ describe('search', () => {
     const flight = await search(db, 'When does my flight to Seattle leave?', { hints: { after: '2026-12-04', before: '2026-12-04' }, onReport: (r) => (report = r) });
     expect(flight.map((c) => c.recordId)).toContain('playground:pg-mail-19');
     expect(report?.filters).toEqual({ after: '2026-12-04', before: '2026-12-04' });
+  });
+
+  it('a category hint from an outside assistant: the search looks only there, and Personal always fits', async () => {
+    let report: SearchReport | undefined;
+    const work = await search(db, 'planning agenda review', { hints: { categories: ['Work'] }, onReport: (r) => (report = r) });
+    expect(work.length).toBeGreaterThanOrEqual(CATEGORY_MIN_RESULTS);
+    for (const c of work) expect(['Work', 'Personal']).toContain((await db.records.get(c.recordId))?.category);
+    expect(report?.filters).toEqual({ categories: ['Work'] });
+    expect(report?.categoryRelaxed).toBeUndefined();
+    expect(categoryFits(['Money'], 'Money')).toBe(true);
+    expect(categoryFits(['Money'], 'Personal')).toBe(true);        // also where mail not sorted yet sits
+    expect(categoryFits(['Money', 'Home'], 'Shopping')).toBe(false);
+  });
+
+  it('a category hint that leaves too little is dropped, and the search runs again without it', async () => {
+    // Among the files the person added there is one note, filed under Home: a wrong guess of Travel finds nothing.
+    let report: SearchReport | undefined;
+    const res = await search(db, 'deposit landlord', { sources: ['upload'], hints: { categories: ['Travel'] }, onReport: (r) => (report = r) });
+    expect(res.map((c) => c.recordId)).toContain('upload:upload-filter');
+    expect(report?.categoryRelaxed).toEqual(['Travel']);
+    expect(report?.filters).toBeUndefined();
+  });
+
+  it('the question\'s own words never set a category filter', async () => {
+    let report: SearchReport | undefined;
+    await search(db, 'anything under Work about planning?', { onReport: (r) => (report = r) });
+    expect(report?.filters?.categories).toBeUndefined();
   });
 
   it('a sender the question or the request names is a filter, not a boost (T06, T07, T10)', async () => {

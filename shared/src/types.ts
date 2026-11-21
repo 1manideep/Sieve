@@ -96,6 +96,7 @@ export interface QueryHints {
   after?: string;                         // 'YYYY-MM-DD', inclusive
   before?: string;                        // 'YYYY-MM-DD', inclusive
   source?: 'mail' | 'files' | 'photos';
+  categories?: Category[];                // one or two, from an outside assistant only: Sieve then looks only there (with a fallback)
   from?: string;                          // a person or organisation, as the person said it
   terms?: string[];                       // exact terms: order numbers, flight numbers, names (max 5)
   interpreted?: { text: string; as: string; ambiguous: boolean }[];  // e.g. { text: '1-2-2026', as: '2026-01-02', ambiguous: true }, shown to the person
@@ -245,6 +246,7 @@ export interface LadderToolInput {
   after?: string;
   before?: string;
   source?: 'mail' | 'files' | 'photos';
+  categories?: Category[];    // one or two
   from?: string;
   terms?: string[];
   idempotency_key?: string;   // 1 to 64 characters: a retry with the same key returns the same request (30 section 9.4)

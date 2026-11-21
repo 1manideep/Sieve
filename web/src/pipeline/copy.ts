@@ -62,6 +62,8 @@ export const LABELS = {
   instructionsLeftOut: (phrases: string[]) => `Left words that read as instructions to Sieve out of the search: ${phrases.map((p) => `"${cutQuote(p, 60)}"`).join(', ')}`,
   nothingLeft: 'Nothing was left to search once those words were left out.',
   sourceOnly: (source: 'mail' | 'files' | 'photos') => `Searched only your ${source === 'mail' ? 'email' : source}, as the question asks`,
+  categoryOnly: (names: string) => `Looked only under ${names}, as the assistant asked`,
+  categoryRelaxed: (names: string) => `Too little under ${names}, so Sieve searched everything it may share`,
   sensitive: 'This touches a sensitive topic, so Sieve asks you first',
   newestFirst: 'Put the matches newest first, because the question asks for the latest',
   verifyYes: 'The item answers the question',

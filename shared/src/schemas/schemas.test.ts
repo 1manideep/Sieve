@@ -18,7 +18,7 @@ const noMissingStatus: [MissingStatus] extends [never] ? true : false = true;
 
 // The ladder input's optional fields are exactly the hint fields the request doc stores (01 section 7).
 type HintField = Exclude<keyof LadderToolInput, 'question' | 'idempotency_key'>;
-const HINT_FIELDS = ['after', 'before', 'source', 'from', 'terms'] as const satisfies readonly HintField[];
+const HINT_FIELDS = ['after', 'before', 'source', 'categories', 'from', 'terms'] as const satisfies readonly HintField[];
 const hintFieldsAreQueryHints: HintField extends keyof QueryHints ? true : false = true;
 
 describe('MCP tool result schema', () => {

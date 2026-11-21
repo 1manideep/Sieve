@@ -1,7 +1,7 @@
 // One cleaning step for every question (70 section 3.1), stored hints that are never trusted blindly (R-MCP-03),
 // a parser-free entity decoder (R-MAIL-05) and grapheme-safe cuts (R-EMO-04).
 // Pure: no DOM, no network, no storage. Every character count is in UTF-16 code units (CR-1).
-import { MAX_QUESTION_CHARS, type QueryHints } from '@sieve/shared';
+import { CATEGORIES, MAX_QUESTION_CHARS, type Category, type QueryHints } from '@sieve/shared';
 import { cleanChars } from '@/privacy/sanitize/chars';
 
 export interface QuestionCheck {
@@ -164,6 +164,11 @@ export function parseStoredHints(raw: unknown, now?: number): QueryHints | undef
   if (after) out.after = after;
   if (before) out.before = before;
   if (h.source === 'mail' || h.source === 'files' || h.source === 'photos') out.source = h.source;
+  if (Array.isArray(h.categories)) {
+    // One or two of Sieve's own categories; anything else is dropped (a stored doc is never trusted blindly).
+    const categories = [...new Set((h.categories as unknown[]).filter((c): c is Category => (CATEGORIES as readonly unknown[]).includes(c)))].slice(0, 2);
+    if (categories.length > 0) out.categories = categories;
+  }
   const from = plainText(h.from, FROM_MAX_UNITS);
   if (from) out.from = from;
   if (Array.isArray(h.terms)) {
