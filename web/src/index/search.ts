@@ -1,11 +1,12 @@
-// search (01 section 9, 20 section 10): vector top VECTOR_K, keyword extras for exact ids and names, live Gmail
-// additions; the sender and the dates are filters, the other hints boost (10.2); every hit is resolved with getRecord;
-// one candidate per contentHash.
-import { EMBEDDING_DIMS, KEYWORD_SAFETY_K, VECTOR_K } from '@sieve/shared';
-import type { Candidate, Category, IndexRecord, ItemKind, QueryHints, SourceKind } from '@sieve/shared';
+// search (01 section 9, 20 section 10): the best records by meaning and by keyword, fused by weighted reciprocal rank
+// with live Gmail ids, then the hint boosts, one candidate per contentHash, the reranker when it runs, and the thread
+// cap (docs/research/local-vector-search.md section 5, Nov 21, 2026). The sender, the source and explicit dates are
+// filters, dates read from loose words and the other hints boost (10.2); every hit is resolved with getRecord.
+import { DEFAULT_CATEGORY_RULES, EMBEDDING_DIMS, KEYWORD_SAFETY_K, VECTOR_K } from '@sieve/shared';
+import type { Candidate, Category, CategoryRule, IndexRecord, ItemKind, QueryHints, SourceKind } from '@sieve/shared';
 import { getMl } from '../ml/client';
 import type { EmbedInput, EmbedOutput } from '../ml/protocol';
-import { BOOST, GMAIL_LIVE_K, MAX_PER_THREAD } from './config';
+import { BOOST, GMAIL_LIVE_K, RERANK_TEXT_CHARS, SEARCH_TUNING } from './config';
 import { repairOrphanHit } from './consistency';
 import { asksLatest, isRoleCue, knownSenderWordsOf, senderMatches } from './cues';
 import { clockFor, type SieveDb } from './db';
@@ -14,9 +15,10 @@ import { getRecord } from './ingest';
 import { ready } from './lifecycle';
 import { parseQuestion, type ParsedQuestion } from './parseQuestion';
 import { queryWordsOf, reasonFor } from './reasons';
+import type { RerankPassage, RerankResult } from './rerank';
 import { getRuntime, type RecordMeta } from './runtime';
 import { osaDistance } from './typos';
-import { withEmojiNames } from './text';
+import { cutGraphemes, displayName, withEmojiNames } from './text';
 import type { ChunkHit } from './vectorIndex';
 
 export interface SearchReport {
@@ -30,6 +32,9 @@ export interface SearchReport {
   repaired: number;                     // orphan hits dropped (20 section 5.7)
   filters?: HardFilter;                 // the sender and dates every candidate had to fit (10.2)
   categoryRelaxed?: Category[];         // a category hint left too few results, so the search ran again without it
+  dateRelaxed?: { after?: string; before?: string };   // a date filter left too few results: run again, the dates only ranking
+  fusion?: { vector: number; keyword: number; live: number; pool: number };   // list lengths fused, and the records after them
+  rerank?: { ran: boolean; ms: number; passages: number; reason?: RerankResult['reason'] | 'few-candidates' | 'asks-latest' };
 }
 
 /** Hard filters (20 section 10.2): an item that fails one never becomes a candidate. */
@@ -37,6 +42,8 @@ export interface HardFilter { sender?: string; after?: string; before?: string; 
 
 /** A category hint that leaves fewer results than this is dropped, and the search runs again without it. */
 export const CATEGORY_MIN_RESULTS = 3;
+/** A date filter that leaves fewer results than this is dropped too; its dates then only rank (Nov 21, 2026). */
+export const DATE_MIN_RESULTS = 3;
 
 /**
  * Whether an item's category fits an outside assistant's category hint. Personal always fits: it is also where
@@ -50,6 +57,8 @@ export interface SearchOptions {
   k?: number; sources?: SourceKind[]; categories?: Category[]; hints?: QueryHints;
   live?: boolean; hydrate?: boolean; signal?: AbortSignal; now?: number; locale?: string;
   onReport?: (r: SearchReport) => void;
+  /** The person's rule per category (default: DEFAULT_CATEGORY_RULES): the reranker reads a never item's title only. */
+  ruleOf?: (category: Category) => CategoryRule;
 }
 
 interface Scored {
@@ -94,17 +103,20 @@ function inRange(day: string, hints: Pick<QueryHints, 'after' | 'before'>): bool
 }
 
 /**
- * The request's `from` (unless it is a role such as "my landlord") or the sender the question names, the dates (from
- * the request or the question), and the source (the request's `source`, or "local files only", "in my mail" in the
- * question; a lone word such as "pdf" stays a boost). Photos have no sender, so a sender never filters a photo question.
+ * The request's `from` (unless it is a role such as "my landlord") or the sender the question names, the dates, and the
+ * source (the request's `source`, or "local files only", "in my mail" in the question; a lone word such as "pdf" stays a
+ * boost). Photos have no sender, so a sender never filters a photo question. Dates filter when an outside assistant sent
+ * them or the question wrote them out with their year; dates Sieve read from loose words ("December 4", "on Friday",
+ * "last week") only rank, because a wrong guess as a filter removes the answer (Nov 21, 2026: 6 of 40 questions).
  */
-export function hardFilterOf(p: Pick<ParsedQuestion, 'sender' | 'only'>, explicit: QueryHints | undefined, merged: QueryHints): HardFilter {
+export function hardFilterOf(p: Pick<ParsedQuestion, 'sender' | 'only' | 'datesExplicit'>, explicit: QueryHints | undefined, merged: QueryHints): HardFilter {
   const out: HardFilter = {};
   const asked = explicit?.from?.trim();
   const sender = asked && !isRoleCue(asked) ? asked : p.sender;
   if (sender && merged.source !== 'photos') out.sender = sender;
-  if (merged.after) out.after = merged.after;
-  if (merged.before) out.before = merged.before;
+  const dates = explicit?.after || explicit?.before ? explicit : p.datesExplicit ? merged : undefined;
+  if (dates?.after) out.after = dates.after;
+  if (dates?.before) out.before = dates.before;
   const source = explicit?.source ?? p.only;
   if (source) out.source = source;
   // Only what an outside assistant sent: Sieve never guesses a category from the question's words.
@@ -124,6 +136,115 @@ export function passesFilter(f: HardFilter, r: { from?: string; date: number; me
   if (f.sender && !senderMatches(f.sender, r.from)) return false;
   if ((f.after || f.before) && !inRange(iso(new Date(r.date)), f) && !(r.mentionedDays ?? []).some((d) => inRange(d, f))) return false;
   return true;
+}
+
+type RerankModule = typeof import('./rerank');
+let rerankModule: Promise<RerankModule | null> | null = null;
+
+/** The reranker's module, imported once; warmupRerank on every search, so the model loads before it is needed. */
+function loadReranker(): Promise<RerankModule | null> {
+  rerankModule ??= import('./rerank').catch(() => {
+    rerankModule = null;   // a chunk that failed to load is tried again by the next search
+    return null;
+  });
+  return rerankModule.then((m) => {
+    try {
+      m?.warmupRerank();
+    } catch {
+      // the search goes on in its own order
+    }
+    return m;
+  });
+}
+
+/** A rerank that overruns its own budget by more than this is abandoned, and the fused order stands. */
+const RERANK_GRACE_MS = 250;
+
+/**
+ * The text the reranker reads for a candidate: what the answer step would read (the best chunk, a caption, or the
+ * part of the text with the question's words), under its title and sender, at most RERANK_TEXT_CHARS.
+ */
+function rerankText(rec: IndexRecord, hit: ChunkHit | undefined, words: { word: string }[]): string {
+  const header = rec.kind === 'email' && rec.from ? `${rec.title}\n${displayName(rec.from)}` : rec.title;
+  if (rec.kind === 'photo') return withEmojiNames(rec.caption ? `Photo: ${rec.caption}` : header);
+  const text = rec.text ?? '';
+  let body: string;
+  if (hit && hit.end > hit.start && hit.end <= text.length) body = text.slice(hit.start, hit.end);
+  else if (text.trim()) {
+    const lower = text.toLowerCase();
+    const at = Math.min(...words.map((w) => lower.indexOf(w.word)).filter((i) => i >= 0), text.length);
+    const from = at >= text.length ? 0 : Math.max(0, at - Math.floor(RERANK_TEXT_CHARS / 3));
+    body = text.slice(from, from + RERANK_TEXT_CHARS);
+  } else body = rec.preview ?? '';
+  return cutGraphemes(withEmojiNames(`${header}\n${body}`), RERANK_TEXT_CHARS);
+}
+
+/**
+ * The reranker's contract (rerank.ts): up to RERANK_MAX_PASSAGES candidates in fused order, reordered by its order
+ * when it ran. When it did not (no model yet, too slow, failed) the fused order stands, and the report says why.
+ * A never item is not sent at all and keeps its place: no model reads its content (chunk.ts embedTexts), and from its
+ * title alone the reranker sank it below items it could read ("Is RX-6620194 ready?" went from first to fourth). The
+ * new order mixes the reranker's rank with the fused one (SEARCH_TUNING.rerankBlend), so what only the boosts know (a
+ * date the item mentions, an exact id, "the latest") is not lost: with the app's reranker on the distractor set,
+ * its order alone scored below the fused order (MRR 0.738 against 0.761), mixed it scored 0.795 (Nov 21, 2026).
+ */
+async function rerankRanked(
+  ranked: Scored[], recs: Map<string, IndexRecord | undefined>, question: string, words: { word: string }[],
+  opts: SearchOptions, reranker: Promise<RerankModule | null>, report: SearchReport,
+): Promise<Scored[]> {
+  const mod = await reranker;
+  if (!mod) {
+    report.rerank = { ran: false, ms: 0, passages: 0, reason: 'model-failed' };
+    return ranked;
+  }
+  // "The latest" is about when, which a cross-encoder cannot read; the fused order carries it (BOOST.latest), and
+  // reranking such questions put the newest matching item lower (Nov 21, 2026: MRR 0.77 to 0.45 on the 5 seed ones).
+  if (asksLatest(question)) {
+    report.rerank = { ran: false, ms: 0, passages: 0, reason: 'asks-latest' };
+    return ranked;
+  }
+  const head = ranked.slice(0, mod.RERANK_MAX_PASSAGES);
+  const ruleOf = opts.ruleOf ?? ((c: Category) => DEFAULT_CATEGORY_RULES[c]);
+  const readable = head.filter((s) => ruleOf((recs.get(s.id) as IndexRecord).category) !== 'never');
+  if (readable.length < 2) {
+    report.rerank = { ran: false, ms: 0, passages: readable.length, reason: 'few-candidates' };
+    return ranked;
+  }
+  const passages: RerankPassage[] = readable.map((s) => ({ id: s.id, text: rerankText(recs.get(s.id) as IndexRecord, s.hit, words) }));
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  opts.signal?.addEventListener('abort', stop, { once: true });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const t0 = performance.now();
+  let result: RerankResult;
+  try {
+    const late = new Promise<RerankResult>((resolve) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        resolve({ order: passages.map((x) => x.id), ran: false, ms: Math.round(performance.now() - t0), reason: 'timeout' });
+      }, mod.RERANK_BUDGET_MS + RERANK_GRACE_MS);
+    });
+    result = await Promise.race([mod.rerank(question, passages, { budgetMs: mod.RERANK_BUDGET_MS, signal: controller.signal }), late]);
+  } catch {
+    result = { order: passages.map((x) => x.id), ran: false, ms: Math.round(performance.now() - t0), reason: 'model-failed' };
+  } finally {
+    clearTimeout(timer);
+    opts.signal?.removeEventListener('abort', stop);
+  }
+  report.rerank = { ran: result.ran, ms: result.ms, passages: passages.length, ...(result.reason ? { reason: result.reason } : {}) };
+  if (!result.ran) return ranked;
+  const byId = new Map(readable.map((s, i) => [s.id, { s, fusedAt: i }]));
+  const order = result.order.filter((id, i, all) => byId.has(id) && all.indexOf(id) === i);
+  for (const s of readable) if (!order.includes(s.id)) order.push(s.id);
+  const T = SEARCH_TUNING;
+  const blended = order
+    .map((id, i) => ({ id, v: 1 / (T.rrfK + i + 1) + T.rerankBlend / (T.rrfK + (byId.get(id)?.fusedAt ?? i) + 1), i }))
+    .sort((a, b) => b.v - a.v || a.i - b.i)
+    .map((x) => byId.get(x.id)?.s as Scored);
+  // never items stay in their slots; the others fill the rest in the new order
+  let next = 0;
+  const reordered = head.map((s) => (byId.has(s.id) ? (blended[next++] as Scored) : s));
+  return [...reordered, ...ranked.slice(head.length)];
 }
 
 /** Hint boosts (20 section 10.1 step 6). */
@@ -163,25 +284,35 @@ function boostFor(rec: IndexRecord, meta: RecordMeta | undefined, hints: QueryHi
 
 /**
  * The search. With a category hint from an outside assistant it looks only in those categories first; when that
- * leaves fewer than CATEGORY_MIN_RESULTS, the hint was probably a wrong guess, so it runs again without it.
+ * leaves fewer than CATEGORY_MIN_RESULTS, the hint was probably a wrong guess, so it runs again without it. Then a date
+ * filter that leaves fewer than DATE_MIN_RESULTS is dropped the same way, and its dates only rank. The category goes
+ * first: it is the assistant's guess at how Sieve sorted the item, while a date is something the person said.
  */
 export async function search(db: SieveDb, question: string, opts: SearchOptions = {}): Promise<Candidate[]> {
+  let report: SearchReport | undefined;
+  const once = (o: SearchOptions, datesSoft = false) => searchOnce(db, question, { ...o, onReport: (r) => (report = r) }, datesSoft);
+  let current = opts;
+  let res = await once(current);
+  let categoryRelaxed: Category[] | undefined;
   const hinted = opts.hints?.categories;
-  if (!hinted || hinted.length === 0) return searchOnce(db, question, opts);
-  let narrowReport: SearchReport | undefined;
-  const narrow = await searchOnce(db, question, { ...opts, onReport: (r) => (narrowReport = r) });
-  if (narrow.length >= CATEGORY_MIN_RESULTS) {
-    if (narrowReport) opts.onReport?.(narrowReport);
-    return narrow;
+  if (res.length < CATEGORY_MIN_RESULTS && hinted && hinted.length > 0) {
+    const { categories: _dropped, ...rest } = opts.hints ?? {};
+    current = { ...opts, hints: rest };
+    res = await once(current);
+    categoryRelaxed = hinted;
   }
-  const { categories: _dropped, ...rest } = opts.hints ?? {};
-  let wideReport: SearchReport | undefined;
-  const wide = await searchOnce(db, question, { ...opts, hints: rest, onReport: (r) => (wideReport = r) });
-  if (wideReport) opts.onReport?.({ ...(wideReport as SearchReport), categoryRelaxed: hinted });
-  return wide;
+  let dateRelaxed: SearchReport['dateRelaxed'];
+  const f = report?.filters;
+  if (res.length < DATE_MIN_RESULTS && (f?.after || f?.before)) {
+    dateRelaxed = { ...(f.after ? { after: f.after } : {}), ...(f.before ? { before: f.before } : {}) };
+    res = await once(current, true);
+  }
+  if (report) opts.onReport?.({ ...report, ...(categoryRelaxed ? { categoryRelaxed } : {}), ...(dateRelaxed ? { dateRelaxed } : {}) });
+  return res;
 }
 
-async function searchOnce(db: SieveDb, question: string, opts: SearchOptions = {}): Promise<Candidate[]> {
+/** One pass. `datesSoft`: the dates of the hints and the question only rank, even an explicit one. */
+async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, datesSoft: boolean): Promise<Candidate[]> {
   if (!question.trim()) return [];
   await ready(db);
   abortIfNeeded(opts.signal);
@@ -191,8 +322,12 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions = {
   const p = parseQuestion(question, new Date(now), locale, { db });
   const hints = mergeHints(p.hints, opts.hints);
   const filter = hardFilterOf(p, opts.hints, hints);
+  if (datesSoft) {
+    delete filter.after;
+    delete filter.before;
+  }
   const filtered = Object.keys(filter).length > 0;
-  const k = opts.k ?? VECTOR_K;
+  const k = opts.k ?? VECTOR_K + KEYWORD_SAFETY_K;
 
   const byKind: Partial<Record<ItemKind, number>> = {};
   const accept = (id: string): boolean => {
@@ -222,7 +357,11 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions = {
     livePromise = live.liveGmailSearch(db, { corrected: p.corrected, hints }, { signal: opts.signal, accept });
   }
 
-  // vector step
+  // The reranker's module loads beside this search and never holds it up (it is a lazy chunk, 20 section 6.3).
+  const reranker = loadReranker();
+
+  // vector step: the best retrieveK records by their best chunk, for the typed and the corrected question
+  const T = SEARCH_TUNING;
   const vectorHits = new Map<string, ChunkHit>();
   const ml = getMl();
   const status = ml.status('embed');
@@ -235,7 +374,7 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions = {
     for (let i = 0; i < out.count; i++) {
       const qv = out.data.subarray(i * out.dims, (i + 1) * out.dims);
       const q = qv.length === EMBEDDING_DIMS ? qv : new Float32Array(EMBEDDING_DIMS);
-      for (const h of rt.vectors.scan(q, accept, k * 4)) {
+      for (const h of rt.vectors.scan(q, accept, T.retrieveK)) {
         const prev = vectorHits.get(h.recordId);
         if (!prev || h.score > prev.score) vectorHits.set(h.recordId, h);
       }
@@ -246,106 +385,104 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions = {
     report.vector = { ran: false, ms: 0, reason: status.state === 'failed' ? 'model-failed' : 'model-loading' };
   }
   abortIfNeeded(opts.signal);
+  const vectorList = [...vectorHits.values()].sort((a, b) => b.score - a.score).slice(0, T.retrieveK).map((h) => h.recordId);
 
-  // boosts, thread cap, one per contentHash, top k
-  const recCache = new Map<string, IndexRecord | undefined>();
-  const load = async (ids: string[]) => {
-    const missing = ids.filter((id) => !recCache.has(id));
-    if (missing.length === 0) return;
-    const recs = await db.records.bulkGet(missing);
-    missing.forEach((id, i) => recCache.set(id, recs[i]));
-  };
-  await load([...vectorHits.keys()]);
-  const scored: Scored[] = [];
-  for (const [id, hit] of vectorHits) {
-    const rec = recCache.get(id);
-    if (!rec) {
-      await repairOrphanHit(db, id);
-      report.repaired++;
-      continue;
-    }
-    const b = boostFor(rec, rt.meta.get(id), hints, p.corrected, now);
-    scored.push({ id, score: hit.score + b.boost, matchedBy: rec.kind === 'photo' ? 'caption' : 'vector', hit, fromBoost: b.fromBoost, termMatched: b.termMatched });
-  }
-  scored.sort((a, b) => b.score - a.score);
-  const perThread = new Map<string, number>();
-  const hashes = new Set<string>();
-  const vectorList: Scored[] = [];
-  for (const s of scored) {
-    if (vectorList.length >= k) break;
-    const rec = recCache.get(s.id) as IndexRecord;
-    if (hashes.has(rec.contentHash)) continue;
-    if (rec.threadId) {
-      const n = perThread.get(rec.threadId) ?? 0;
-      if (n >= MAX_PER_THREAD) continue;
-      perThread.set(rec.threadId, n + 1);
-    }
-    hashes.add(rec.contentHash);
-    vectorList.push(s);
-  }
-
-  // keyword safety net
+  // keyword step: MiniSearch's best retrieveK, ranked on their own
   const t1 = performance.now();
   const kwTexts = [p.searchText ?? p.corrected];
   const norm = withEmojiNames(p.normalized);
   if (norm !== kwTexts[0]) kwTexts.push(norm);
   const query = [...kwTexts, ...(hints.terms ?? [])].join(' ');
-  const kwHits = rt.keyword.search(query, (hit) => accept(String(hit.id)));
-  const wanted = report.vector.ran ? KEYWORD_SAFETY_K : k + KEYWORD_SAFETY_K;
-  const inVector = new Set(vectorList.map((s) => s.id));
-  const extras: Scored[] = [];
-  const lowest = vectorList.length > 0 ? Math.min(...vectorList.map((s) => s.score)) : 1;
-  const top = kwHits[0]?.score ?? 1;
-  for (const h of kwHits) {
-    if (extras.length >= wanted) break;
-    const id = String(h.id);
-    if (inVector.has(id)) continue;
-    if (h.contentHash && hashes.has(h.contentHash)) continue;
-    await load([id]);
-    const rec = recCache.get(id);
-    if (!rec) {
-      await repairOrphanHit(db, id);
-      report.repaired++;
-      continue;
-    }
-    if (hashes.has(rec.contentHash)) continue;
-    hashes.add(rec.contentHash);
-    const b = boostFor(rec, rt.meta.get(id), hints, p.corrected, now);
-    const score = report.vector.ran ? Math.min(lowest, 1) * 0.99 - extras.length * 0.001 : h.score / top;
-    // a record the vector scan saw but the thread cap left out keeps its best chunk for the pipeline's passage
-    extras.push({ id, score, matchedBy: 'keyword', hit: vectorHits.get(id), fromBoost: b.fromBoost, termMatched: b.termMatched });
-  }
-  report.keyword = { ms: Math.round(performance.now() - t1), added: extras.length };
+  const keywordList = rt.keyword.search(query, (hit) => accept(String(hit.id))).slice(0, T.retrieveK).map((h) => String(h.id));
+  const keywordMs = Math.round(performance.now() - t1);
 
-  // live Gmail additions
-  const liveList: Scored[] = [];
+  // live Gmail ids, in Gmail's own order
+  let liveList: string[] = [];
   if (livePromise) {
     const live = await livePromise;
     report.live = live.report;
-    for (const id of live.ids) {
-      if (liveList.length >= GMAIL_LIVE_K) break;
-      if (inVector.has(id) || extras.some((e) => e.id === id)) continue;
-      await load([id]);
-      const rec = recCache.get(id);
-      if (!rec || hashes.has(rec.contentHash)) continue;
-      hashes.add(rec.contentHash);
-      liveList.push({ id, score: Math.min(lowest, 1) * 0.98, matchedBy: 'gmail-search' });
-    }
-    report.live = { ...report.live, added: liveList.length };
+    liveList = live.ids.slice(0, GMAIL_LIVE_K);
   }
 
-  const merged = [...vectorList, ...extras, ...liveList];
-  // "Ramki's latest email": the sender's newest items join the list, so the newest one is there to pick (20 section 10.2)
-  if (filter.sender && asksLatest(p.corrected)) {
-    const present = new Set(merged.map((s) => s.id));
-    const newest = [...rt.meta.values()].filter((m) => !present.has(m.id) && accept(m.id)).sort((a, b) => b.date - a.date).slice(0, k);
-    for (const m of newest) {
-      if (hashes.has(m.contentHash)) continue;
-      hashes.add(m.contentHash);
-      merged.push({ id: m.id, score: Math.min(lowest, 1) * 0.97, matchedBy: 'keyword', fromBoost: true });
+  // "Ramki's latest email": the sender's newest items are a list of their own, so the newest one is there to pick (20 section 10.2)
+  const latestList = filter.sender && asksLatest(p.corrected)
+    ? [...rt.meta.values()].filter((m) => accept(m.id)).sort((a, b) => b.date - a.date).slice(0, k).map((m) => m.id)
+    : [];
+
+  // Weighted reciprocal rank fusion: a record high in either list ranks high, one in both higher still, and the
+  // keyword list counts fully when the question holds an exact term (an order number, a quoted phrase).
+  const exact = (hints.terms ?? []).some((t) => /\d/.test(t) || /\s/.test(t));
+  const lists: { ids: string[]; weight: number }[] = [
+    { ids: vectorList, weight: T.vectorWeight },
+    { ids: keywordList, weight: exact ? T.exactKeywordWeight : T.keywordWeight },
+    { ids: liveList, weight: T.liveWeight },
+    { ids: latestList, weight: T.vectorWeight },
+  ];
+  const fused = new Map<string, number>();
+  for (const l of lists) l.ids.forEach((id, i) => fused.set(id, (fused.get(id) ?? 0) + l.weight / (T.rrfK + i + 1)));
+  const unit = T.vectorWeight / (T.rrfK + 1);
+  const inKeyword = new Set(keywordList);
+  const inLive = new Set(liveList);
+  const inLatest = new Set(latestList);
+
+  // boosts on the fused list, then one per contentHash
+  const recCache = new Map<string, IndexRecord | undefined>();
+  const ids = [...fused.keys()];
+  const recs = ids.length > 0 ? await db.records.bulkGet(ids) : [];
+  ids.forEach((id, i) => recCache.set(id, recs[i]));
+  const scored: Scored[] = [];
+  for (const id of ids) {
+    const rec = recCache.get(id);
+    if (!rec) {
+      // an index hit without a record is repaired; a live Gmail id not stored yet is only skipped, as before
+      if (vectorHits.has(id) || inKeyword.has(id)) {
+        await repairOrphanHit(db, id);
+        report.repaired++;
+      }
+      continue;
     }
+    const b = boostFor(rec, rt.meta.get(id), hints, p.corrected, now);
+    const hit = vectorHits.get(id);
+    const matchedBy: Candidate['matchedBy'] = hit ? (rec.kind === 'photo' ? 'caption' : 'vector') : inKeyword.has(id) ? 'keyword' : inLive.has(id) ? 'gmail-search' : 'keyword';
+    scored.push({ id, score: (fused.get(id) ?? 0) / unit + T.boostScale * b.boost, matchedBy, hit, fromBoost: b.fromBoost || inLatest.has(id), termMatched: b.termMatched });
   }
+  scored.sort((a, b) => b.score - a.score);
+  const hashes = new Set<string>();
+  let ranked = scored.filter((s) => {
+    const hash = (recCache.get(s.id) as IndexRecord).contentHash;
+    if (hashes.has(hash)) return false;
+    hashes.add(hash);
+    return true;
+  });
+  report.keyword = { ms: keywordMs, added: 0 };
+  report.fusion = { vector: vectorList.length, keyword: keywordList.length, live: liveList.length, pool: ranked.length };
+
+  // the reranker reads the best passages and may reorder them; when it does not run, the fused order stands
+  ranked = await rerankRanked(ranked, recCache, p.searchText ?? p.corrected, queryWordsOf(p.corrected), opts, reranker, report);
   abortIfNeeded(opts.signal);
+
+  // at most MAX_PER_THREAD per thread, once the order is settled, then the top k (70 R-MAIL-07: a long thread never fills the list)
+  const perThread = new Map<string, number>();
+  const merged: Scored[] = [];
+  for (const s of ranked) {
+    if (merged.length >= k) break;
+    const threadId = (recCache.get(s.id) as IndexRecord).threadId;
+    if (threadId) {
+      const n = perThread.get(threadId) ?? 0;
+      if (n >= T.maxPerThread) continue;
+      perThread.set(threadId, n + 1);
+    }
+    merged.push(s);
+  }
+  report.keyword.added = merged.filter((s) => s.matchedBy === 'keyword').length;
+  if (report.live) report.live = { ...report.live, added: merged.filter((s) => s.matchedBy === 'gmail-search').length };
+  // relevance next to the best candidate, 0 to 1, never rising down the list (a reranked order keeps its own)
+  const top = merged[0]?.score ?? 1;
+  let prev = 1;
+  for (const s of merged) {
+    s.score = Math.min(prev, top > 0 ? s.score / top : 0);
+    prev = s.score;
+  }
 
   // resolve again (a delete may have committed meanwhile) and hydrate Gmail bodies
   const final: { s: Scored; rec: IndexRecord }[] = [];

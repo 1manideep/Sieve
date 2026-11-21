@@ -6,7 +6,7 @@
 // most, cached on the item). Never rejects: failures are outcomes.
 import { LADDER_STEPS, MAX_PAYLOAD_CHARS, MAX_QUESTION_CHARS, RELATED_MAX, VECTOR_K } from '@sieve/shared';
 import type {
-  Candidate, Category, CategoryRule, IndexRecord, KnownEntity, Proposal, ProposalOutcome, StepOption, TraceKind, TraceStep, Warning, Where,
+  Candidate, Category, CategoryRule, IndexRecord, KnownEntity, Proposal, ProposalOutcome, QueryHints, StepOption, TraceKind, TraceStep, Warning, Where,
 } from '@sieve/shared';
 import {
   CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, codeTrace, deriveExcerpt, excerptBasis, fitPassages, getNanoAvailability, hasFreshConsent,
@@ -14,7 +14,7 @@ import {
 } from '@/ai';
 import {
   asksCount, asksLatest, asksSeveral, clockFor, flushUrgentEmbeds, getRecord, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
-  type HardFilter, type SieveDb,
+  type HardFilter, type ParsedQuestion, type SearchReport, type SieveDb,
 } from '@/index';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
 import { forgetCloudConsentRequest, rememberCloudConsentRequest } from './consent';
@@ -227,6 +227,42 @@ class Run {
   }
 }
 
+/**
+ * The hints an in-app question searches with (step 3). The sender, the source and the dates stay with search, which
+ * reads them from the question itself: a sender or "local files only" as a filter, a date as a filter only when it is
+ * written out with its year, else only to rank (Nov 21, 2026).
+ */
+export function inAppHints(p: ParsedQuestion): QueryHints {
+  const { from: _from, source: _source, after: _after, before: _before, interpreted: _interpreted, ...rest } = p.hints;
+  return rest;
+}
+
+/**
+ * Candidates asked of search beyond the SELECT_MAX_PASSAGES the answer step reads, so items the rules hold back in step
+ * 5 (never, a one-time code, outside the grant) leave room for the next ones. Search used to return up to 14 (five by
+ * vector, then keyword, live and sender extras); since Nov 21, 2026 it returns exactly k.
+ */
+const SCREEN_SPARES = 3;
+
+/**
+ * How many of the best candidates "the latest" puts newest first, when no sender filter says which items fit. Search
+ * already favors recent items for such questions (BOOST.latest), so the best few are the ones that match; sorting the
+ * whole shortlist by date put the newest unrelated item first ("my newest work email" gave the neighborhood digest).
+ * Measured Nov 21, 2026 with bench/search-eval on the fused order: the 5 seed "latest" questions went from MRR 0.57
+ * (the whole list by date) to 0.77, and "my newest work email" now gives the newest work email first.
+ */
+export const LATEST_RELEVANT = 3;
+
+/**
+ * "The latest" (12.3 step 6a). With a sender filter every candidate fits ("Kestrelmoor's latest email"): newest first,
+ * the newest VECTOR_K. Otherwise only the best LATEST_RELEVANT go newest first, and the rest keep their rank after them.
+ */
+export function latestOrder<T extends { rec: IndexRecord }>(list: T[], filters: HardFilter | undefined): T[] {
+  const newest = (a: T, b: T) => b.rec.date - a.rec.date;
+  if (filters?.sender) return [...list].sort(newest).slice(0, VECTOR_K);
+  return [...list.slice(0, LATEST_RELEVANT).sort(newest), ...list.slice(LATEST_RELEVANT)];
+}
+
 function clockOf(db: SieveDb, fallback: number): number {
   try {
     const t = clockFor(db);
@@ -284,6 +320,7 @@ async function prepare(run: Run): Promise<Proposal> {
     }
   }
   let hints = input.hints;
+  let searchHints = input.hints;
   if (!input.hints && input.requester.kind === 'in-app') {
     try {
       const locale = (typeof navigator !== 'undefined' && navigator.language) || 'en-US';
@@ -291,7 +328,14 @@ async function prepare(run: Run): Promise<Proposal> {
       // The parsed `from` and `source` stay boosts: search finds the sender and a "local files only" the question
       // names itself, as filters (20 section 10.2); a lone word ("the pdf") never filters.
       const { from: _from, source: _source, ...parsed } = p.hints;
+      // A date read from loose words only ranks, so the answer step is not told the person means those days either: a
+      // wrong guess there would reject the right item ("on Friday" for the flight on Friday, Dec 4; Nov 21, 2026).
+      if (!p.datesExplicit) {
+        delete parsed.after;
+        delete parsed.before;
+      }
       hints = parsed;
+      searchHints = inAppHints(p);
       if (p.corrected) lookup = p.corrected;
       if (p.corrected && p.corrected !== p.normalized) run.code('retrieve', LABELS.spellingFixed(p.corrected));
       for (const it of p.hints.interpreted ?? []) if (it.ambiguous) run.code('retrieve', LABELS.ambiguousDate(it.text, it.as));
@@ -332,14 +376,18 @@ async function prepare(run: Run): Promise<Proposal> {
   let cands: Candidate[];
   let filters: HardFilter | undefined;
   let categoryRelaxed: string[] | undefined;
+  let dateRelaxed: SearchReport['dateRelaxed'];
   try {
     cands = await search(db, lookup, {
+      k: SELECT_MAX_PASSAGES + SCREEN_SPARES,
+      ruleOf: (c) => ruleFor(input.settings, c),
       ...(input.allowedSources ? { sources: input.allowedSources } : {}),
-      ...(hints ? { hints } : {}),
+      ...(searchHints ? { hints: searchHints } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
       onReport: (r) => {
         filters = r.filters;
         categoryRelaxed = r.categoryRelaxed;
+        dateRelaxed = r.dateRelaxed;
       },
     });
   } catch (e) {
@@ -357,6 +405,8 @@ async function prepare(run: Run): Promise<Proposal> {
   // An outside assistant named the categories to look under: say so, or say that too little was there.
   if (categoryRelaxed) run.code('retrieve', LABELS.categoryRelaxed((categoryRelaxed as string[]).join(' and ')));
   else if (filters?.categories) run.code('retrieve', LABELS.categoryOnly(filters.categories.join(' and ')));
+  // A date filter that left too little was dropped: say so, so a result outside those days is no surprise.
+  if (dateRelaxed) run.code('retrieve', LABELS.dateRelaxed(dateRelaxed));
   if (cands.some((c) => c.matchedBy === 'gmail-search')) {
     run.push({ kind: 'retrieve', label: LABELS.gmailSearch, where: 'cloud', ms: 0, charsSent: lookup.length, at: Date.now() });
   }
@@ -370,11 +420,10 @@ async function prepare(run: Run): Promise<Proposal> {
   let allowed = screened.allowed;
   if (allowed.length === 0) return run.blockedOrNoMatch(neverBlocked);
 
-  // 6a. "The latest": newest first by the item's date; with a sender or date filter, only the newest VECTOR_K.
+  // 6a. "The latest": newest first among the candidates that match (latestOrder).
   const latest = asksLatest(lookup);
   if (latest && allowed.length > 1) {
-    allowed = [...allowed].sort((a, b) => b.rec.date - a.rec.date);
-    if (filters?.sender || filters?.after || filters?.before) allowed = allowed.slice(0, VECTOR_K);
+    allowed = latestOrder(allowed, filters);
     run.code('retrieve', LABELS.newestFirst);
   }
 

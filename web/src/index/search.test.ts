@@ -5,14 +5,31 @@ import { nodeFile } from '../../../tests/harness/indexEnv';
 import { setMlClient } from '../ml/client';
 import { seedPlayground } from '../playground/seed';
 import { addUploads } from '../sources/uploads';
+import { MAX_PER_THREAD } from './config';
 import { openDb, type SieveDb } from './db';
 import { ingest } from './ingest';
 import { wipeDb } from './lifecycle';
 import { peekQueue } from './queue/ingestQueue';
 import { relativeWhen } from './reasons';
 import { relatedFor } from './related';
-import { CATEGORY_MIN_RESULTS, categoryFits, duplicatesOf, search, type SearchReport } from './search';
+import type { RerankPassage, RerankResult } from './rerank';
+import { CATEGORY_MIN_RESULTS, categoryFits, DATE_MIN_RESULTS, duplicatesOf, search, type SearchReport } from './search';
 
+// The reranker's contract (rerank.ts), answered per test; by default it did not run, as when no model is loaded.
+const rerankMock = vi.hoisted(() => ({
+  impl: null as null | ((q: string, p: RerankPassage[], o: { budgetMs?: number; signal?: AbortSignal }) => Promise<RerankResult>),
+  calls: [] as { question: string; passages: RerankPassage[]; budgetMs?: number }[],
+}));
+vi.mock('./rerank', () => ({
+  RERANK_MAX_PASSAGES: 20,
+  RERANK_BUDGET_MS: 40,
+  warmupRerank: vi.fn(),
+  rerank: vi.fn(async (question: string, passages: RerankPassage[], o: { budgetMs?: number; signal?: AbortSignal } = {}) => {
+    rerankMock.calls.push({ question, passages, budgetMs: o.budgetMs });
+    if (rerankMock.impl) return rerankMock.impl(question, passages, o);
+    return { order: passages.map((x) => x.id), ran: false, ms: 0, reason: 'model-loading' };
+  }),
+}));
 vi.mock('@/ai', async () => (await import('../../../tests/harness/aiMock')).aiModule);
 vi.mock('@/privacy', async () => (await import('../../../tests/harness/privacyMock')).privacyModule);
 vi.mock('@/privacy/sanitize/sanitize', async () => ({ sanitizeIncoming: (await import('../../../tests/harness/privacyMock')).sanitizeIncoming }));
@@ -36,17 +53,20 @@ afterAll(async () => {
 });
 
 describe('search', () => {
-  it('A-SR-2: vector hits first, then at most 2 keyword extras; no duplicate record or contentHash', async () => {
-    const res = await search(db, 'Where is order #88231?');
-    const kinds = res.map((c) => c.matchedBy);
-    const firstKeyword = kinds.indexOf('keyword');
-    if (firstKeyword >= 0) expect(kinds.slice(firstKeyword).every((k) => k === 'keyword')).toBe(true);
-    expect(kinds.filter((k) => k === 'keyword').length).toBeLessThanOrEqual(2);
-    expect(res.length).toBeLessThanOrEqual(7);
+  it('A-SR-2: vector and keyword lists fused, the exact match first; at most k, no duplicate record or contentHash', async () => {
+    let report: SearchReport | undefined;
+    const res = await search(db, 'Where is order #88231?', { onReport: (r) => (report = r) });
+    expect(res[0]?.recordId).toBe('playground:pg-mail-21');
+    expect(res.length).toBe(7);                                  // VECTOR_K + KEYWORD_SAFETY_K, what the answer step reads
     expect(new Set(res.map((c) => c.recordId)).size).toBe(res.length);
     const hashes = await Promise.all(res.map(async (c) => (await db.records.get(c.recordId))?.contentHash));
     expect(new Set(hashes).size).toBe(res.length);
-    expect(res.map((c) => c.recordId)).toContain('playground:pg-mail-21');
+    expect(report?.fusion).toMatchObject({ vector: 46, live: 0 });
+    expect(report?.fusion?.keyword).toBeGreaterThan(0);
+    // scores are relevance next to the best candidate, best first
+    expect(res[0]?.score).toBe(1);
+    expect(res.every((c, i) => i === 0 || c.score <= (res[i - 1]?.score ?? 1))).toBe(true);
+    expect((await search(db, 'Where is order #88231?', { k: 3 })).length).toBe(3);
   });
 
   it('A-SR-3: hard filters', async () => {
@@ -59,14 +79,91 @@ describe('search', () => {
     for (const c of work) expect((await db.records.get(c.recordId))?.category).toBe('Work');
   });
 
-  it('A-SR-4: dates are a filter: an item outside them is dropped, one that mentions a day inside them stays', async () => {
-    const out = await search(db, 'Where is order 88231?', { hints: { after: '2026-01-01', before: '2026-01-31' } });
-    expect(out.map((c) => c.recordId)).not.toContain('playground:pg-mail-21');
-    // the flight email of Nov 8 says "Friday, December 4"
+  it('A-SR-4: an outside assistant\'s dates are a filter: an item outside them is dropped, one that mentions a day inside them stays', async () => {
     let report: SearchReport | undefined;
+    const nov = await search(db, 'Where is order 88231?', { hints: { after: '2026-11-01', before: '2026-11-30' }, onReport: (r) => (report = r) });
+    expect(report?.filters).toEqual({ after: '2026-11-01', before: '2026-11-30' });
+    expect(nov.map((c) => c.recordId)).toContain('playground:pg-mail-21');
+    expect(nov.map((c) => c.recordId)).not.toContain('playground:pg-mail-22');    // Oct 25, mentions no November day
+    // the flight email of Nov 8 says "Friday, December 4"
     const flight = await search(db, 'When does my flight to Seattle leave?', { hints: { after: '2026-12-04', before: '2026-12-04' }, onReport: (r) => (report = r) });
     expect(flight.map((c) => c.recordId)).toContain('playground:pg-mail-19');
-    expect(report?.filters).toEqual({ after: '2026-12-04', before: '2026-12-04' });
+  });
+
+  it('a date filter that leaves fewer than DATE_MIN_RESULTS is dropped; its dates still rank, and the report says so', async () => {
+    let report: SearchReport | undefined;
+    // only the insurance declarations are from January 2026
+    const out = await search(db, 'Where is order 88231?', { hints: { after: '2026-01-01', before: '2026-01-31' }, onReport: (r) => (report = r) });
+    expect(DATE_MIN_RESULTS).toBe(3);
+    expect(out.map((c) => c.recordId)).toContain('playground:pg-mail-21');
+    expect(report?.dateRelaxed).toEqual({ after: '2026-01-01', before: '2026-01-31' });
+    expect(report?.filters).toBeUndefined();
+    expect(report?.hints).toMatchObject({ after: '2026-01-01', before: '2026-01-31' });
+  });
+
+  it('dates read from loose words rank and never filter; a date written out with its year filters', async () => {
+    let report: SearchReport | undefined;
+    const dec4 = await search(db, 'What do I have going on December 4?', { onReport: (r) => (report = r) });
+    expect(report?.filters).toBeUndefined();
+    expect(report?.hints).toMatchObject({ after: '2026-12-04', before: '2026-12-04' });
+    expect(dec4.length).toBe(7);
+    for (const q of ['What time does my plane take off on Friday?', 'picture of my kitty napping in the sun', 'What are Jordan and I doing this weekend?']) {
+      await search(db, q, { onReport: (r) => (report = r) });
+      expect(report?.filters?.after ?? report?.filters?.before).toBeUndefined();
+    }
+    const since = await search(db, 'emails since November 13, 2026', { onReport: (r) => (report = r) });
+    expect(report?.filters).toEqual({ after: '2026-11-13' });
+    expect(since.map((c) => c.recordId)).not.toContain('playground:pg-mail-11');   // Nov 3
+  });
+
+  it('the reranker reads the best passages and its order wins; when it does not run, the fused order stands', async () => {
+    let report: SearchReport | undefined;
+    const fused = await search(db, 'What did my landlord say about the deposit?', { onReport: (r) => (report = r) });
+    expect(report?.rerank).toMatchObject({ ran: false, reason: 'model-loading' });
+    const call = rerankMock.calls.at(-1);
+    expect(call?.question).toBe('What did my landlord say about the deposit?');
+    expect(call?.budgetMs).toBe(40);
+    expect(call?.passages.length).toBeLessThanOrEqual(20);
+    expect(call?.passages.every((x) => /^(playground|upload):/.test(x.id) && x.text.length > 0 && x.text.length <= 1000)).toBe(true);
+    expect(call?.passages.slice(0, 3).map((x) => x.id)).toEqual(fused.slice(0, 3).map((c) => c.recordId));
+    // a Health item (never) is not sent: no model reads its content
+    expect(call?.passages.map((x) => x.id)).not.toContain('playground:pg-mail-15');
+    const deposit = call?.passages.find((x) => x.id === 'playground:pg-mail-02');
+    expect(deposit?.text).toContain('Re: Deposit for the apartment\nDana Whitfield');
+
+    rerankMock.impl = async (_q, passages) => ({ order: [...passages].reverse().map((x) => x.id), ran: true, ms: 12 });
+    const reranked = await search(db, 'What did my landlord say about the deposit?', { onReport: (r) => (report = r) });
+    rerankMock.impl = null;
+    const sent = (rerankMock.calls.at(-1)?.passages ?? []).map((x) => x.id);
+    expect(report?.rerank).toEqual({ ran: true, ms: 12, passages: sent.length });
+    expect(reranked[0]?.recordId).toBe(sent.at(-1));             // the reranker's first
+    expect(reranked[0]?.recordId).not.toBe(fused[0]?.recordId);
+  });
+
+  it('a question for the latest keeps the fused order, which knows the dates; the reranker is not asked', async () => {
+    let report: SearchReport | undefined;
+    rerankMock.impl = async (_q, passages) => ({ order: [...passages].reverse().map((x) => x.id), ran: true, ms: 5 });
+    const before = rerankMock.calls.length;
+    await search(db, "What's the latest email from my bank?", { onReport: (r) => (report = r) });
+    rerankMock.impl = null;
+    expect(rerankMock.calls.length).toBe(before);
+    expect(report?.rerank).toEqual({ ran: false, ms: 0, passages: 0, reason: 'asks-latest' });
+  });
+
+  it('a reranker that fails or overruns its budget leaves the fused order, with the reason', async () => {
+    let report: SearchReport | undefined;
+    const fused = (await search(db, 'Where is order #88231?')).map((c) => c.recordId);
+    rerankMock.impl = async () => {
+      throw new Error('model crashed');
+    };
+    expect((await search(db, 'Where is order #88231?', { onReport: (r) => (report = r) })).map((c) => c.recordId)).toEqual(fused);
+    expect(report?.rerank).toMatchObject({ ran: false, reason: 'model-failed' });
+    let aborted = false;
+    rerankMock.impl = (_q, _p, o) => new Promise(() => o.signal?.addEventListener('abort', () => (aborted = true)));
+    expect((await search(db, 'Where is order #88231?', { onReport: (r) => (report = r) })).map((c) => c.recordId)).toEqual(fused);
+    rerankMock.impl = null;
+    expect(report?.rerank).toMatchObject({ ran: false, reason: 'timeout' });
+    expect(aborted).toBe(true);
   });
 
   it('a category hint from an outside assistant: the search looks only there, and Personal always fits', async () => {
@@ -166,6 +263,18 @@ describe('search', () => {
     expect(rel.slice(0, 2).map((c) => c.recordId).sort()).toEqual(['playground:pg-mail-01', 'playground:pg-mail-03']);
     expect(rel.map((c) => c.recordId)).not.toContain('playground:pg-mail-02');
     expect(rel[0]?.reason).toMatch(/same thread/);
+  });
+
+  it('70 R-MAIL-07: a long thread gives at most MAX_PER_THREAD candidates', async () => {
+    for (let i = 0; i < 6; i++) {
+      await ingest(db, { source: 'upload', sourceRef: `thread-${i}`, kind: 'note', title: `quartet rehearsal ${i}.txt`, threadId: 'long-thread', date: Date.now() - i * 1000, text: `Zebra quartet rehearsal notes, take ${i}.` }, 'own');
+    }
+    await peekQueue(db)?.whenIdle();
+    const res = await search(db, 'zebra quartet rehearsal notes');
+    const threads = await Promise.all(res.map(async (c) => (await db.records.get(c.recordId))?.threadId));
+    expect(MAX_PER_THREAD).toBe(3);
+    expect(threads.filter((t) => t === 'long-thread')).toHaveLength(MAX_PER_THREAD);
+    expect(res.length).toBe(7);
   });
 
   it('one candidate per contentHash; duplicatesOf lists the other copies', async () => {

@@ -69,6 +69,8 @@ export interface EngineDeps {
     composeOutgoingText: typeof composeOutgoingText;
   };
   beginForeground(): () => void;                       // useIndexing
+  /** Starts loading the reranker when this tab becomes the home base, so the first request is reranked too. */
+  warmModels?(): void;
   now(): number;                                       // server time when known (70 section 3.4)
   set(patch: Partial<HomeBaseState>): void;            // store setState
   toast: ToastState['push'];
@@ -390,6 +392,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
       role = 'active';
       errorReason = undefined;
       startPresence();
+      deps.warmModels?.();
       ensureBridge();
       restartBridge();   // hello again, now with homeBase: true
       processSnapshot(recent);

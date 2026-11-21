@@ -224,10 +224,10 @@ describe('/try', () => {
       await flush();
       expect(fetchMock).toHaveBeenCalledTimes(1);
       expect(seatTexts()[0]).toBe(`${fillText(TRY.seatName, { n: 1 })}${TRY.seatInUse}`);
-      // the next check is 20 s after that one
-      await flush(HEALTH_POLL_MS - 1);
+      // the next check is 20 s after that one (the clock also moves with real time, so leave a second of room)
+      await flush(HEALTH_POLL_MS - 1000);
       expect(fetchMock).toHaveBeenCalledTimes(1);
-      await flush(1);
+      await flush(1000);
       expect(fetchMock).toHaveBeenCalledTimes(2);
     } finally {
       visibility.mockRestore();

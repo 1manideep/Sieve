@@ -32,6 +32,7 @@
     "bench:run": "cd bench && .venv/bin/python -m sieve_bench run",
     "bench:report": "cd bench && .venv/bin/python -m sieve_bench report",
     "bench:demo-client": "cd bench && .venv/bin/python -m sieve_bench demo-client",
+    "eval:search": "node bench/search-eval/run.mjs",
     "check:repo": "node scripts/check-repo.mjs",
     "check": "npm run typecheck && npm run lint && npm run test && npm run check:repo",
     "check:all": "npm run check && npm run test:rules && npm run test:functions && npm run e2e && npm run e2e:ext && npm run bench:test",

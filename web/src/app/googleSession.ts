@@ -148,6 +148,7 @@ export async function startGoogleSession(user: SessionUser): Promise<void> {
       composeOutgoingText: pipeline.composeOutgoingText,
     },
     beginForeground: () => useIndexing.getState().beginForeground(),
+    warmModels: () => void import('@/index/rerank').then((m) => m.warmupRerank(), () => undefined),
     now: () => (clock ? clock.now() : Date.now()),
     set: (patch) => useHomeBase.setState(patch),
     toast: (t) => useToasts.getState().push(t),

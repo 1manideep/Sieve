@@ -64,6 +64,8 @@ export const LABELS = {
   sourceOnly: (source: 'mail' | 'files' | 'photos') => `Searched only your ${source === 'mail' ? 'email' : source}, as the question asks`,
   categoryOnly: (names: string) => `Looked only under ${names}, as the assistant asked`,
   categoryRelaxed: (names: string) => `Too little under ${names}, so Sieve searched everything it may share`,
+  dateRelaxed: (d: { after?: string; before?: string }) =>
+    `Too little ${d.after && d.before ? (d.after === d.before ? `on ${d.after}` : `from ${d.after} to ${d.before}`) : d.after ? `from ${d.after} on` : `up to ${d.before}`}, so Sieve searched all dates and preferred those days`,
   sensitive: 'This touches a sensitive topic, so Sieve asks you first',
   newestFirst: 'Put the matches newest first, because the question asks for the latest',
   verifyYes: 'The item answers the question',

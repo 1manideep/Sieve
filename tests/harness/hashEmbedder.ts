@@ -48,7 +48,8 @@ export interface HashEmbedClient extends MlClient {
 
 export function createHashEmbedClient(): HashEmbedClient {
   const calls: HashEmbedClient['calls'] = [];
-  const statuses: Record<MlTask, MlTaskStatus> = { embed: { state: 'ready', device: 'wasm' }, pii: { state: 'idle' } };
+  // No reranker here, so every search keeps its own order (a test of the reranker brings its own client).
+  const statuses: Record<MlTask, MlTaskStatus> = { embed: { state: 'ready', device: 'wasm' }, pii: { state: 'idle' }, rerank: { state: 'failed', error: 'no reranker in the hash embedder' } };
   const listeners = new Set<(t: MlTask, s: MlTaskStatus) => void>();
   let waiters: { match: (texts: string[]) => boolean; resolve: () => void }[] = [];
   let gate: Promise<void> | null = null;

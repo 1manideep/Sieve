@@ -59,6 +59,59 @@ describe('periods, ranges and word dates (A-PQ-3)', () => {
   });
 });
 
+// The parser faults measured on Nov 21, 2026 (docs/research/local-vector-search.md section 2.1), with now = Tue Nov 17.
+describe('dates read from loose words', () => {
+  const r = (q: string) => {
+    const h = parseDates(q, NOW, 'en-US');
+    return `${h.after}..${h.before}`;
+  };
+
+  it('"in the sun" is not Sunday, and "sat" alone is not Saturday', () => {
+    expect(parseDates('picture of my kitty napping in the sun', NOW, 'en-US').interpreted).toEqual([]);
+    expect(parseDates('the photo where I sat by the lake', NOW, 'en-US').interpreted).toEqual([]);
+    // with a word in front, the short form is a weekday
+    expect(parseDates('what did I buy on sat', NOW, 'en-US').interpreted).toHaveLength(1);
+  });
+
+  it('a month and day without a year: the coming one when it is a few weeks ahead, else the past one', () => {
+    expect(r('What do I have going on December 4?')).toBe('2026-12-04..2026-12-04');
+    expect(r("What's happening on November 24?")).toBe('2026-11-24..2026-11-24');
+    expect(r('what was on March 3')).toBe('2026-03-03..2026-03-03');     // the coming one is more than 90 days ahead
+    expect(r('emails from Dec 4')).toBe('2025-12-04..2025-12-04');       // "from": the item's own date, in the past
+    expect(r('photos in December')).toBe('2026-12-01..2026-12-31');
+  });
+
+  it('a bare weekday is read both ways, from the past one to the coming one', () => {
+    expect(r('What time does my plane take off on Friday?')).toBe('2026-11-13..2026-11-20');
+    expect(r('What did Priya send about Thursday?')).toBe('2026-11-12..2026-11-19');
+    expect(r('when does my flight leave on Friday')).toBe('2026-11-20..2026-11-20');   // "leave" points ahead
+    expect(r('what did I get last Friday')).toBe('2026-11-13..2026-11-13');
+  });
+
+  it('"before the end of November" is every day up to Nov 30, from today when the question looks ahead', () => {
+    expect(r('Which bills are due before the end of November?')).toBe('2026-11-17..2026-11-30');
+    expect(r('emails before the end of November')).toBe('undefined..2026-11-30');
+    expect(r('photos from the end of October')).toBe('2026-10-21..2026-10-31');
+    expect(r('what do I need by the end of the month')).toBe('undefined..2026-11-30');
+  });
+
+  it('explicit only when the person wrote the year and the reading has one choice', () => {
+    const explicit = (q: string) => parseDates(q, NOW, 'en-US').explicit;
+    expect(explicit('What did I get paid on November 13, 2026?')).toBe(true);
+    expect(explicit('the email on 2026-03-03')).toBe(true);
+    expect(explicit('the receipt from 13/2/2026')).toBe(true);
+    expect(explicit('statements from October 2026')).toBe(true);
+    expect(explicit('from Oct 3, 2026 to Oct 10, 2026')).toBe(true);
+    expect(explicit('emails from 1-2-2026')).toBe(false);                 // the order is the locale's guess
+    expect(explicit('What do I have going on December 4?')).toBe(false);
+    expect(explicit('between march 1 and march 15')).toBe(false);
+    expect(explicit('last week')).toBe(false);
+    expect(explicit('by the end of the month')).toBe(false);
+    expect(explicit('anything this weekend')).toBe(false);
+    expect(explicit('no date here')).toBe(false);
+  });
+});
+
 describe('mentionedDays (A-PQ-5)', () => {
   it('reads the flight email of Nov 8 as December 4 and 6, 2026', () => {
     const text = 'Albatrine Air flight 1432 departs Chicago (ORD) on Friday, December 4 at 7:45 AM and arrives in Seattle (SEA) at 10:20 AM. Seat 14C.\nReturn: flight 1489 departs Seattle (SEA) on Sunday, December 6 at 6:10 PM.';

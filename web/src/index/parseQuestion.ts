@@ -16,6 +16,8 @@ import { correctQuery } from './typos';
  */
 export interface ParsedQuestion {
   normalized: string; corrected: string; hints: QueryHints; searchText?: string; sender?: string; only?: QueryHints['source'];
+  /** The question's dates were written out with their year (dates.ts DateHint.explicit): search may filter by them. */
+  datesExplicit?: boolean;
 }
 
 const SOURCE_WORDS: [NonNullable<QueryHints['source']>, string[]][] = [
@@ -115,6 +117,7 @@ export function parseQuestion(question: string, now: Date, locale: string, opts?
   if (terms.length > 0) hints.terms = terms;
   if (dates.interpreted.length > 0) hints.interpreted = dates.interpreted;
   const out: ParsedQuestion = { normalized, corrected, hints };
+  if (dates.explicit) out.datesExplicit = true;
   if (only) out.only = only;
   // photos have no sender: "photos from Hawaii" names a place
   const sender = source === 'photos' ? undefined : senderCue(corrected, rt ? knownSenderWordsOf(rt.meta) : undefined);

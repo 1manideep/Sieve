@@ -1,6 +1,6 @@
 // The page side of the ML worker (20 section 6.3): one worker per page, init per task, priorities, recovery.
 import { EMBEDDING_MODEL } from '@sieve/shared';
-import type { FromMl, MlDevice, MlInitErrorCode, MlPriority, MlTask, ToMl } from './protocol';
+import { RERANK_MODEL, type FromMl, type MlDevice, type MlInitErrorCode, type MlPriority, type MlTask, type ToMl } from './protocol';
 
 export interface MlTaskStatus { state: 'idle' | 'loading' | 'ready' | 'failed'; device?: MlDevice; progress?: number; loadMs?: number; error?: string }
 
@@ -19,7 +19,7 @@ export class MlUnavailableError extends Error {
 }
 
 /** Cache folders per task, cleared before the one retry after a failed WASM load. */
-const MODEL_FOLDERS: Record<MlTask, string> = { embed: EMBEDDING_MODEL, pii: 'rampart-b1993e4' };
+const MODEL_FOLDERS: Record<MlTask, string> = { embed: EMBEDDING_MODEL, pii: 'rampart-b1993e4', rerank: RERANK_MODEL };
 
 export interface WorkerLike {
   postMessage(msg: ToMl, transfer?: Transferable[]): void;
@@ -74,6 +74,7 @@ export function createWorkerMlClient(makeWorker: () => WorkerLike, opts?: { now?
   const tasks: Record<MlTask, TaskState> = {
     embed: { status: { state: 'idle' }, ready: null, wasmRetried: false },
     pii: { status: { state: 'idle' }, ready: null, wasmRetried: false },
+    rerank: { status: { state: 'idle' }, ready: null, wasmRetried: false },
   };
   const pending = new Map<number, Pending>();
   let nextId = 1;
@@ -252,7 +253,7 @@ export function createWorkerMlClient(makeWorker: () => WorkerLike, opts?: { now?
 
 let client: MlClient | null = null;
 
-/** One worker per page (A-ML-4: the embed and PII tasks share it). */
+/** One worker per page (A-ML-4: the embed, PII and rerank tasks share it). */
 export function getMl(): MlClient {
   client ??= createWorkerMlClient(
     () => new Worker(new URL('./ml.worker.ts', import.meta.url), { type: 'module' }) as unknown as WorkerLike,

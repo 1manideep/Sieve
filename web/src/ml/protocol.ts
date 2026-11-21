@@ -1,6 +1,6 @@
 // Messages between the page and the one on-device ML worker (20 section 6.1).
 
-export type MlTask = 'embed' | 'pii';
+export type MlTask = 'embed' | 'pii' | 'rerank';
 export type MlDevice = 'webgpu' | 'wasm';
 export type MlPriority = 'foreground' | 'background';
 
@@ -34,3 +34,28 @@ export class MlInitError extends Error {
 /** The embedding task's input and output (20 section 6.4). */
 export interface EmbedInput { texts: string[] }                                   // at most EMBED_BATCH
 export interface EmbedOutput { dims: number; count: number; data: Float32Array }  // count x dims, row-major, L2-normalized
+
+/** The cross-encoder behind the reranker (rerank.task.ts), served from /models/ like the embedder. */
+export const RERANK_MODEL = 'Xenova/ms-marco-MiniLM-L-6-v2';
+/**
+ * One passage's cost before a device has been measured, at rerank.task.ts's token caps: an M2 in Chrome,
+ * Nov 21, 2026 (WebGPU fp16 at 320 tokens, one WASM thread q8 at 192).
+ */
+export const RERANK_DEFAULT_MS_PER_PASSAGE: Record<MlDevice, number> = { webgpu: 12, wasm: 115 };
+
+/** The reranker task's input: one question, the passages in the order the search gave them. */
+export interface RerankInput {
+  query: string;
+  passages: string[];
+  /** Wall-clock time (Date.now()) by which the task stops starting new batches, so a late or slow run ends early. */
+  deadline?: number;
+}
+
+/** Scores for the first scores.length passages (higher is more relevant); fewer than given when the deadline came. */
+export interface RerankOutput {
+  scores: number[];
+  /** Time spent scoring inside the worker, without the wait behind other jobs. */
+  computeMs: number;
+  /** The task's estimate of one passage's cost on this device, after this run. */
+  msPerPassage: number;
+}

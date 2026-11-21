@@ -35,6 +35,19 @@ const MODELS = [
     },
     attribution: ['README.md'],   // Apache-2.0 model card travels with the weights (20 section 6.5)
   },
+  {
+    // The reranker (web/src/ml/rerank.task.ts): fp16 for WebGPU, q8 for WASM; a browser downloads only the one it runs.
+    dir: 'models/Xenova/ms-marco-MiniLM-L-6-v2',
+    base: 'https://huggingface.co/Xenova/ms-marco-MiniLM-L-6-v2/resolve/a09144355adeed5f58c8ed011d209bf8ee5a1fec',
+    files: {
+      'config.json': [824, 'd827779a72d27ae68cf878a6fc2e954542663fe21ca515d9f4783fc96be2d37e'],
+      'tokenizer.json': [711396, 'd241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66'],
+      'tokenizer_config.json': [1242, '0b29c7bfc889e53b36d9dd3e686dd4300f6525110eaa98c76a5dafceb2029f53'],
+      'onnx/model_fp16.onnx': [45609313, 'a8b79f5c22bc717c0082cb30424365f59d6689b86cfa0c4b293832acf158c66f'],
+      'onnx/model_quantized.onnx': [23143499, 'e9d8ebf845c413e981c175bfe49a3bfa9b3dcce2a3ba54875ee5df5a58639fbe'],
+    },
+    attribution: ['README.md'],   // a conversion of cross-encoder/ms-marco-MiniLM-L-6-v2 (Apache-2.0)
+  },
 ];
 const ORT = ['ort-wasm-simd-threaded.jsep.mjs', 'ort-wasm-simd-threaded.jsep.wasm'];
 

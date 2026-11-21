@@ -10,7 +10,7 @@ import { fakeDb } from '@/ai/__tests__/fakeDb';
 import { BODIES, RECORDS, record } from '@/ai/__tests__/fixtures';
 import { clearCloudConsentRequestsForTests, getCloudConsentRequest, grantCloudConsent } from '../consent';
 import { finalizeDecision } from '../finalizeDecision';
-import { prepareProposal } from '../prepareProposal';
+import { LATEST_RELEVANT, latestOrder, prepareProposal } from '../prepareProposal';
 import type { PipelineProgress, PrepareInput } from '../types';
 import * as idx from './mocks/index';
 import * as privacy from './mocks/privacy';
@@ -331,15 +331,52 @@ describe('prepareProposal (10 section 16.10)', () => {
   });
 
   it('PP-19: spelling fixes and ambiguous dates are shown, and search uses the corrected text and hints', async () => {
-    const hints = { after: '2026-01-02', before: '2026-01-02', interpreted: [{ text: '1-2-2026', as: '2026-01-02', ambiguous: true }] };
+    const hints = { after: '2026-01-02', before: '2026-01-02', terms: ['TPM-3B'], interpreted: [{ text: '1-2-2026', as: '2026-01-02', ambiguous: true }] };
     idx.parseQuestion.mockReturnValue({ normalized: 'depost landlord', corrected: 'deposit landlord', hints });
     idx.search.mockResolvedValue([idx.cand('playground:deposit')]);
     const p = await run({ question: 'depost landlord 1-2-2026' });
     expect(idx.search.mock.calls[0][1]).toBe('deposit landlord');
-    expect(idx.search.mock.calls[0][2]).toMatchObject({ hints });
+    // the dates stay with search, which reads them from the question; a guessed order only ranks (Nov 21, 2026)
+    expect(idx.search.mock.calls[0][2]).toMatchObject({ hints: { terms: ['TPM-3B'] } });
+    expect((idx.search.mock.calls[0][2] as { hints: object }).hints).not.toHaveProperty('after');
     expect(labels(p)).toContain('Searched for "deposit landlord" (spelling fixed on this device)');
     expect(labels(p)).toContain('Read "1-2-2026" as 2026-01-02. It could mean another date; check the result.');
-    expect(promptText(selectCalls()[0].parts)).toContain('The person means items dated from 2026-01-02 to 2026-01-02.');
+    expect(promptText(selectCalls()[0].parts)).not.toContain('The person means items dated');
+  });
+
+  it('PP-19b: a date written out with its year reaches the answer step; search still reads it from the question', async () => {
+    const hints = { after: '2026-11-13', before: '2026-11-13', interpreted: [{ text: 'November 13, 2026', as: '2026-11-13', ambiguous: false }] };
+    idx.parseQuestion.mockReturnValue(Object.assign({ normalized: 'deposit on November 13, 2026', corrected: 'deposit on November 13, 2026', hints }, { datesExplicit: true }));
+    idx.search.mockResolvedValue([idx.cand('playground:deposit')]);
+    await run({ question: 'deposit on November 13, 2026' });
+    expect((idx.search.mock.calls[0][2] as { hints: object }).hints).not.toHaveProperty('after');
+    expect(promptText(selectCalls()[0].parts)).toContain('The person means items dated from 2026-11-13 to 2026-11-13.');
+  });
+
+  it('search gets a few spare candidates and the person\'s rules; a date filter it dropped is in the trace', async () => {
+    idx.search.mockImplementation(async (_db, _q, o) => {
+      (o as { onReport?: (r: unknown) => void }).onReport?.({ dateRelaxed: { after: '2026-01-02', before: '2026-01-02' } });
+      return [idx.cand('playground:deposit')];
+    });
+    const p = await run({ question: 'What did my landlord say about the deposit?', requester: OUTSIDE, hints: { after: '2026-01-02', before: '2026-01-02' } });
+    const opts = idx.search.mock.calls[0][2] as { k: number; ruleOf: (c: string) => string; hints: object };
+    expect(opts.k).toBe(10);
+    expect(opts.ruleOf('Health')).toBe('never');
+    expect(opts.hints).toEqual({ after: '2026-01-02', before: '2026-01-02' });     // an outside assistant's dates go as sent
+    expect(labels(p)).toContain('Too little on 2026-01-02, so Sieve searched all dates and preferred those days');
+  });
+
+  it('"the latest" sorts only the best matches by date: an unrelated newer item does not go first', () => {
+    const at = (id: string, day: number) => ({ rec: record({ id: `playground:${id}`, title: id, date: Date.parse(`2026-11-${String(day).padStart(2, '0')}T09:00:00-06:00`) }) });
+    const idsOf = (list: { rec: IndexRecord }[]) => list.map((x) => x.rec.title);
+    // the order search gave for "What's my newest work email?": three work emails, then the newer neighborhood digest
+    const ranked = [at('work-a', 12), at('work-b', 10), at('work-c', 9), at('digest', 15)];
+    expect(LATEST_RELEVANT).toBe(3);
+    expect(idsOf(latestOrder(ranked, undefined))).toEqual(['work-a', 'work-b', 'work-c', 'digest']);
+    expect(idsOf(latestOrder([at('older', 3), at('newer', 13), at('other', 1)], undefined))).toEqual(['newer', 'older', 'other']);
+    // with a sender filter every candidate fits, so all of them go newest first, the newest five
+    const six = [3, 13, 1, 9, 12, 7].map((d) => at(`ramki-${d}`, d));
+    expect(idsOf(latestOrder(six, { sender: 'Ramki' }))).toEqual(['ramki-13', 'ramki-12', 'ramki-9', 'ramki-7', 'ramki-3']);
   });
 
   it('PP-20: progress events arrive in order, and every step-end matches a step-start', async () => {

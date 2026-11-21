@@ -27,9 +27,39 @@ export const DEFAULT_CHUNK_WORDS = CHUNK_WORDS;
 export const SEARCH_FINGERPRINT = 'kw1|chunk' + CHUNKER_VERSION + '|' + EMBEDDING_MODEL;
 
 // Search
-export const GMAIL_LIVE_K = 2;                    // live Gmail ids added after vector and keyword hits
-export const MAX_PER_THREAD = 2;
+export const GMAIL_LIVE_K = 2;                    // live Gmail ids that join the fused list
+// 3, not 2, since the cap moved from the vector list to the fused one (Nov 21, 2026): at 2 the landlord's deposit reply,
+// third in its thread, left the list it used to reach through the keyword extras; 3 of 7 slots still leaves 4 for others.
+export const MAX_PER_THREAD = 3;
 export const BOOST = { dateRecord: 0.06, dateMentioned: 0.05, source: 0.04, from: 0.08, term: 0.10, recency: 0.02, latest: 0.06 } as const;
+/**
+ * Fusion (docs/research/local-vector-search.md section 5.1): the best `retrieveK` records by vector and by keyword,
+ * combined by weighted reciprocal rank fusion, score = sum of weight / (rrfK + rank), scaled so vector rank 1 is 1.0.
+ * The BOOST values are then added, times `boostScale`. `exactKeywordWeight` replaces `keywordWeight` when the question
+ * holds a number, an id or a quoted phrase, so an exact match can outrank weak meaning hits. `rerankBlend` is how much
+ * the fused rank still counts once the reranker has ordered the top candidates.
+ *
+ * Measured Nov 21, 2026 with bench/search-eval (70 questions; the 46 seed items, and those plus 1,974 distractor
+ * emails), first with no reranker, the case every device starts in: the order this gives scored MRR 0.844 and 0.767
+ * against 0.747 and 0.592 before, while plain RRF (k 60, equal weights, no boosts) scored 0.767 and 0.534 and the
+ * vector order alone 0.781 and 0.545. A small rrfK keeps the vector order's top ranks apart; a boostScale of 8 gives
+ * the boosts about the pull they had on cosine scores (8 to 16 scored the same, 1 to 4 lower). rerankBlend 0.5 beat 0,
+ * 1 and 2 with the app's reranker on 12 and on 20 passages. The offline eval may change these to compare settings;
+ * the app never does.
+ */
+export const SEARCH_TUNING = {
+  retrieveK: 50,
+  rrfK: 5,
+  vectorWeight: 1,
+  keywordWeight: 0.5,
+  exactKeywordWeight: 1,
+  liveWeight: 0.5,
+  boostScale: 8,
+  maxPerThread: MAX_PER_THREAD,
+  rerankBlend: 0.5,
+};
+/** At most this many characters of a candidate's passage go to the reranker. */
+export const RERANK_TEXT_CHARS = 1_000;
 export const REASON_MAX_CHARS = 90;
 export const RELATED_MIN_COSINE = 0.5;
 

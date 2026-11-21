@@ -43,6 +43,33 @@ describe('the worker host (A-ML-2)', () => {
     expect(out.filter((m) => m.kind === 'result').map((m) => (m as { id: number }).id)).toEqual([1, 99, 2, 3, 4]);
   });
 
+  it('holds background jobs after a foreground job, for the same question\'s next one', async () => {
+    const order: string[] = [];
+    const handler: AnyHandler = {
+      async init() {},
+      async run(input) {
+        order.push(String((input as { tag: string }).tag));
+        return { output: input };
+      },
+    };
+    const out: FromMl[] = [];
+    let clock = 0;
+    const host = createMlHost({ embed: handler, rerank: handler }, (m) => out.push(m), { hasWebGpu: async () => false, now: () => clock, foregroundHoldMs: 40 });
+    host.handle({ kind: 'init', task: 'embed', device: 'wasm' });
+    host.handle({ kind: 'init', task: 'rerank', device: 'wasm' });
+    await vi.waitFor(() => expect(out.filter((m) => m.kind === 'ready')).toHaveLength(2));
+    host.handle({ kind: 'run', id: 1, task: 'embed', priority: 'foreground', input: { tag: 'question' } });
+    host.handle({ kind: 'run', id: 2, task: 'embed', priority: 'background', input: { tag: 'batch' } });
+    await vi.waitFor(() => expect(order).toEqual(['question']));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(order).toEqual(['question']);   // the batch waits
+    host.handle({ kind: 'run', id: 3, task: 'rerank', priority: 'foreground', input: { tag: 'rerank' } });
+    await vi.waitFor(() => expect(order).toEqual(['question', 'rerank']));
+    clock += 41;   // the hold after the rerank ends
+    await host.idle();
+    expect(order).toEqual(['question', 'rerank', 'batch']);
+  });
+
   it('reports no-webgpu, missing tasks and probe failures as init errors', async () => {
     const out: FromMl[] = [];
     const host = createMlHost({ embed: { init: async () => { throw new MlInitError('probe-failed', 'bad'); }, run: async () => ({ output: null }) } }, (m) => out.push(m), { hasWebGpu: async () => false });
