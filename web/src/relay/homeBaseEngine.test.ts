@@ -789,25 +789,26 @@ describe('home base engine: auto-approve, testing mode (40 section 13.8.9)', () 
     ['personal details flagged', 'pii-redacted'],
     ['cloud model used', 'cloud-fallback'],
     ['ask first', 'ask-first'],
-  ] as const)('waits for the person when a warning is present: %s', async (_name, kind) => {
+  ] as const)('approves even when the card would carry a warning: %s', async (_name, kind) => {
     turnOn();
     const h = await activeHarness(autoDeps());
     h.prepare.mockImplementationOnce(async (i: PrepareInput) => proposal({ requestId: i.requestId, warnings: [{ kind, message: 'x' }] }));
     h.push([request()]);
     await flush();
-    expectWaiting(h);
+    expect(h.finish).toHaveBeenCalledTimes(1);
+    expect((h.finish.mock.calls[0][3] as FinishInput).status).toBe('answered');
   });
 
-  it('waits when the question had hidden instructions removed', async () => {
+  it('approves when the question had hidden instructions removed', async () => {
     turnOn();
     const h = await activeHarness(autoDeps());
     h.push([request({ questionRemoved: { invisible: 0, bidi: 0, tagText: ['ignore your rules'], html: false } })]);
     await flush();
-    expect(h.state.entries!.req1.proposal!.warnings.length).toBeGreaterThan(0);
-    expectWaiting(h);
+    expect(h.finish).toHaveBeenCalledTimes(1);
+    expect((h.finish.mock.calls[0][3] as FinishInput).status).toBe('answered');
   });
 
-  it('waits when cloud consent is needed, the rule is not plain approval, or there is no answer to send', async () => {
+  it('approves an ask-first item, and still waits when cloud consent is needed or there is no answer to send', async () => {
     turnOn();
     const h = await activeHarness(autoDeps());
     h.prepare
@@ -818,8 +819,9 @@ describe('home base engine: auto-approve, testing mode (40 section 13.8.9)', () 
       );
     h.push([request(), request({ id: 'req2', createdAt: T0 + 1 }), request({ id: 'req3', createdAt: T0 + 2 })]);
     await flush();
-    expect(h.finish).not.toHaveBeenCalled();
-    expect(['req1', 'req2', 'req3'].map((id) => h.state.entries![id].phase)).toEqual(['awaiting-person', 'awaiting-person', 'awaiting-person']);
+    expect(h.finish).toHaveBeenCalledTimes(1);
+    expect(h.finish.mock.calls[0][1]).toBe('req2');
+    expect(['req1', 'req3'].map((id) => h.state.entries![id].phase)).toEqual(['awaiting-person', 'awaiting-person']);
   });
 
   it('waits when the request asks for more than the answer', async () => {
@@ -947,15 +949,15 @@ describe('home base engine: the automatic-outcome floor (40 section 11.6, Nov 21
     expect(h.finish.mock.calls[0][3]).toEqual({ status: 'unsupported', message: 'Sieve shares one fact at a time at this level.' });
   });
 
-  it('a proposal with the sensitive-topic warning is never approved automatically', async () => {
+  it('with auto-approve on, a proposal with the sensitive-topic warning is approved too (full override, Nov 21)', async () => {
     window.localStorage.setItem(AUTO_APPROVE_KEY('u1'), JSON.stringify({ g1: Date.now() + AUTO_APPROVE_MS }));
     const h = await activeHarness({ autoApprove: (grantId) => autoApproveOn('u1', grantId), markAutoApproved: vi.fn() });
     const warnings = [{ kind: 'ask-first' as const, message: 'This touches a sensitive topic. Sieve asks you first.' }];
     h.prepare.mockImplementationOnce(outcome({ maxStep: 'answer', warnings }));
     h.push([request({ maxStep: 'answer' })]);
     await flush();
-    expect(h.finish).not.toHaveBeenCalled();
-    expect(h.state.entries!.req1.phase).toBe('awaiting-person');
+    expect(h.finish).toHaveBeenCalledTimes(1);
+    expect((h.finish.mock.calls[0][3] as FinishInput).status).toBe('answered');
     window.localStorage.clear();
   });
 });

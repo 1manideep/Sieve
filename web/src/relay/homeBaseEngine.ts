@@ -153,17 +153,16 @@ function reasonForSendBlock(code: SendBlock): DecideResultReason {
 }
 
 /**
- * 40 section 13.8.9: only a clean answer is approved without the person. Ready, the answer step (asked for, or the
- * cap), the "Share with approval" rule, no warning of any kind (hidden instructions, personal details, cloud, ask
- * first), and an answer to send. decide() then runs every check a click would.
+ * 40 section 13.8.9: with auto-approve on for a connection, every ready answer is approved without the person,
+ * whatever the item's category rule and whatever warnings the card would show (Nov 21, 2026: the person asked for a
+ * full override while testing). It stays the answer step only (asked for, or the cap) and needs an answer to send.
+ * decide() then runs every check a click would, so a "Never share" item and unmasked personal details are still held.
  */
 function autoApprovable(req: RelayRequestView, p: Proposal): boolean {
   const answer = p.options[0];
   return (
     p.outcome === 'ready' &&
     (req.requestedStep === 'answer' || req.maxStep === 'answer') &&
-    p.rule === 'approve' &&
-    p.warnings.length === 0 &&
     answer?.step === 'answer' &&
     answer.available &&
     answer.text.trim() !== ''
