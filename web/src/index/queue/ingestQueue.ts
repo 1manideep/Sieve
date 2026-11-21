@@ -430,11 +430,16 @@ function createIngestQueue(db: SieveDb): IngestQueue {
           passMarks.delete(row.kind);
           done = total;
         }
+        // Not searchable yet: still to be read by the source job, or waiting for its first embedding. An item that
+        // is embedded again (a new label, a body that arrived) keeps its old vector until then, so it stays findable.
+        let firstEmbeds = 0;
+        if (left > 0) for (const id of pendingIds('embed')) if (sourceOf(id) === row.kind && !rt.vectors.has(id)) firstEmbeds++;
+        const searchLeft = left > 0 ? Math.min(left, (sync?.remaining ?? 0) + firstEmbeds) : undefined;
         const etaMs = (sync?.etaMs ?? 0) + (left > 0 ? eta : 0);
         const { stage, stageCount }: { stage?: IndexingStage; stageCount?: number } = left > 0 ? rowStage(row.kind) : {};
         const counting = sync?.listing === true ? true : undefined;
-        if (row.progress.done !== done || row.progress.total !== total || row.etaMs !== etaMs || row.stage !== stage || row.stageCount !== stageCount || row.counting !== counting) {
-          const patch: Partial<SourceRow> = { progress: { done, total }, etaMs, stage, stageCount, counting };
+        if (row.progress.done !== done || row.progress.total !== total || row.etaMs !== etaMs || row.stage !== stage || row.stageCount !== stageCount || row.counting !== counting || row.searchLeft !== searchLeft) {
+          const patch: Partial<SourceRow> = { progress: { done, total }, etaMs, stage, stageCount, counting, searchLeft };
           await db.sources.update(row.kind, patch);
         }
       }

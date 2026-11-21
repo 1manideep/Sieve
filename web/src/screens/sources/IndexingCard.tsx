@@ -1,6 +1,6 @@
-// IndexingCard (40 section 13.6; F5): background indexing on this device, from useIndexing, as one glass row. It
-// says what Sieve works on now (20 section 13.5: reading files, then sorting, the search index, the personal-details
-// check and photo descriptions, one at a time) and why it is paused (the person, or the battery).
+// IndexingCard (40 section 13.6; two stages since Nov 21, 2026): indexing on this device, from useIndexing. First
+// it counts the items that can be searched; once all can, it says "Ready to ask" and shows Gemini Nano's sorting,
+// the personal-details check and the photo captions as background work. It also says why it is paused.
 import { useShallow } from 'zustand/shallow';
 import { Button } from '@/components/Button/Button';
 import { Icon } from '@/components/icons';
@@ -47,12 +47,35 @@ export function activityText(activity: IndexingActivity): string {
   }
 }
 
-/** `resume`: the card's own Resume for the battery pause. `plain`: no card around it (inside the Sources panel). */
+/** What the background stage is doing, once everything is searchable. */
+export function backgroundText(activity: IndexingActivity | undefined): string {
+  const n = activity?.count ?? 0;
+  switch (activity?.stage) {
+    case 'label':
+      return n === 1 ? SOURCES.bgLabelOne : n > 1 ? fillText(SOURCES.bgLabel, { n: formatCount(n) }) : SOURCES.bgWork;
+    case 'caption':
+      return n === 1 ? SOURCES.bgCaptionOne : n > 1 ? fillText(SOURCES.bgCaption, { n: formatCount(n) }) : SOURCES.bgWork;
+    case 'privacy':
+      return SOURCES.bgPrivacy;
+    case 'embed':
+      return SOURCES.bgEmbed;
+    default:
+      return SOURCES.bgWork;
+  }
+}
+
+/**
+ * Two stages. While items are still being read and embedded the card says "Indexing" and counts the items that can
+ * be searched. Once every item can be searched it says "Ready to ask", and Gemini Nano's sorting, the
+ * personal-details check and the photo captions show as background work with their own bar.
+ * `resume`: the card's own Resume for the battery pause. `plain`: no card around it (inside the Sources panel).
+ */
 export function IndexingCard({ lastSyncAt, resume = true, plain = false }: { lastSyncAt?: number; resume?: boolean; plain?: boolean }) {
   const frame = plain ? styles.indexingPlain : `${kit.glassSm} ${styles.indexing}`;
-  const { state, pausedBy, left, done, total, fraction, etaMs, activity, counting } = useIndexing(
+  const { state, pausedBy, left, done, total, fraction, etaMs, activity, counting, ready, searchLeft, searchFraction } = useIndexing(
     useShallow((s) => ({
       state: s.state, pausedBy: s.pausedBy, left: s.left, done: s.done, total: s.total, fraction: s.fraction, etaMs: s.etaMs, activity: s.activity, counting: s.counting,
+      ready: s.ready, searchLeft: s.searchLeft, searchFraction: s.searchFraction,
     })),
   );
 
@@ -77,34 +100,66 @@ export function IndexingCard({ lastSyncAt, resume = true, plain = false }: { las
     );
   }
 
-  const title = state === 'paused' ? SOURCES.pausedTitle : SOURCES.runningTitle;
-  const valueText = fillText(SOURCES.indexingLabel, { done: formatCount(done), total: formatCount(total) });
   const battery = state === 'paused' && pausedBy === 'battery';
+  const resumeButton =
+    battery && resume ? (
+      <div className={styles.buttons}>
+        <Button variant="secondary" size="sm" onClick={() => useIndexing.getState().resumeOnBattery()}>
+          {SOURCES.batteryResume}
+        </Button>
+      </div>
+    ) : null;
+
+  if (ready) {
+    let text: string;
+    if (battery) text = SOURCES.batteryText;
+    else if (state === 'paused') text = fillText(SOURCES.bgPausedText, { left: formatCount(left) });
+    else if (state === 'yielding') text = SOURCES.yieldingText;
+    else if (etaMs !== undefined) text = fillText(SOURCES.bgText, { done: formatCount(done), total: formatCount(total), eta: formatEta(etaMs) });
+    else text = fillText(SOURCES.bgLeft, { left: formatCount(left) });
+    return (
+      <section className={frame} aria-labelledby="indexing-card-title">
+        <h2 id="indexing-card-title" className={styles.cardTitle}>
+          <span className={styles.check}>
+            <Icon name="check" size={18} />
+          </span>
+          {SOURCES.readyTitle}
+        </h2>
+        <p className={styles.text}>{fillText(SOURCES.readyText, { total: formatCount(total) })}</p>
+        <p className={styles.stage}>{backgroundText(activity)}</p>
+        <ProgressBar value={total > 0 ? fraction : undefined} label={SOURCES.bgProgressLabel} valueText={fillText(SOURCES.indexingLabel, { done: formatCount(done), total: formatCount(total) })} />
+        <p className={styles.text}>{text}</p>
+        {state === 'running' ? <p className={styles.meta}>{SOURCES.bgSub}</p> : null}
+        {resumeButton}
+      </section>
+    );
+  }
+
+  // Not everything is searchable yet. `searchLeft` is 0 only while a source is still counting (or on a row an older
+  // queue wrote): then the overall numbers stand in.
+  const toSearch = searchLeft > 0 ? searchLeft : left;
+  const searchable = Math.max(0, total - toSearch);
+  const title = state === 'paused' ? SOURCES.pausedTitle : SOURCES.runningTitle;
+  const valueText = fillText(SOURCES.searchValue, { done: formatCount(searchable), total: formatCount(total) });
   let text: string;
   if (battery) text = SOURCES.batteryText;
-  else if (state === 'paused') text = fillText(SOURCES.pausedText, { left: formatCount(left) });
+  else if (state === 'paused') text = fillText(SOURCES.pausedText, { left: formatCount(toSearch) });
   else if (state === 'yielding') text = SOURCES.yieldingText;
-  else if (counting) text = fillText(SOURCES.runningSoFar, { done: formatCount(done), total: formatCount(total) });
+  else if (counting) text = fillText(SOURCES.runningSoFar, { done: formatCount(searchable), total: formatCount(total) });
   else if (etaMs !== undefined)
-    text = fillText(SOURCES.runningText, { done: formatCount(done), total: formatCount(total), eta: formatEta(etaMs) });
-  else text = fillText(SOURCES.runningLeft, { left: formatCount(left) });
+    text = fillText(SOURCES.runningText, { done: formatCount(searchable), total: formatCount(total), eta: formatEta(etaMs) });
+  else text = fillText(SOURCES.runningLeft, { left: formatCount(toSearch) });
 
   return (
     <section className={frame} aria-labelledby="indexing-card-title">
       <h2 id="indexing-card-title" className={styles.cardTitle}>
         {title}
       </h2>
-      <ProgressBar value={total > 0 ? fraction : undefined} label={SOURCES.progressLabel} valueText={valueText} />
+      <ProgressBar value={total > 0 ? (searchLeft > 0 ? searchFraction : fraction) : undefined} label={SOURCES.progressLabel} valueText={valueText} />
       {state === 'running' && activity ? <p className={styles.stage}>{activityText(activity)}</p> : null}
       <p className={styles.text}>{text}</p>
       {state === 'running' ? <p className={styles.meta}>{SOURCES.runningSub}</p> : null}
-      {battery && resume ? (
-        <div className={styles.buttons}>
-          <Button variant="secondary" size="sm" onClick={() => useIndexing.getState().resumeOnBattery()}>
-            {SOURCES.batteryResume}
-          </Button>
-        </div>
-      ) : null}
+      {resumeButton}
     </section>
   );
 }

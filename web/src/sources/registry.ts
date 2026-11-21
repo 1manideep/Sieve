@@ -18,7 +18,7 @@ import { scanFolder, setFolderPaused, startFolderTimers, stopFolderTimers } from
 import { GmailAuthError, getProfile } from './gmail/api';
 import {
   adoptGmailToken, clearGmailToken, currentGmailToken, getGmailToken, isUsableGmailToken, preloadGis, rejectedGmailTokens,
-  requestGmailToken, revokeGmailToken, watchGoogleSignOut,
+  requestGmailToken, revokeGmailToken,
 } from './gmail/auth';
 import { renewTargetDb, setRenewTarget } from './gmail/renew';
 import { runGmailSync, setGmailPaused, startGmailTimers, stopGmailSync, syncAfterNewToken } from './gmail/sync';
@@ -92,11 +92,10 @@ function watchGmailRow(db: SieveDb): void {
     next: (row) => onGmailRow(db, watch, row),
     error: () => undefined,   // the database is closing
   });
-  // Signed out of Sieve (in any tab): Google is told to revoke the Gmail token, and this tab and the row forget it.
-  const offSignOut = watchGoogleSignOut(() => void revokeGmailAccess(db).catch(() => undefined));
+  // Signing out of Sieve keeps the Gmail access on this computer (Nov 21, 2026): the index stays, and signing in
+  // again with the same account goes on where it stopped. Disconnect and Delete my account still revoke it.
   getRuntime(db).stoppers.add(() => {
     sub.unsubscribe();
-    offSignOut();
     rowWatches.delete(db);
     if (renewTargetDb() === db) setRenewTarget(null);
   });
@@ -333,15 +332,22 @@ export async function connectGmail(db: SieveDb): Promise<void> {
   wireGmailEvents(db);
   const { accessToken: _old, ...before } = ((await db.sources.get('gmail')) ?? EMPTY_ROW('gmail')) as GmailRow;
   await db.sources.put({ ...before, phase: 'listing', error: undefined, errorCode: undefined });
+  let resumed: boolean;
   try {
     await tokenP;
     const profile = await getProfile('interactive');
     lastAccount.set(db, profile.emailAddress);
     const accessToken = db.sieveKind === 'real' ? currentGmailToken() ?? undefined : undefined;
-    const row: GmailRow = {
-      kind: 'gmail', connected: true, account: profile.emailAddress, cursor: profile.historyId,
-      progress: { done: 0, total: 0 }, paused: false, needsAuth: false, phase: 'listing', ...(accessToken ? { accessToken } : {}),
-    };
+    // The same account, already indexed here: keep its place (the history cursor, the progress, the last sync) and
+    // read only what changed, instead of listing the mailbox again and counting from zero.
+    resumed = before.connected === true && before.account === profile.emailAddress && Boolean(before.cursor)
+      && (await db.records.where('source').equals('gmail').count()) > 0;
+    const row: GmailRow = resumed
+      ? { ...before, kind: 'gmail', connected: true, paused: false, needsAuth: false, phase: before.phase === 'listing' ? 'idle' : before.phase, error: undefined, errorCode: undefined, ...(accessToken ? { accessToken } : {}) }
+      : {
+          kind: 'gmail', connected: true, account: profile.emailAddress, cursor: profile.historyId,
+          progress: { done: 0, total: 0 }, paused: false, needsAuth: false, phase: 'listing', ...(accessToken ? { accessToken } : {}),
+        };
     await db.sources.put(row);
   } catch (e) {
     await db.sources.put({ ...before, ...errorOf(e) });
@@ -350,7 +356,7 @@ export async function connectGmail(db: SieveDb): Promise<void> {
   void requestPersistence();
   await startSources(db);
   if (isLeader(db)) {
-    void runGmailSync(db, 'backfill').catch(() => undefined);
+    void runGmailSync(db, resumed ? 'auto' : 'backfill').catch(() => undefined);
     startGmailTimers(db);
   }
 }

@@ -1,6 +1,6 @@
 // The Gmail token on this computer (20 section 15.1, Nov 20): kept on the real Gmail row for its lifetime and shared
 // by every tab, read on start and before every sync, renewed inside the person's own clicks (Google Identity Services
-// only), and cleared on a 401, on expiry, on sign-out and on disconnect. With FakeGmail and the fake sign-in script.
+// only), and cleared on a 401, on expiry and on disconnect; signing out of Sieve keeps it (Nov 21, 2026). With FakeGmail and the fake sign-in script.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeGmail } from '../../../../tests/harness/fakeGmail';
 import { installFakeGis } from '../../../../tests/harness/fakeGis';
@@ -182,16 +182,32 @@ describe('the token is kept on this computer and shared by every tab', () => {
     }
   });
 
-  it('signing out of Sieve revokes the token at Google and clears it in memory and on the row', async () => {
+  it('signing out of Sieve keeps the Gmail access on this computer (Nov 21, 2026)', async () => {
     await connect();
     const token = gmail.token;
-    const listener = fakeAuth.onAuthStateChanged.mock.calls.at(-1)?.[1];
-    expect(listener).toBeTypeOf('function');
     fakeAuth.setFakeAuthUser(null);
-    listener?.(null);
-    await until(async () => keptToken(await db.sources.get('gmail')) === null);
-    expect(getGmailToken()).toBeNull();
-    expect(gis.revoked).toContain(token);
+    for (const call of fakeAuth.onAuthStateChanged.mock.calls) (call[1] as ((user: null) => void) | undefined)?.(null);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(keptToken(await db.sources.get('gmail'))).toBe(token);
+    expect(getGmailToken()).toBe(token);
+    expect(gis.revoked).not.toContain(token);
+  });
+
+  it('connecting again the account that is already indexed keeps its place: no new listing, no count from zero', async () => {
+    await connect();
+    const before = await db.sources.get('gmail');
+    expect(before?.progress.total).toBe(1);
+    const listings = () => gmail.calls.filter((c) => /messages\?/.test(c) && !/history/.test(c)).length;
+    const listed = listings();
+    await connectGmail(db);
+    await runGmailSync(db);
+    await peekQueue(db)?.whenIdle();
+    const after = await db.sources.get('gmail');
+    expect(after?.progress).toEqual(before?.progress);
+    expect(after?.reconciledAt).toBe(before?.reconciledAt);
+    expect(after?.connected).toBe(true);
+    expect(listings()).toBe(listed);                 // only the history since the cursor was read
+    expect(await db.records.where('source').equals('gmail').count()).toBe(1);
   });
 
   it('disconnect revokes and clears the stored token', async () => {

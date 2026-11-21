@@ -17,6 +17,8 @@ export interface SourceRowLike {
   inventory?: Partial<Record<InventoryKind, number>>;
   stage?: IndexingStage;
   stageCount?: number;
+  /** Items that cannot be found yet (still to read, or never embedded); absent on rows an older queue wrote. */
+  searchLeft?: number;
   counting?: boolean;
 }
 

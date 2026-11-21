@@ -30,6 +30,8 @@ export interface SourceRow {
   stage?: IndexingStage;            // the work on this source's items now: reading, then the queue's lanes in order
   stageCount?: number;              // items of this source waiting for that stage (label and caption only)
   counting?: boolean;               // the source job is still finding items: the total may only grow ("so far")
+  /** Items of this source that cannot be found yet: still to be read, or read and never embedded (20 section 13.5). */
+  searchLeft?: number;
   /** Folder: files read once and found unindexable, by path, so a rescan skips them while size and date are unchanged. */
   skipCache?: Record<string, FolderSkip>;
 }

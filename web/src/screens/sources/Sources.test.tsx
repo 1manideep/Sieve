@@ -198,6 +198,43 @@ describe('Sources', () => {
     await expectNoAxeViolations();
   });
 
+  it('two stages: once every item can be searched it says "Ready to ask", with Gemini Nano\'s sorting as background work', async () => {
+    fake.rows = [row('gmail', { progress: { done: 400, total: 5670 } })];
+    fake.records = records('gmail', 'Home', 3);
+    useIndexing.setState({
+      state: 'running', left: 5270, done: 400, total: 5670, fraction: 400 / 5670, etaMs: 50 * 60_000, ready: true, searchLeft: 0, searchFraction: 1,
+      activity: { stage: 'label', count: 5270 },
+      bySource: { gmail: { done: 400, total: 5670, fraction: 400 / 5670, counting: false, ready: true, searchFraction: 1 } },
+    });
+    renderSources();
+    const gmail = await screen.findByRole('article', { name: 'Gmail' });
+    expect(screen.getByRole('status')).toHaveTextContent(`${SOURCES.pillReady}· 5,270 in the background`);
+    // The source is live, not "indexing": its mark shows its count.
+    expect(mark('Gmail')).toHaveTextContent('3 emails');
+    expect(within(gmail).getByText(SOURCES.tagLive)).toBeInTheDocument();
+    expect(within(gmail).getByRole('heading', { name: SOURCES.readyTitle })).toBeInTheDocument();
+    expect(within(gmail).getByText(fillText(SOURCES.readyText, { total: '5,670' }))).toBeInTheDocument();
+    expect(within(gmail).getByText(fillText(SOURCES.bgLabel, { n: '5,270' }))).toBeInTheDocument();
+    expect(within(gmail).getByRole('progressbar', { name: SOURCES.bgProgressLabel })).toHaveAttribute('aria-valuetext', 'Indexing 400 of 5,670 items');
+    expect(within(gmail).getByText('400 of 5,670 items done · about 50 min left')).toBeInTheDocument();
+    expect(within(gmail).getByText(SOURCES.bgSub)).toBeInTheDocument();
+    await expectNoAxeViolations();
+  });
+
+  it('while items are still being read it counts the ones that can be searched', async () => {
+    fake.rows = [row('gmail', { progress: { done: 10, total: 100 } })];
+    useIndexing.setState({
+      state: 'running', left: 90, done: 10, total: 100, fraction: 0.1, ready: false, searchLeft: 30, searchFraction: 0.7,
+      bySource: { gmail: { done: 10, total: 100, fraction: 0.1, counting: false, ready: false, searchFraction: 0.7 } },
+    });
+    renderSources();
+    const gmail = await screen.findByRole('article', { name: 'Gmail' });
+    expect(mark('Gmail')).toHaveTextContent('indexing 70%');
+    expect(screen.getByRole('status')).toHaveTextContent(`${SOURCES.pillIndexing}· 30 left`);
+    expect(within(gmail).getByRole('progressbar', { name: SOURCES.progressLabel })).toHaveAttribute('aria-valuetext', '70 of 100 items searchable');
+    expect(within(gmail).getByText(fillText(SOURCES.runningLeft, { left: '30' }))).toBeInTheDocument();
+  });
+
   it('says what it works on now, in the order the work runs (20 section 13.5)', async () => {
     fake.rows = [row('folder', { progress: { done: 2, total: 22 } })];
     useIndexing.setState({ state: 'running', left: 20, done: 2, total: 22, activity: { stage: 'reading', inventory: { pdfs: 7, notes: 3, photos: 12 } } });
@@ -441,12 +478,17 @@ describe('Sources: the grid', () => {
 
 describe('Sources: helpers', () => {
   it('sourceState reads one source from its row, its count and the shared indexing numbers', () => {
-    expect(sourceState('gmail', undefined, 0, undefined)).toEqual({ connected: false, paused: false, indexing: false, needsYou: false, pct: 0 });
+    expect(sourceState('gmail', undefined, 0, undefined)).toEqual({ connected: false, paused: false, indexing: false, background: false, needsYou: false, pct: 0 });
     expect(sourceState('upload', undefined, 2, undefined).connected).toBe(true);
     expect(sourceState('gmail', row('gmail', { progress: { done: 1, total: 4 } }), 1, undefined)).toMatchObject({ indexing: true, pct: 25 });
     expect(sourceState('gmail', row('gmail', { progress: { done: 1, total: 4 } }), 1, { done: 2, total: 4, fraction: 0.5 } as never)).toMatchObject({ pct: 50 });
     expect(sourceState('folder', row('folder', { paused: true, progress: { done: 1, total: 4 } }), 1, undefined)).toMatchObject({ paused: true, indexing: false });
     expect(sourceState('folder', row('folder', { needsAuth: true }), 1, undefined).needsYou).toBe(true);
+    // Everything it found can be searched: the model work behind it is not "indexing".
+    const ready = { done: 2, total: 4, fraction: 0.5, counting: false, ready: true, searchFraction: 1 };
+    expect(sourceState('gmail', row('gmail', { progress: { done: 2, total: 4 } }), 4, ready)).toMatchObject({ indexing: false, background: true });
+    const reading = { done: 0, total: 4, fraction: 0, counting: false, ready: false, searchFraction: 0.25 };
+    expect(sourceState('gmail', row('gmail', { progress: { done: 0, total: 4 } }), 4, reading)).toMatchObject({ indexing: true, background: false, pct: 25 });
   });
 
   it('radius grows with the square root of the count, within its bounds', () => {

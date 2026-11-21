@@ -295,6 +295,24 @@ export const SOURCES = {
   legendCircle: 'a circle, sized by its items',
   legendNever: 'never shared, not even an answer',
   legendNone: 'nothing from that source',
+  // Two stages (Nov 21, 2026): first everything becomes searchable, then the model work runs behind it.
+  readyTitle: 'Ready to ask',
+  readyText: 'All {total} items can be searched.',
+  bgLabel: 'Gemini Nano is sorting {n} items in the background',
+  bgLabelOne: 'Gemini Nano is sorting 1 item in the background',
+  bgCaption: 'Gemini Nano is describing {n} photos in the background',
+  bgCaptionOne: 'Gemini Nano is describing 1 photo in the background',
+  bgPrivacy: 'Checking for personal details in the background',
+  bgEmbed: 'Updating the search index in the background',
+  bgWork: 'Finishing up in the background',
+  bgProgressLabel: 'Background work',
+  bgText: '{done} of {total} items done · about {eta} left',
+  bgLeft: '{left} items left',
+  bgPausedText: 'Background work is paused. Resume to finish {left} items.',
+  bgSub: 'You can ask now. This runs on this computer, one step at a time, and your questions always go first.',
+  searchValue: '{done} of {total} items searchable',
+  pillReady: 'Ready to ask',
+  pillBackground: '{left} in the background',
 } as const;
 
 /** What has AI seen? (40 section 13.7). */

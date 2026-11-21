@@ -57,18 +57,22 @@ function usePreloadGoogleSignIn(): void {
   }, []);
 }
 
-interface SourceState { connected: boolean; paused: boolean; indexing: boolean; needsYou: boolean; pct: number }
+interface SourceState { connected: boolean; paused: boolean; indexing: boolean; background: boolean; needsYou: boolean; pct: number }
 
 /** What one source is doing now, from its row, its count and the indexing numbers every bar shares. */
 export function sourceState(kind: RealSource, row: SourceRowView | undefined, count: number, shown: IndexingState['bySource'][RealSource]): SourceState {
   const connected = kind === 'upload' ? Boolean(row?.connected) || count > 0 : Boolean(row?.connected);
   const paused = connected && Boolean(row?.paused);
   const progress = shown ?? row?.progress ?? { done: 0, total: 0 };
-  const fraction = shown ? shown.fraction : progress.total > 0 ? progress.done / progress.total : 0;
+  const unfinished = connected && !paused && progress.total > 0 && progress.done < progress.total;
+  // Everything it found can be searched: what is left is background model work, which is not "indexing".
+  const ready = unfinished && shown?.ready === true;
+  const fraction = shown ? (shown.searchFraction < 1 ? shown.searchFraction : shown.fraction) : progress.total > 0 ? progress.done / progress.total : 0;
   return {
     connected,
     paused,
-    indexing: connected && !paused && progress.total > 0 && progress.done < progress.total,
+    indexing: unfinished && !ready,
+    background: ready,
     needsYou: connected && Boolean(row?.needsAuth || row?.error),
     pct: Math.round(fraction * 100),
   };
@@ -199,7 +203,7 @@ function SourcePanel({
           ) : null}
         </div>
         <div className={ground.col}>
-          {state.connected && indexingState !== 'idle' && (state.indexing || state.paused || paused) ? <IndexingCard plain lastSyncAt={row?.lastSyncAt} /> : null}
+          {state.connected && indexingState !== 'idle' && (state.indexing || state.background || state.paused || paused) ? <IndexingCard plain lastSyncAt={row?.lastSyncAt} /> : null}
           <SourceCard
             kind={kind}
             row={row}
@@ -264,7 +268,7 @@ export function Component() {
   const split = useCategorySplit(db);
   const sourceCounts = useSourceCounts(db);
   const rules = useSettings((s) => s.settings.categoryRules);
-  const indexing = useIndexing(useShallow((s) => ({ state: s.state, left: s.left, bySource: s.bySource })));
+  const indexing = useIndexing(useShallow((s) => ({ state: s.state, left: s.left, bySource: s.bySource, ready: s.ready, searchLeft: s.searchLeft })));
   const receipts = useReceipts((s) => s.receipts);
   const [picked, setPicked] = useState<MarkId | null>(null);
   const [confirmRebuild, setConfirmRebuild] = useState(false);
@@ -284,13 +288,20 @@ export function Component() {
   let pill = null;
   if (connected.length > 0) {
     const busy = indexing.state !== 'idle';
+    // Ready: every item can be searched, and only the background model work is left.
+    const ready = busy && indexing.ready && !paused;
+    const toSearch = indexing.searchLeft > 0 ? indexing.searchLeft : indexing.left;
     pill = (
-      <span className={`${ground.pill} ${busy ? ground.pillWait : ground.pillOk}`} role="status">
+      <span className={`${ground.pill} ${busy && !ready ? ground.pillWait : ground.pillOk}`} role="status">
         <span className={ground.pillDot} aria-hidden="true" />
-        {paused ? SOURCES.pillPaused : busy ? SOURCES.pillIndexing : SOURCES.pillUpToDate}
+        {paused ? SOURCES.pillPaused : ready ? SOURCES.pillReady : busy ? SOURCES.pillIndexing : SOURCES.pillUpToDate}
         <span className={ground.pillMuted}>
           {'· '}
-          {busy ? fillText(SOURCES.pillLeft, { left: formatCount(indexing.left) }) : fillText(SOURCES.pillItems, { n: formatCount(items) })}
+          {ready
+            ? fillText(SOURCES.pillBackground, { left: formatCount(indexing.left) })
+            : busy
+              ? fillText(SOURCES.pillLeft, { left: formatCount(indexing.ready ? indexing.left : toSearch) })
+              : fillText(SOURCES.pillItems, { n: formatCount(items) })}
         </span>
       </span>
     );

@@ -140,7 +140,7 @@ describe('Ask', () => {
     useIndexing.setState({ state: 'running', left: 1204, done: 296, total: 1500, etaMs: 4 * 60_000 });
     renderAsk();
     const card = await screen.findByRole('region', { name: 'Indexing on this device' });
-    expect(within(card).getByRole('progressbar', { name: 'Indexing progress' })).toHaveAttribute('aria-valuetext', 'Indexing 296 of 1,500 items');
+    expect(within(card).getByRole('progressbar', { name: 'Indexing progress' })).toHaveAttribute('aria-valuetext', '296 of 1,500 items searchable');
     expect(within(card).getByText(/^296 of 1,500 items · about/)).toBeInTheDocument();
     expect(within(card).getByText(/Your questions always go first/)).toBeInTheDocument();
     expect(screen.queryByText(/Indexing on this device: 1,204 items left/)).toBeNull();

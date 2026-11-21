@@ -3,7 +3,7 @@ import type { SieveDb } from '@/index';
 import type { SourceRowLike } from './localDb';
 import {
   deriveActivity, deriveIndexing, ETA_UPDATE_MS, estimateEta, pushIndexingRowsForTests, resetIndexingForTests, roundEta, setIndexingRowsForTests,
-  SHOW_EVERY_MS, useIndexing, watchBattery,
+  READY_SLACK, searchLeftOf, SHOW_EVERY_MS, useIndexing, watchBattery,
 } from './indexing';
 import { useSettings } from './settings';
 
@@ -316,5 +316,60 @@ describe('what the bars show (the owner\'s second report, Nov 20)', () => {
     await vi.advanceTimersByTimeAsync(SHOW_EVERY_MS);
     expect(useIndexing.getState()).toMatchObject({ total: 1_500, counting: true });
     expect(useIndexing.getState().bySource.gmail).toMatchObject({ total: 1_500, counting: true });
+  });
+});
+
+describe('two stages: searchable first, then the background model work (Nov 21, 2026)', () => {
+  it('searchLeftOf: the queue\'s count when the row has one, else the stage says', () => {
+    expect(searchLeftOf(row({ progress: { done: 10, total: 10 }, searchLeft: 4 }))).toBe(0);
+    expect(searchLeftOf(row({ progress: { done: 2, total: 10 }, searchLeft: 3 }))).toBe(3);
+    expect(searchLeftOf(row({ progress: { done: 2, total: 10 }, searchLeft: 99 }))).toBe(8);
+    expect(searchLeftOf(row({ progress: { done: 2, total: 10 }, stage: 'reading' }))).toBe(8);
+    expect(searchLeftOf(row({ progress: { done: 2, total: 10 }, stage: 'embed' }))).toBe(8);
+    expect(searchLeftOf(row({ progress: { done: 2, total: 10 }, stage: 'label' }))).toBe(0);
+    expect(searchLeftOf(row({ progress: { done: 2, total: 10 }, stage: 'caption' }))).toBe(0);
+  });
+
+  it('is not ready while items are still to be read or embedded, and counts the searchable share', () => {
+    setIndexingRowsForTests([row({ progress: { done: 100, total: 1000 }, stage: 'embed', searchLeft: 400 })], 1_000);
+    const s = useIndexing.getState();
+    expect(s.state).toBe('running');
+    expect(s.ready).toBe(false);
+    expect(s.searchLeft).toBe(400);
+    expect(s.searchFraction).toBeCloseTo(0.6);
+    expect(s.bySource.gmail).toMatchObject({ ready: false, searchFraction: 0.6 });
+  });
+
+  it('is ready once every item can be searched, while Gemini Nano still sorts', () => {
+    setIndexingRowsForTests([row({ progress: { done: 400, total: 5670 }, stage: 'label', stageCount: 5270, searchLeft: 0 })], 1_000);
+    const s = useIndexing.getState();
+    expect(s.state).toBe('running');
+    expect(s.ready).toBe(true);
+    expect(s.searchLeft).toBe(0);
+    expect(s.searchFraction).toBe(1);
+    expect(s.activity).toEqual({ stage: 'label', count: 5270 });
+    expect(s.bySource.gmail).toMatchObject({ ready: true, searchFraction: 1 });
+  });
+
+  it('is never ready while a source is still finding items', () => {
+    setIndexingRowsForTests([row({ progress: { done: 0, total: 50 }, stage: 'label', searchLeft: 0, counting: true })], 1_000);
+    expect(useIndexing.getState().ready).toBe(false);
+  });
+
+  it('stays ready when a few new items arrive, and leaves it for a real batch', () => {
+    setIndexingRowsForTests([row({ progress: { done: 400, total: 1000 }, stage: 'label', searchLeft: 0 })], 1_000);
+    expect(useIndexing.getState().ready).toBe(true);
+    setIndexingRowsForTests([row({ progress: { done: 400, total: 1003 }, stage: 'embed', searchLeft: 3 })], 3_000);
+    expect(useIndexing.getState().ready).toBe(true);
+    setIndexingRowsForTests([row({ progress: { done: 400, total: 1000 + READY_SLACK + 5 }, stage: 'reading', searchLeft: READY_SLACK + 5 })], 5_000);
+    expect(useIndexing.getState().ready).toBe(false);
+  });
+
+  it('is idle, not ready, when nothing is left; a new pass starts unready', () => {
+    setIndexingRowsForTests([row({ progress: { done: 400, total: 1000 }, stage: 'label', searchLeft: 0 })], 1_000);
+    setIndexingRowsForTests([row({ progress: { done: 1000, total: 1000 } })], 3_000);
+    expect(useIndexing.getState()).toMatchObject({ state: 'idle', ready: false, searchLeft: 0, searchFraction: 1 });
+    setIndexingRowsForTests([row({ progress: { done: 1000, total: 1010 }, stage: 'reading', searchLeft: 10 })], 5_000);
+    expect(useIndexing.getState().ready).toBe(false);
   });
 });

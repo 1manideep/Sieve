@@ -22,6 +22,9 @@ export interface SourceProgress {
   total: number;
   fraction: number;                                // 0..1, never lower than before within a pass
   counting: boolean;                               // the source is still finding items
+  /** Everything this source found can be searched; only the background model work (sorting, checks, captions) is left. */
+  ready: boolean;
+  searchFraction: number;                          // 0..1: the share of its items that can be searched
 }
 
 export interface IndexingState {
@@ -37,6 +40,13 @@ export interface IndexingState {
   activity?: IndexingActivity;
   /** A source is still finding items: `total` only grows, and the card says "so far" instead of an ETA. */
   counting: boolean;
+  /**
+   * Work is left, but every item found can already be searched: what remains is the background model work (Gemini
+   * Nano sorting, the personal-details check, photo captions). The screens then say "Ready to ask".
+   */
+  ready: boolean;
+  searchLeft: number;                              // items that cannot be found yet (to read, or never embedded)
+  searchFraction: number;                          // 0..1: the share of items that can be searched
   onBattery: boolean;                              // the Battery API says not charging; no Battery API means on power
   batteryOverride: boolean;                        // Resume on battery; lasts for the session
   foregroundBusy: number;                          // count of running questions (ask + home base); > 0 means 'yielding'
@@ -82,6 +92,18 @@ export function deriveIndexing(
   if (foregroundBusy > 0 && left > 0) state = 'yielding';
   else if (left > 0) state = 'running';
   return { state, left, done, total };
+}
+
+/** After "ready" was reached, a few new items (new mail) do not take the screens back to "Indexing". */
+export const READY_SLACK = 20;
+
+/** Pure: how many of a source's items cannot be found yet. Rows from an older queue have no count: their stage says. */
+export function searchLeftOf(r: SourceRowLike): number {
+  const total = Math.max(0, r.progress?.total ?? 0);
+  const left = Math.max(0, total - Math.min(total, Math.max(0, r.progress?.done ?? 0)));
+  if (left === 0) return 0;
+  if (typeof r.searchLeft === 'number') return Math.max(0, Math.min(left, r.searchLeft));
+  return r.stage === 'label' || r.stage === 'privacy' || r.stage === 'caption' ? 0 : left;
 }
 
 const STAGE_ORDER: readonly IndexingStage[] = ['reading', 'embed', 'label', 'privacy', 'caption'];   // the queue's order
@@ -170,6 +192,9 @@ let pushConditions: (() => void) | null = null;
 /** The current pass (from work appearing until none is left): `done` and the bar never go down in it. */
 let pass: { done: number; total: number; fraction: number } | null = null;
 const sourcePasses = new Map<SourceKind, { done: number; total: number; fraction: number }>();
+/** Whether this pass has reached "ready" (see READY_SLACK), and which stage the ETA samples measure. */
+let passReady = false;
+let samplesReady: boolean | null = null;
 
 /** One source's numbers: `done` and `fraction` never go down within its pass; `total` only grows while it counts. */
 function shownSource(r: SourceRowLike): SourceProgress {
@@ -178,14 +203,15 @@ function shownSource(r: SourceRowLike): SourceProgress {
   const counting = r.counting === true;
   if (total - raw <= 0) {
     sourcePasses.delete(r.kind);
-    return { done: total, total, fraction: total > 0 ? 1 : 0, counting };
+    return { done: total, total, fraction: total > 0 ? 1 : 0, counting, ready: false, searchFraction: total > 0 ? 1 : 0 };
   }
+  const searchLeft = searchLeftOf(r);
   const prev = sourcePasses.get(r.kind);
   const tot = prev && counting ? Math.max(total, prev.total) : total;
   const done = Math.max(0, Math.min(tot - 1, Math.max(raw, prev?.done ?? 0)));
   const fraction = Math.min(1, Math.max(prev?.fraction ?? 0, tot > 0 ? done / tot : 0));
   sourcePasses.set(r.kind, { done, total: tot, fraction });
-  return { done, total: tot, fraction, counting };
+  return { done, total: tot, fraction, counting, ready: searchLeft === 0 && !counting, searchFraction: tot > 0 ? Math.max(0, tot - searchLeft) / tot : 0 };
 }
 /** One steady run (same state, same pause reason, same stage): the smoothed rate and the ETA last shown. */
 let run: { key: string; rate?: number; eta?: number; at: number } | null = null;
@@ -233,16 +259,26 @@ function recompute(now: number = Date.now()): void {
   });
   const derived = withPass(deriveIndexing(shownRows, current.foregroundBusy, current), counting);
   const activity = derived.left > 0 ? deriveActivity(rows) : undefined;
-  // Samples reset when the state changes to paused or yielding (and while it stays there).
-  if (derived.state !== 'running' || current.state === 'paused' || current.state === 'yielding') samples = [];
+  // Two stages: first everything becomes searchable (read and embedded), then the model work runs behind it.
+  const searchLeft = derived.left > 0 ? Math.min(derived.left, connected.reduce((n, r) => n + searchLeftOf(r), 0)) : 0;
+  if (derived.left <= 0) passReady = false;
+  else if (searchLeft === 0 && !counting) passReady = true;
+  const ready = derived.left > 0 && !counting && (searchLeft === 0 || (passReady && searchLeft <= READY_SLACK));
+  const searchFraction = derived.total > 0 ? Math.max(0, derived.total - searchLeft) / derived.total : 0;
+  // The ETA measures the stage on screen: items made searchable first, then items fully done.
+  const measured = ready ? derived.done : derived.total - searchLeft;
+  const toGo = ready ? derived.left : searchLeft;
+  // Samples reset when the state changes to paused or yielding (and while it stays there), and between the stages.
+  if (derived.state !== 'running' || current.state === 'paused' || current.state === 'yielding' || samplesReady !== ready) samples = [];
+  samplesReady = ready;
   if (derived.state === 'running') {
-    samples.push({ at: now, done: derived.done });
+    samples.push({ at: now, done: measured });
     samples = samples.filter((x) => now - x.at <= SAMPLE_WINDOW_MS);
   }
   let etaMs: number | undefined;
-  if (derived.state === 'running' && !counting) etaMs = smoothedEta(`${derived.state}|${activity?.stage ?? ''}`, derived.left, now);
+  if (derived.state === 'running' && !counting) etaMs = smoothedEta(`${derived.state}|${ready ? 'background' : 'search'}|${activity?.stage ?? ''}`, toGo, now);
   else run = null;
-  useIndexing.setState({ pausedBy: undefined, ...derived, bySource, activity, counting: counting && derived.left > 0, etaMs });
+  useIndexing.setState({ pausedBy: undefined, ...derived, bySource, activity, counting: counting && derived.left > 0, etaMs, ready, searchLeft, searchFraction });
 }
 
 /** The liveQuery's rows: shown at once if the last change on screen is SHOW_EVERY_MS old, else at that moment. */
@@ -269,6 +305,8 @@ function clearShown(): void {
   samples = [];
   pass = null;
   run = null;
+  passReady = false;
+  samplesReady = null;
   sourcePasses.clear();
 }
 
@@ -281,6 +319,9 @@ export const useIndexing = create<IndexingState>()((set) => ({
   total: 0,
   etaMs: undefined,
   counting: false,
+  ready: false,
+  searchLeft: 0,
+  searchFraction: 0,
   onBattery: false,
   batteryOverride: false,
   foregroundBusy: 0,
@@ -370,6 +411,7 @@ export function resetIndexingForTests(): void {
   pushConditions = null;
   useIndexing.setState({
     state: 'idle', pausedBy: undefined, fraction: 0, bySource: {}, left: 0, done: 0, total: 0, etaMs: undefined, activity: undefined, counting: false,
+    ready: false, searchLeft: 0, searchFraction: 0,
     onBattery: false, batteryOverride: false, foregroundBusy: 0,
   });
 }
