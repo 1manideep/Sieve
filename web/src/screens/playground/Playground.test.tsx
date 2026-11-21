@@ -187,7 +187,7 @@ describe('Playground', () => {
     await expectNoAxeViolations();
   });
 
-  it('the test email composer: defaults, add, then the "mytest" question runs', async () => {
+  it('the test email composer: the first trick by default, add, then its question runs', async () => {
     renderPlayground();
     await userEvent.click(screen.getByRole('button', { name: 'Write a test email' }));
     act(() => usePlayground.setState({ composing: true }));
@@ -201,11 +201,33 @@ describe('Playground', () => {
     await expectNoAxeViolations();
     await userEvent.click(screen.getByRole('button', { name: 'Add to the inbox' }));
     expect(actions.addTestEmail).toHaveBeenCalledWith(expect.objectContaining({ from: 'IT Support', hideAsWhiteText: true }));
-    expect(ask).toHaveBeenCalledWith('What does my test email want?');
+    expect(ask).toHaveBeenCalledWith('What does the IT Support email want?');
     act(() => usePlayground.setState({ added: [{ recordId: 'upload:test-email-1', name: 'Action needed on your account', kind: 'test-email', status: 'indexed' }] }));
     expect(screen.getByRole('button', { name: 'What does my test email want?' })).toBeInTheDocument();
     expect(screen.getByText('Indexed on this device')).toBeInTheDocument();
     expect(screen.getByText('Never uploaded')).toBeInTheDocument();
+  });
+
+  it('a trick chip fills the composer and asks its own question; a renamed sender falls back to "mytest"', async () => {
+    renderPlayground();
+    act(() => usePlayground.setState({ composing: true }));
+    expect(screen.getByRole('button', { name: 'White on white' })).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(screen.getByRole('button', { name: 'Invisible characters' }));
+    expect(screen.getByRole('button', { name: 'Invisible characters' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('From')).toHaveValue('Brightleaf Store');
+    expect(screen.queryByLabelText('Hide it as white text on white')).not.toBeInTheDocument();
+    expect(screen.getByText(/Hidden as invisible characters/)).toBeInTheDocument();
+    await expectNoAxeViolations();
+    await userEvent.click(screen.getByRole('button', { name: 'Add to the inbox' }));
+    expect(actions.addTestEmail).toHaveBeenLastCalledWith(expect.objectContaining({ from: 'Brightleaf Store', hideAs: 'tags' }));
+    expect(ask).toHaveBeenLastCalledWith('What did Brightleaf Store send me?');
+
+    act(() => usePlayground.setState({ composing: true }));
+    await userEvent.click(screen.getByRole('button', { name: 'In plain sight' }));
+    await userEvent.clear(screen.getByLabelText('From'));
+    await userEvent.type(screen.getByLabelText('From'), 'My Club');
+    await userEvent.click(screen.getByRole('button', { name: 'Add to the inbox' }));
+    expect(ask).toHaveBeenLastCalledWith('What does my test email want?');
   });
 
   it('adding a file checks it first, then asks about the newest one', async () => {
