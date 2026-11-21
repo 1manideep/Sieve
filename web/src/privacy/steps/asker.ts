@@ -2,6 +2,7 @@
 // consistently, the sender's too when the sender is a person; what the asker typed in the question is never masked,
 // because the caller already knows it ("1manideep", "Kay", a repo name, an order id).
 import type { IndexRecord, KnownEntity, PiiSpan } from '@sieve/shared';
+import { isStopwordOrCalendarWord } from '../pii/merge';
 import { GREETING_EXCLUDE, ORG_WORDS } from '../pii/validators/names';
 import { senderName } from '../scan/scan';
 
@@ -62,13 +63,20 @@ export function notTheCompany(text: string, spans: readonly PiiSpan[], record: P
   return spans.filter((s) => !text.slice(s.start, s.end).toLowerCase().split(/\s+/).every((w) => company.has(w)));
 }
 
-const TOKEN = /[\p{L}\p{N}][\p{L}\p{N}._@+'’-]*[\p{L}\p{N}]|[\p{L}\p{N}]/gu;
+const QUESTION_WORD = /[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu;
 
-function tokensOf(question: string): Set<string> {
+/**
+ * Words the question writes as a name: a capital first letter, and not a function word or a calendar word. "Will I get
+ * my refund?" or "is there a grace period" must not unmask Will Turner or Grace Park; the question of an outside
+ * assistant is written by that assistant. A name typed in lowercase stays masked, which errs on the safe side.
+ */
+function nameWordsOf(question: string): Set<string> {
   const out = new Set<string>();
-  for (const m of question.toLowerCase().matchAll(TOKEN)) {
-    out.add(m[0]);
-    for (const part of m[0].split(/[._@+'’-]+/)) if (part) out.add(part);
+  for (const m of question.matchAll(QUESTION_WORD)) {
+    const w = m[0].replace(/['’]s$/i, '');
+    const first = w.charAt(0);
+    if (first === first.toLowerCase() || isStopwordOrCalendarWord(w)) continue;
+    out.add(w.toLowerCase());
   }
   return out;
 }
@@ -87,10 +95,10 @@ function inQuestion(q: string, value: string): boolean {
 export function keepAskerWords(text: string, spans: readonly PiiSpan[], question: string | undefined): PiiSpan[] {
   if (!question?.trim()) return [...spans];
   const q = question.normalize('NFKC').toLowerCase();
-  const tokens = tokensOf(q);
+  const nameWords = nameWordsOf(question.normalize('NFKC'));
   const out: PiiSpan[] = [];
   const WORD = /[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu;
-  const typed = (w: string) => tokens.has(w.toLowerCase().replace(/['’]s$/, ''));
+  const typed = (w: string) => nameWords.has(w.toLowerCase().replace(/['’]s$/, ''));
   for (const s of spans) {
     const value = text.slice(s.start, s.end);
     if (s.type === 'secret-code') {

@@ -1,9 +1,13 @@
-/* F1, the landing. The board is 1440x900; below 1440px the sphere and the constellation shrink together with the
-   window (down to 0.72 of the board, where the constellation is hidden anyway). */
+/* F1, the landing. The board is 1440x900; in a window narrower than 1440px or shorter than 900px the sphere and
+   the constellation shrink together (down to 0.72 of the board, where the constellation is hidden anyway). */
 /* The public header floats over the stage (PublicLayout), so the stage is the whole window, as on the board. */
 .stage {
-  --sphere: clamp(460.8px, 44.444vw, 640px);
-  --sky-w: clamp(1036.8px, 100vw, 1440px);
+  /* The constellation is 1440x900, so it also shrinks with the window's height: on a short laptop window it
+     would otherwise run past the stage, its labels over the footer numbers and its lines across the buttons.
+     The sphere keeps its place on the constellation (640 of 1440). */
+  --sky-w: clamp(1036.8px, min(100vw, max(100vh, 640px) * 1.6), 1440px);
+  --sky-w: clamp(1036.8px, min(100vw, max(100dvh, 640px) * 1.6), 1440px);
+  --sphere: calc(var(--sky-w) * 0.44444);
   position: relative;
   display: flex;
   flex-direction: column;

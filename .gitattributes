@@ -1,0 +1,21 @@
+# Keep LF line endings on every platform. Golden prompt files and fixtures
+# are compared byte for byte, so a Windows checkout with CRLF fails tests.
+* text=auto eol=lf
+
+# Exact-byte fixtures: encoding and binary-detection tests. Never convert.
+tests/fixtures/robustness/files/** -text
+tests/fixtures/robustness/photos/** -text
+
+# Binary assets
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.pdf  binary
+*.woff  binary
+*.woff2 binary
+*.zip  binary
+*.onnx binary
+*.bin  binary
