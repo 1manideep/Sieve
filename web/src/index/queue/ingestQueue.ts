@@ -957,11 +957,26 @@ function createIngestQueue(db: SieveDb): IngestQueue {
     return captionOnce(signal);
   };
 
+  /**
+   * An item that only plain code has sorted gets the category the current rules give it (the rules improve between
+   * releases; Nov 21, 2026). Nothing a model, a rule or a seed chose is touched, and the Health safety net holds.
+   */
+  const relabelByCode = async (rec: IndexRecord): Promise<IndexRecord> => {
+    const next = aiApi.codeRelabel(rec);
+    if (next === null) return rec;
+    const { outcome, record } = await writeIfCurrentDetailed(db, rec.id, rec.version, (cur) =>
+      cur.categoryBy === 'code' ? { category: next } : {},
+    );
+    if (outcome !== 'ok' || !record) return rec;
+    applyRecordInMemory(db, record);
+    return record;
+  };
+
   const buildBacklog = async () => {
     const ids = (await db.records.orderBy('date').reverse().primaryKeys()) as string[];
     for (let i = 0; i < ids.length; i += 500) {
       const recs = await db.records.bulkGet(ids.slice(i, i + 500));
-      for (const rec of recs) if (rec) classify(rec, 'normal');
+      for (const rec of recs) if (rec) classify(await relabelByCode(rec).catch(() => rec), 'normal');
     }
     backlogBuilt = true;
     emit();

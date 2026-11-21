@@ -18,6 +18,7 @@ import {
   GmailAuthError, GmailForbiddenError, GmailNetworkError, GmailNotFoundError, GmailRateError,
   getMessage, getProfile, listHistory, listMessages, type GmailMessage,
 } from './api';
+import { isBulkTab } from '@/ai/tasks/codeLabel';
 import { decodeSnippet, extractBodies, header, isSkippable, isTrashed } from './mime';
 
 export class SyncStopped extends Error {
@@ -43,7 +44,7 @@ export async function rawFromMessage(msg: GmailMessage, phase: 'meta' | 'full') 
   }
   const contentHash = await emailContentHash({ id: msg.id, subject, from, internalDate, html, text, phase });
   return {
-    raw: { source: 'gmail' as const, sourceRef: msg.id, kind: 'email' as const, title: subject, from, threadId: msg.threadId, date: internalDate, html, text },
+    raw: { source: 'gmail' as const, sourceRef: msg.id, kind: 'email' as const, title: subject, from, threadId: msg.threadId, date: internalDate, html, text, bulk: isBulkTab(msg.labelIds) },
     contentHash, internalDate, sizeBytes: msg.sizeEstimate,
   };
 }

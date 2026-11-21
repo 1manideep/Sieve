@@ -1,7 +1,7 @@
 // Access to the AI layer (10) and the privacy pipeline (11) without pulling firebase/ai into the index bundle
 // (40 section 17): ingest uses only pure modules (the code labeller, prompt versions, the sanitizer); the queue
 // loads the `@/ai` and `@/privacy` barrels with import() when it first needs a model.
-import { codeLabel, isHealthStrong } from '@/ai/tasks/codeLabel';
+import { codeLabel, codeRelabel, isHealthStrong } from '@/ai/tasks/codeLabel';
 import { PROMPT_VERSIONS } from '@/ai/versions';
 import { sanitizeIncoming as sanitize } from '@/privacy/sanitize/sanitize';
 import type {
@@ -39,7 +39,8 @@ function loadAi(): Promise<AiBarrel> {
 }
 
 export const aiApi = {
-  codeLabel: (item: Pick<IndexRecord, 'title' | 'from' | 'preview' | 'kind'>) => codeLabel(item),
+  codeLabel: (item: Pick<IndexRecord, 'title' | 'from' | 'preview' | 'kind' | 'bulk'>) => codeLabel(item),
+  codeRelabel: (rec: IndexRecord) => codeRelabel(rec),
   isHealthStrong: (item: Pick<IndexRecord, 'title' | 'from' | 'preview'>) => isHealthStrong(item),
   promptVersions(): { label: number; caption: number } {
     return { label: PROMPT_VERSIONS.label, caption: PROMPT_VERSIONS.caption };

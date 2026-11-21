@@ -17,7 +17,7 @@ import { SOURCE_COPY } from '../sources/types';
 
 export { IngestError } from './errors';
 
-export interface RawItem { source: SourceKind; sourceRef: string; kind: ItemKind; title: string; from?: string; threadId?: string; date: number; html?: string; text?: string; blob?: Blob }
+export interface RawItem { source: SourceKind; sourceRef: string; kind: ItemKind; title: string; from?: string; threadId?: string; date: number; html?: string; text?: string; blob?: Blob; bulk?: boolean }
 
 export interface IngestOptions {
   bodyPending?: boolean;            // Gmail metadata phase: raw.text is the snippet; record.text stays undefined
@@ -238,7 +238,7 @@ export async function ingestInternal(db: SieveDb, raw: RawItem, _data: 'own' | '
     category = 'Photos';
     categoryBy = 'rule';
   } else {
-    category = aiApi.codeLabel({ title, from, preview, kind: raw.kind }).category;
+    category = aiApi.codeLabel({ title, from, preview, kind: raw.kind, bulk: raw.bulk }).category;
     categoryBy = 'code';
   }
   if (!opts.seed && category !== 'Health' && aiApi.isHealthStrong({ title, from, preview })) {
@@ -255,6 +255,7 @@ export async function ingestInternal(db: SieveDb, raw: RawItem, _data: 'own' | '
     version: nextVersion(existing && !tomb ? existing : undefined),
   };
   if (from) record.from = from;
+  if (raw.bulk) record.bulk = true;
   if (raw.threadId) record.threadId = raw.threadId;
   if (raw.kind !== 'photo' && !opts.bodyPending) record.text = text;
   if (caption) {

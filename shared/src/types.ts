@@ -73,6 +73,7 @@ export interface IndexRecord {
   captionBy?: Where | 'seed';
   photo?: PhotoMeta;
   category: Category;
+  bulk?: boolean;                         // the source filed it as sent to many (Gmail's Promotions, Social and Forums tabs)
   categoryBy: Where | 'seed' | 'rule';
   hiddenRemoved: string[];                // hidden fragments removed by plain code (kept locally to show the person)
   injection?: InjectionFinding;
