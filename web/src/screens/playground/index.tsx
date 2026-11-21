@@ -157,7 +157,7 @@ export function PlaygroundScreen() {
     ask(uploadQuestion(newest.name));
   };
 
-  const addTestEmail = async (input: TestEmailInput) => {
+  const addTestEmail = async (input: TestEmailInput, question?: string) => {
     try {
       await usePlayground.getState().addTestEmail(input);
     } catch (error) {
@@ -165,7 +165,7 @@ export function PlaygroundScreen() {
       return;
     }
     usePlayground.getState().setComposing(false);
-    ask(PLAYGROUND_SUGGESTION_COPY.mytest);
+    ask(question ?? PLAYGROUND_SUGGESTION_COPY.mytest);
   };
 
   const simulate = (on: boolean) => {
@@ -308,7 +308,7 @@ export function PlaygroundScreen() {
                   composing={pg.composing}
                   onComposing={(on) => usePlayground.getState().setComposing(on)}
                   onAddFiles={(files) => void addFiles(files)}
-                  onAddTestEmail={(input) => void addTestEmail(input)}
+                  onAddTestEmail={(input, question) => void addTestEmail(input, question)}
                   liveCaptions={image === 'available' && !pg.simulate}
                   narrow={narrow}
                 />

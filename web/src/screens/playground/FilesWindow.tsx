@@ -116,7 +116,7 @@ export interface FilesWindowProps {
   composing: boolean;
   onComposing(on: boolean): void;
   onAddFiles(files: File[]): void;
-  onAddTestEmail(input: TestEmailInput): void;
+  onAddTestEmail(input: TestEmailInput, question?: string): void;
   liveCaptions: boolean;          // image input available and not simulating
   narrow: boolean;                // under 1024px: the added list and the buttons fold behind "Show files"
 }
