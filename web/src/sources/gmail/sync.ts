@@ -201,14 +201,19 @@ export async function backfill(db: SieveDb, ctl: Ctl): Promise<void> {
   await writer.set({ phase: 'idle', lastSyncAt: Date.now(), reconciledAt: Date.now(), needsAuth: false, error: undefined, errorCode: undefined }, true);
 }
 
-async function bodies(db: SieveDb, ctl: Ctl, writer: RowWriter, account?: string): Promise<void> {
+/**
+ * Bodies for the newest GMAIL_BODY_BACKFILL_MAX emails that still have none. True when it fetched any. The list in
+ * memory says which emails have no text, so a sync with nothing to fetch reads no records.
+ */
+async function bodies(db: SieveDb, ctl: Ctl, writer: RowWriter, account?: string): Promise<boolean> {
   const rt = getRuntime(db);
-  const need: string[] = [];
-  await db.records.where('source').equals('gmail').each((r) => {
-    if (r.text === undefined) need.push(r.id);
-  });
-  need.sort((a, b) => (rt.meta.get(b)?.date ?? 0) - (rt.meta.get(a)?.date ?? 0));
-  const todo = need.slice(0, GMAIL_BODY_BACKFILL_MAX);
+  const newest = [...rt.meta.values()].filter((m) => m.source === 'gmail').sort((a, b) => b.date - a.date).slice(0, GMAIL_BODY_BACKFILL_MAX);
+  const maybe = newest.filter((m) => !m.hasText).map((m) => m.id);
+  if (maybe.length === 0) return false;
+  // an email whose body is empty has text '' and is done; only undefined means the body was never read
+  const stored = await db.records.bulkGet(maybe);
+  const todo = maybe.filter((_, i) => stored[i] && stored[i]?.text === undefined);
+  if (todo.length === 0) return false;
   let remaining = todo.length;
   await writer.set({ phase: 'bodies' }, true);
   const discovered = rt.syncProgress.get('gmail')?.discovered ?? todo.length;
@@ -227,6 +232,21 @@ async function bodies(db: SieveDb, ctl: Ctl, writer: RowWriter, account?: string
     remaining--;
     rt.syncProgress.set('gmail', { discovered, remaining, etaMs: etaMs(remaining, GMAIL_COST.getFull) });
   });
+  return true;
+}
+
+/**
+ * Bodies an earlier sync never fetched (it was stopped, or the token ran out before the bodies step): only the
+ * backfill fetched them, so emails indexed that way stayed without a body for good (Nov 21, 2026: the newest 1,319
+ * of 5,680). Every sync now goes back for them, then leaves the row idle.
+ */
+async function pendingBodies(db: SieveDb, ctl: Ctl, account?: string): Promise<void> {
+  const writer = new RowWriter(db);
+  if (!(await bodies(db, ctl, writer, account))) return;
+  const rt = getRuntime(db);
+  await rt.keyword.flush();
+  rt.syncProgress.delete('gmail');
+  await writer.set({ phase: 'idle' }, true);
 }
 
 /**
@@ -406,6 +426,7 @@ export function runGmailSync(db: SieveDb, mode: 'auto' | 'backfill' | 'reconcile
       if (mode === 'backfill' || !row.cursor || (unfinished && row.phase !== 'incremental' && row.phase !== 'reconciling')) await backfill(db, ctl);
       else if (mode === 'reconcile' || !row.reconciledAt || Date.now() - row.reconciledAt > GMAIL_RECONCILE_EVERY_MS) await reconcile(db, ctl);
       else await incremental(db, ctl);
+      await pendingBodies(db, ctl, row.account);
     } catch (e) {
       await rowError(db, e);
     }

@@ -6,7 +6,7 @@ export type ToastTone = 'success' | 'info' | 'warning' | 'error';
 export interface Toast { id: string; tone: ToastTone; title: string; body?: string; action?: { label: string; run: () => void }; timeoutMs: number }
 export interface ToastState {
   toasts: Toast[];                                   // newest last; at most 3 shown, older ones dropped
-  push(t: Omit<Toast, 'id' | 'timeoutMs'> & { timeoutMs?: number }): string;   // default 6000 ms; errors 10000 ms
+  push(t: Omit<Toast, 'id' | 'timeoutMs'> & { timeoutMs?: number }): string;   // default 6000 ms; errors 10000 ms; Infinity stays until dismissed
   dismiss(id: string): void;
 }
 

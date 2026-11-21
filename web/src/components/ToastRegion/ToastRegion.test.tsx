@@ -45,4 +45,16 @@ describe('ToastRegion', () => {
     act(() => vi.advanceTimersByTime(ERROR_TOAST_MS));
     expect(useToasts.getState().toasts).toEqual([]);
   });
+
+  it('a toast with timeoutMs Infinity stays until it is dismissed', () => {
+    vi.useFakeTimers();
+    render(<ToastRegion />);
+    act(() => {
+      useToasts.getState().push({ tone: 'info', title: 'Sticky', timeoutMs: Infinity });
+    });
+    act(() => vi.advanceTimersByTime(24 * 3_600_000));
+    expect(useToasts.getState().toasts.map((t) => t.title)).toEqual(['Sticky']);
+    act(() => screen.getByRole('button', { name: SHELL.dismiss }).click());
+    expect(useToasts.getState().toasts).toEqual([]);
+  });
 });

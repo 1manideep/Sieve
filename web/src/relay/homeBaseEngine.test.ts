@@ -456,6 +456,127 @@ describe('home base engine: requests', () => {
     expect(h.state.entries!.req1.phase).toBe('awaiting-person');
   });
 
+  describe('telling the person when a hidden tab holds requests up (70 R-PLAT-01)', () => {
+    /** A preparation that runs until it is aborted. */
+    const hang = (i: PrepareInput) =>
+      new Promise<Proposal>((resolve) => {
+        i.signal?.addEventListener('abort', () => resolve(proposal({ requestId: i.requestId, outcome: 'error' })));
+      });
+
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    it('two requests parked while the tab is hidden: one notice for both', async () => {
+      let hidden = false;
+      const notifyHidden = vi.fn();
+      const h = await activeHarness({ isHidden: () => hidden, notifyHidden });
+      h.prepare.mockImplementation(hang);
+      h.push([request(), request({ id: 'req2', createdAt: T0 + 1 })]);
+      await flush();
+      hidden = true;   // the person moves to another window while the first one prepares
+      await vi.advanceTimersByTimeAsync(120_000);
+      await flush();
+      expect(h.state.entries!.req1.liveSteps[0].label).toBe(HOME_BASE.waitingHidden);
+      expect(notifyHidden).toHaveBeenCalledTimes(1);
+      expect(notifyHidden).toHaveBeenCalledWith('Gemini CLI');
+      // the second one starts hidden: neither its 20 s notice nor its own parking notifies again
+      await vi.advanceTimersByTimeAsync(120_000);
+      await flush();
+      expect(h.state.entries!.req2.liveSteps[0].label).toBe(HOME_BASE.waitingHidden);
+      expect(h.finish).not.toHaveBeenCalled();
+      expect(notifyHidden).toHaveBeenCalledTimes(1);
+    });
+
+    it('a timeout in a visible tab: no notice, and one console line with the steps and no content', async () => {
+      const notifyHidden = vi.fn();
+      const h = await activeHarness({ notifyHidden });
+      h.prepare.mockImplementationOnce((i: PrepareInput) => {
+        i.onProgress?.({ type: 'step-start', id: `${i.requestId}:1`, kind: 'retrieve', label: 'Reading 3 emails from Kestrelmoor', where: 'code' });
+        return hang(i);
+      });
+      h.push([request()]);
+      await flush();
+      h.now.t += 120_000;
+      await vi.advanceTimersByTimeAsync(120_000);
+      await flush();
+      expect(notifyHidden).not.toHaveBeenCalled();
+      const warn = console.warn as unknown as ReturnType<typeof vi.fn>;
+      expect(warn).toHaveBeenCalledTimes(1);
+      const line = warn.mock.calls[0].join(' ');
+      expect(line).toContain('Sieve: preparing a request timed out.');
+      expect(line).toContain('hidden at start false, at end false, 120000 ms; steps: retrieve code running 120000 ms');
+      expect(line).not.toContain('Kestrelmoor');
+      expect(line).not.toContain('landlord');
+    });
+
+    it('the 20 s notice: once, for a preparation that started hidden and is still running while hidden', async () => {
+      const notifyHidden = vi.fn();
+      const h = await activeHarness({ isHidden: () => true, notifyHidden });
+      h.prepare.mockImplementation(hang);
+      h.push([request()]);
+      await flush();
+      await vi.advanceTimersByTimeAsync(19_999);
+      expect(notifyHidden).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(notifyHidden).toHaveBeenCalledTimes(1);
+      expect(notifyHidden).toHaveBeenCalledWith('Gemini CLI');
+      // the parking at 120 s says the same thing: not again until the tab has been shown
+      await vi.advanceTimersByTimeAsync(100_000);
+      await flush();
+      expect(h.state.entries!.req1.liveSteps[0].label).toBe(HOME_BASE.waitingHidden);
+      expect(notifyHidden).toHaveBeenCalledTimes(1);
+    });
+
+    it('no 20 s notice when the preparation started visible, or when the tab is shown again before 20 s', async () => {
+      let hiddenA = false;
+      const notifyA = vi.fn();
+      const a = await activeHarness({ isHidden: () => hiddenA, notifyHidden: notifyA });
+      a.prepare.mockImplementation(hang);
+      a.push([request()]);
+      await flush();
+      hiddenA = true;
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(notifyA).not.toHaveBeenCalled();
+
+      let hiddenB = true;
+      const notifyB = vi.fn();
+      const b = await activeHarness({ isHidden: () => hiddenB, notifyHidden: notifyB });
+      b.prepare.mockImplementation(hang);
+      b.push([request()]);
+      await flush();
+      await vi.advanceTimersByTimeAsync(10_000);
+      hiddenB = false;
+      await vi.advanceTimersByTimeAsync(15_000);
+      expect(notifyB).not.toHaveBeenCalled();
+    });
+
+    it('waiting for the first click in a hidden tab: the same notice, once for several requests; never when shown', async () => {
+      let hidden = true;
+      const notifyHidden = vi.fn();
+      const h = await activeHarness({ hasBeenActive: () => false, isHidden: () => hidden, notifyHidden });
+      h.push([request(), request({ id: 'req2', createdAt: T0 + 1 })]);
+      await flush();
+      expect(h.state.waitingForClick).toBe(true);
+      expect(h.prepare).not.toHaveBeenCalled();
+      expect(notifyHidden).toHaveBeenCalledTimes(1);
+      expect(notifyHidden).toHaveBeenCalledWith('Gemini CLI');
+      h.push([request(), request({ id: 'req2', createdAt: T0 + 1 }), request({ id: 'req3', createdAt: T0 + 2 })]);
+      await flush();
+      expect(notifyHidden).toHaveBeenCalledTimes(1);
+
+      hidden = false;
+      const shownNotice = vi.fn();
+      const v = await activeHarness({ hasBeenActive: () => false, isHidden: () => false, notifyHidden: shownNotice });
+      v.push([request()]);
+      await flush();
+      expect(v.state.waitingForClick).toBe(true);
+      expect(shownNotice).not.toHaveBeenCalled();
+    });
+  });
+
   it('an offline claim is retried when the browser is back online', async () => {
     const h = await activeHarness();
     h.claim.mockRejectedValueOnce(Object.assign(new Error('offline'), { code: 'unavailable' }));

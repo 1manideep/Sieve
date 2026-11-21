@@ -11,6 +11,7 @@ import { ensureUserDoc, listenUserDoc } from '@/app/services/userDoc';
 import { createExtensionBridge } from '@/relay/extensionBridge';
 import { createHomeBaseEngine, type EngineDeps, type HomeBaseEngine } from '@/relay/homeBaseEngine';
 import * as lock from '@/relay/homeBaseLock';
+import { showInFrontNotice } from '@/relay/inFrontNotice';
 import { onFirstInteraction, onWake, wasDiscarded, whenVisible } from '@/relay/lifecycle';
 import * as requests from '@/relay/requests';
 import { resilientSnapshot } from '@/relay/resilient';
@@ -149,6 +150,7 @@ export async function startGoogleSession(user: SessionUser): Promise<void> {
     },
     beginForeground: () => useIndexing.getState().beginForeground(),
     warmModels: () => void import('@/index/rerank').then((m) => m.warmupRerank(), () => undefined),
+    notifyHidden: (aiName) => showInFrontNotice(aiName, useSettings.getState().settings.pushEnabled),
     now: () => (clock ? clock.now() : Date.now()),
     set: (patch) => useHomeBase.setState(patch),
     toast: (t) => useToasts.getState().push(t),

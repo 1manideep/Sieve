@@ -201,18 +201,21 @@ def handle_ladder_tool(deps: Any, ctx: CallCtx, *, tool: str, args: tools.Ladder
         return tools.open_limit_result(list(admitted.waiting))
     request_id = str(admitted.request_id)
     ref = _requests(db, ctx.uid).document(request_id)
+    seen: dict[str, Any] = {"data": {"status": "queued", "createdAt": deps.now()}}   # a new request, until read
     if admitted.kind == "existing":
         data = admitted.snap.to_dict() or {}
         logs.log_event("tool_call_deduped", grant=ctx.grant_id, tool=tool, status=str(data.get("status")))
         if data.get("status") not in OPEN_STATUSES:
             return finish(deps, ctx, request_id, data, t0)
+        seen["data"] = data
     elif not ctx.playground:
         try:
             push.notify_request_waiting(db, deps.push, uid=ctx.uid, request_id=request_id)
         except Exception as exc:  # noqa: BLE001 - a missed push never fails the request
             logs.log_exception("push_error", exc, grant=ctx.grant_id)
-    outcome = wait_for_change(ref, deadline=ladder_deadline(t0, deps.wait_seconds()), monotonic=deps.monotonic)
-    return finish(deps, ctx, request_id, outcome, t0)
+    outcome = wait_for_change(ref, deadline=ladder_deadline(t0, deps.wait_seconds()), monotonic=deps.monotonic,
+                              seen=seen)
+    return finish(deps, ctx, request_id, outcome, t0, seen=seen.get("data"))
 
 
 # ---------- waiting ----------
@@ -222,10 +225,12 @@ def _done(data: Mapping[str, Any] | None) -> bool:
 
 
 def wait_for_change(ref: Any, *, deadline: float, monotonic: Callable[[], float],
-                    poll_seconds: float = config.SAFETY_POLL_SECONDS) -> dict | None:
+                    poll_seconds: float = config.SAFETY_POLL_SECONDS, seen: dict[str, Any] | None = None) -> dict | None:
     """Wait until the request reaches a status in WAIT_DONE (or vanishes), or until the deadline.
     A listener delivers changes at once; a direct get() every poll_seconds guards against a stalled
-    listener. Returns the document data, {"status": "expired"} when it is gone, or None at the deadline."""
+    listener. Returns the document data, {"status": "expired"} when it is gone, or None at the deadline.
+    `seen["data"]`, when given, is set to the latest document data the wait read, so a pending result at the
+    deadline can say whether the request is still being prepared or waits for the person."""
     event = threading.Event()
     box: dict[str, Any] = {}
 
@@ -237,6 +242,8 @@ def wait_for_change(ref: Any, *, deadline: float, monotonic: Callable[[], float]
                 event.set()
                 return
             data = doc.to_dict() or {}
+            if seen is not None:
+                seen["data"] = data
             if _done(data):
                 box["data"] = data
                 event.set()
@@ -263,6 +270,8 @@ def wait_for_change(ref: Any, *, deadline: float, monotonic: Callable[[], float]
             if not snap.exists:
                 return {"status": "expired"}
             data = snap.to_dict() or {}
+            if seen is not None:
+                seen["data"] = data
             if _done(data):
                 return data
     finally:
@@ -336,9 +345,11 @@ def _nothing_delay(deps: Any, data: Mapping[str, Any], t0: float) -> None:
         deps.sleep(remaining)
 
 
-def finish(deps: Any, ctx: CallCtx, request_id: str, data: dict | None, t0: float) -> ToolResult:
+def finish(deps: Any, ctx: CallCtx, request_id: str, data: dict | None, t0: float,
+           seen: Mapping[str, Any] | None = None) -> ToolResult:
+    """`seen`: the latest request doc a wait that ran out read; its status picks the pending message."""
     if data is None:
-        return tools.pending_result(request_id)
+        return tools.pending_result(request_id, seen, deps.now())
     status = data.get("status")
     if status == "answered":
         if deps.monotonic() - t0 >= config.COLLECT_CUTOFF_SECONDS:
@@ -352,10 +363,10 @@ def finish(deps: Any, ctx: CallCtx, request_id: str, data: dict | None, t0: floa
             return tools.unknown_request_result()
         if got.kind == "revoked" and not ctx.playground:
             mark_receipt(deps.db, ctx.uid, request_id, "revoked")
-        return tools.result_from_request(request_id, got.data or {})
+        return tools.result_from_request(request_id, got.data or {}, deps.now())
     if status in ("blocked", "no-match"):
         _nothing_delay(deps, data, t0)
-    return tools.result_from_request(request_id, data)
+    return tools.result_from_request(request_id, data, deps.now())
 
 
 # ---------- sieve_check ----------
@@ -394,11 +405,13 @@ def handle_check(deps: Any, ctx: CallCtx, request_id: str, *, t0: float) -> Tool
     if expire_if_stale(deps.db, ref, data, deps.now()):
         return ToolResult(status="expired", request_id=request_id, message=tools.MSG_REQUEST_EXPIRED)
     status = data.get("status")
+    seen: dict[str, Any] = {"data": data}
     if status in OPEN_STATUSES:
-        data = wait_for_change(ref, deadline=check_deadline(t0, deps.wait_seconds()), monotonic=deps.monotonic)
+        data = wait_for_change(ref, deadline=check_deadline(t0, deps.wait_seconds()), monotonic=deps.monotonic,
+                               seen=seen)
     elif status == "collected":
         return tools.error_result(tools.MSG_COLLECTED, request_id)
-    return finish(deps, ctx, request_id, data, t0)
+    return finish(deps, ctx, request_id, data, t0, seen=seen.get("data"))
 
 
 # ---------- receipts ----------

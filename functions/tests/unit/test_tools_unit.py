@@ -1,10 +1,10 @@
 """U11 (denial results), U15 (argument validation), results and instructions copy."""
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from sieve import tools
+from sieve import config, tools
 from sieve.models import GrantMeta, SharedImage, ToolResult
 
 TODAY = date(2026, 11, 16)
@@ -54,6 +54,38 @@ def test_result_from_request_and_d6():
                          "again while the result is pending.")
     a = tools.answered_result(rid, "full", "Text")
     assert a.message == "The person approved sharing this full item."
+
+
+def test_pending_says_whether_there_is_anything_to_approve():
+    """queued or claimed is still being prepared on the person's computer; only awaiting-person waits for them."""
+    rid = "a" * 20
+    now = datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc)
+    young, old = now - timedelta(seconds=149), now - timedelta(seconds=150)
+    preparing = ("Sieve is still preparing this on the person's computer. There is nothing for them to approve yet. "
+                 f"Call sieve_check with request_id \"{rid}\" again.")
+    slow = ("Sieve has not finished preparing this. Its tab may be in the background: ask the person to bring the "
+            f"Sieve tab to the front, then call sieve_check with request_id \"{rid}\" again.")
+    for status in ("queued", "claimed"):
+        assert tools.result_from_request(rid, {"status": status, "createdAt": young}, now).to_wire() == {
+            "status": "pending", "request_id": rid, "message": preparing}
+        assert tools.result_from_request(rid, {"status": status, "createdAt": old}, now).to_wire() == {
+            "status": "pending", "request_id": rid, "message": slow}
+    approve = tools.pending_result(rid).message
+    assert approve.startswith("The person has not approved this yet. Tell them a request is waiting in Sieve")
+    assert tools.result_from_request(rid, {"status": "awaiting-person", "createdAt": old}, now).message == approve
+    assert tools.pending_result(rid, {"status": "awaiting-person", "createdAt": young}, now).message == approve
+    # no age to go by (no time, no clock, or a naive time): still preparing, never the background line
+    assert tools.result_from_request(rid, {"status": "queued"}, now).message == preparing
+    assert tools.result_from_request(rid, {"status": "claimed", "createdAt": old}).message == preparing
+    naive = old.replace(tzinfo=None)
+    assert tools.result_from_request(rid, {"status": "claimed", "createdAt": naive}, now).message == preparing
+    assert config.PREPARING_SLOW_SECONDS == 150
+    for message in (preparing, slow):
+        assert config.utf16_len(message) <= config.MESSAGE_MAX_CHARS
+    # the tool copy no longer says that every pending result waits for the person's approval
+    copy = tools.instructions(TODAY, "full") + json.dumps(tools.TOOLS)
+    assert "nothing to approve yet" in copy and "remind the person to approve" not in copy
+    assert "do not ask the person to approve" in tools.instructions(TODAY)
 
 
 def test_unsupported_and_unknown_statuses():

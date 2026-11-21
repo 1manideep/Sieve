@@ -17,6 +17,7 @@ import {
   type HardFilter, type ParsedQuestion, type SearchReport, type SieveDb,
 } from '@/index';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
+import { errorLine } from '@/robust/errorLine';
 import { forgetCloudConsentRequest, rememberCloudConsentRequest } from './consent';
 import { LABELS, RUNNING, UNAVAILABLE, WARNINGS, WHERE_PHRASE } from './copy';
 import { answerStillHolds, confirmFresh, type FreshResult } from './fresh';
@@ -284,7 +285,8 @@ export async function prepareProposal(input: PrepareInput): Promise<Proposal> {
     return await prepare(run);
   } catch (e) {
     if (run.aborted || isAbortError(e)) return run.stopped();
-    if (import.meta.env.DEV) console.error('prepareProposal failed', e instanceof Error ? e.name : typeof e);
+    // In production too: this line is the only evidence a crash leaves (the error's name and message, no content).
+    console.error('Sieve: preparing an answer crashed.', errorLine(e));
     run.code('rule', LABELS.crashed);
     return run.finish('error');
   }
@@ -396,6 +398,8 @@ async function prepare(run: Run): Promise<Proposal> {
       run.end(retrieveId, codeTrace('retrieve', LABELS.stopped, ms));
       return run.finish('error');
     }
+    // A lazy chunk that is gone after a deploy fails here: the line names it (the error's name and message, no content).
+    console.error('Sieve: the search on this device failed.', errorLine(e));
     run.end(retrieveId, codeTrace('retrieve', 'The search on this device failed. Nothing was shared.', ms));
     return run.finish('error');
   }

@@ -60,6 +60,9 @@ MAX_BODY_BYTES = 16_384
 # Request id first: a tool call never holds the connection long enough for a client gateway (30 to 60 s) to cut it.
 SHORT_WAIT_SECONDS = 15           # a ladder tool waits at most this long for a decision, then returns pending
 CHECK_WAIT_SECONDS = 20           # sieve_check waits at most this long per call
+# A request still queued or claimed this long after it was made: the pending message says the Sieve tab may be in the
+# background (Chrome slows the on-device model there). With several requests waiting, one may also just be in line.
+PREPARING_SLOW_SECONDS = 150
 WAIT_CAP_SECONDS = 20             # no wait runs past t0 + 20 s
 COLLECT_CUTOFF_SECONDS = 23       # no collection after t0 + 23 s (the reply must leave before 25 s)
 REPLY_DEADLINE_SECONDS = 25       # end to end, from t0, for every tool call

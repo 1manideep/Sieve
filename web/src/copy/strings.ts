@@ -122,6 +122,12 @@ export const ROUTE_ERROR = {
   brokeBody: 'Nothing was shared. Reload to try again.',
 } as const;
 
+/** A tab still running the build from before a deploy (app/freshBuild.ts): one toast that stays until dismissed. */
+export const FRESH_BUILD = {
+  toast: 'Sieve was updated. Reload to keep it working.',
+  reload: ROUTE_ERROR.reload,
+} as const;
+
 /** Status strip segments (40 section 8.1). */
 export const STATUS = {
   offline: 'Offline',
@@ -343,6 +349,9 @@ export const HOME_BASE = {
   mayOnlyReceive: (aiName: string, step: string) => `${aiName} may only receive ${step === 'answer' ? 'the answer' : 'an excerpt'}.`,
   waitingForClick: 'Waiting for you to click in this tab once',
   waitingHidden: 'Waiting for the Sieve tab: Chrome may slow the on-device model in background tabs.',
+  /** The system notification while the tab is in the background holds a request up (70 R-PLAT-01). */
+  inFrontTitle: 'Sieve needs to be in front',
+  inFrontBody: (aiName: string) => `${aiName} is waiting. Open the Sieve tab so it can prepare the answer.`,
   prepareFailed: (aiName: string) => `Sieve couldn't prepare an answer for ${aiName}. It was told to try again later.`,
   blockedToast: (aiName: string) => `${aiName} asked for something your rules never share. Sieve told it no.`,
   modelUnavailableToast: (aiName: string) => `${aiName} asked, but this Chrome has no on-device model. Sieve told it to try later.`,

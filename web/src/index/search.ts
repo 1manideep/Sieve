@@ -6,6 +6,7 @@ import { DEFAULT_CATEGORY_RULES, EMBEDDING_DIMS, KEYWORD_SAFETY_K, VECTOR_K } fr
 import type { Candidate, Category, CategoryRule, IndexRecord, ItemKind, QueryHints, SourceKind } from '@sieve/shared';
 import { getMl } from '../ml/client';
 import type { EmbedInput, EmbedOutput } from '../ml/protocol';
+import { errorLine } from '../robust/errorLine';
 import { BOOST, GMAIL_LIVE_K, RERANK_TEXT_CHARS, SEARCH_TUNING } from './config';
 import { repairOrphanHit } from './consistency';
 import { asksLatest, isRoleCue, knownSenderWordsOf, senderMatches } from './cues';
@@ -25,7 +26,7 @@ export interface SearchReport {
   scope: { records: number; byKind: Partial<Record<ItemKind, number>> };
   searchedFor?: string;                 // corrected question, when a correction happened
   hints: QueryHints;
-  vector: { ran: boolean; ms: number; reason?: 'model-loading' | 'model-failed' };
+  vector: { ran: boolean; ms: number; reason?: 'model-loading' | 'model-failed' | 'timeout' };
   keyword: { ms: number; added: number };
   live?: { q: string; found: number; added: number; ms: number; charsSent: number; skipped?: 'no-token' | 'error' | 'timeout' };
   hydrated?: { fetched: number; skipped: number };
@@ -290,7 +291,8 @@ function boostFor(rec: IndexRecord, meta: RecordMeta | undefined, hints: QueryHi
  */
 export async function search(db: SieveDb, question: string, opts: SearchOptions = {}): Promise<Candidate[]> {
   let report: SearchReport | undefined;
-  const once = (o: SearchOptions, datesSoft = false) => searchOnce(db, question, { ...o, onReport: (r) => (report = r) }, datesSoft);
+  const vector: VectorState = {};
+  const once = (o: SearchOptions, datesSoft = false) => searchOnce(db, question, { ...o, onReport: (r) => (report = r) }, datesSoft, vector);
   let current = opts;
   let res = await once(current);
   let categoryRelaxed: Category[] | undefined;
@@ -311,8 +313,14 @@ export async function search(db: SieveDb, question: string, opts: SearchOptions 
   return res;
 }
 
+/**
+ * Shared by the passes of one search: once the question's embedding has failed, a pass that relaxes a filter skips
+ * the vector step instead of waiting out the model's limit again (10 s in the foreground, ml/client.ts).
+ */
+interface VectorState { failed?: 'model-failed' | 'timeout' }
+
 /** One pass. `datesSoft`: the dates of the hints and the question only rank, even an explicit one. */
-async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, datesSoft: boolean): Promise<Candidate[]> {
+async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, datesSoft: boolean, vector: VectorState): Promise<Candidate[]> {
   if (!question.trim()) return [];
   await ready(db);
   abortIfNeeded(opts.signal);
@@ -365,21 +373,37 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
   const vectorHits = new Map<string, ChunkHit>();
   const ml = getMl();
   const status = ml.status('embed');
-  if (status.state === 'ready') {
+  if (vector.failed) {
+    report.vector = { ran: false, ms: 0, reason: vector.failed };
+  } else if (status.state === 'ready') {
     const texts = [withEmojiNames(p.normalized)];
     const corrected = p.searchText ?? withEmojiNames(p.corrected);
     if (corrected !== texts[0]) texts.push(corrected);
     const t0 = performance.now();
-    const out = await ml.run<EmbedInput, EmbedOutput>('embed', { texts }, { priority: 'foreground', signal: opts.signal });
-    for (let i = 0; i < out.count; i++) {
-      const qv = out.data.subarray(i * out.dims, (i + 1) * out.dims);
-      const q = qv.length === EMBEDDING_DIMS ? qv : new Float32Array(EMBEDDING_DIMS);
-      for (const h of rt.vectors.scan(q, accept, T.retrieveK)) {
-        const prev = vectorHits.get(h.recordId);
-        if (!prev || h.score > prev.score) vectorHits.set(h.recordId, h);
-      }
+    let out: EmbedOutput | undefined;
+    try {
+      out = await ml.run<EmbedInput, EmbedOutput>('embed', { texts }, { priority: 'foreground', signal: opts.signal });
+    } catch (e) {
+      // A stopped search stays stopped. Any other failure (a worker that died, the client's time limit) only means
+      // there is no vector list: the search goes on with the keyword list, and the report says why.
+      abortIfNeeded(opts.signal);
+      const name = (e as { name?: unknown } | null)?.name;
+      if (name === 'AbortError') throw e;
+      vector.failed = name === 'TimeoutError' ? 'timeout' : 'model-failed';
+      console.warn('Sieve: the question embedding failed; searching by keyword.', errorLine(e));
+      report.vector = { ran: false, ms: Math.round(performance.now() - t0), reason: vector.failed };
     }
-    report.vector = { ran: true, ms: Math.round(performance.now() - t0) };
+    if (out) {
+      for (let i = 0; i < out.count; i++) {
+        const qv = out.data.subarray(i * out.dims, (i + 1) * out.dims);
+        const q = qv.length === EMBEDDING_DIMS ? qv : new Float32Array(EMBEDDING_DIMS);
+        for (const h of rt.vectors.scan(q, accept, T.retrieveK)) {
+          const prev = vectorHits.get(h.recordId);
+          if (!prev || h.score > prev.score) vectorHits.set(h.recordId, h);
+        }
+      }
+      report.vector = { ran: true, ms: Math.round(performance.now() - t0) };
+    }
   } else {
     if (status.state === 'idle') ml.warmup('embed').catch(() => undefined);
     report.vector = { ran: false, ms: 0, reason: status.state === 'failed' ? 'model-failed' : 'model-loading' };

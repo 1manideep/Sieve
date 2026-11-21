@@ -13,7 +13,8 @@ function ToastCard({ toast }: { toast: Toast }) {
   const paused = hovered || focused;
 
   useEffect(() => {
-    if (paused) return undefined;
+    // Infinity: the toast stays until it is dismissed (setTimeout would read Infinity as 0 and close it at once).
+    if (paused || !Number.isFinite(remaining.current)) return undefined;
     const startedAt = Date.now();
     const timer = window.setTimeout(() => dismiss(toast.id), remaining.current);
     return () => {

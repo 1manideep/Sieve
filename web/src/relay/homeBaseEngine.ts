@@ -21,7 +21,7 @@ import type { ToastState } from '@/state/toasts';
 import type { DeviceView, LiveStep, RelayRequestView } from '@/state/types';
 import { DECIDE_ERRORS, HOME_BASE } from '@/copy/strings';
 import { truncateGraphemes } from '@/robust/question';
-import { AUTO_FLOOR_MS, AUTO_JITTER_MS, CLAIM_RETRY_MS, DONE_ENTRY_TTL_MS, PREPARE_TIMEOUT_MS } from './constants';
+import { AUTO_FLOOR_MS, AUTO_JITTER_MS, CLAIM_RETRY_MS, DONE_ENTRY_TTL_MS, HIDDEN_NOTICE_MS, PREPARE_TIMEOUT_MS } from './constants';
 import { decisionDeadline, isPlaygroundRequest } from './deadline';
 import { validateDecision, type DecisionInput, type DecideResultReason } from './decision';
 import type { BridgeHandlers, ExtensionBridge } from './extensionBridge';
@@ -30,6 +30,7 @@ import { MSG } from './messagesToAi';
 import { pendingPreviews } from './preview';
 import { resilientSnapshot, type ListenerState } from './resilient';
 import { checkBeforeSend, type SendBlock } from './sendCheck';
+import { errorLine } from '@/robust/errorLine';
 import { expandMoved } from '@/robust/media';
 import { questionWarnings } from '@/robust/questionWarnings';
 
@@ -71,6 +72,11 @@ export interface EngineDeps {
   beginForeground(): () => void;                       // useIndexing
   /** Starts loading the reranker when this tab becomes the home base, so the first request is reranked too. */
   warmModels?(): void;
+  /**
+   * 70 R-PLAT-01: a request is held up because this tab is in the background. Tells the person outside the tab (a
+   * system notification, when they allow them); the engine calls it at most once until the tab is shown again.
+   */
+  notifyHidden?(aiName: string): void;
   now(): number;                                       // server time when known (70 section 3.4)
   set(patch: Partial<HomeBaseState>): void;            // store setState
   toast: ToastState['push'];
@@ -200,6 +206,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
   let waitingForClick = false;
   let extensionShortcut: string | undefined;
   let lastSettings: Settings | undefined;
+  let hiddenNoticed = false;   // the person was told this tab holds requests up; told again only after it is shown
 
   const entries = new Map<string, PendingEntry>();
   const runtime = new Map<string, Runtime>();
@@ -635,6 +642,8 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
             update(w.requestId, { liveSteps: [clickStep(w.requestId)] });
           }
           publish();
+          // nobody sees "click in this tab" in a background tab: tell the person outside it (70 R-PLAT-01)
+          if (deps.isHidden?.()) noticeHidden(e.request.requester.aiName);
           if (!offClick) {
             const subscribe = deps.onFirstInteraction ?? ((fn: () => void) => {
               const h = () => fn();
@@ -713,6 +722,28 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
     }
   }
 
+  /** 70 R-PLAT-01: once per spell in the background, tell the person outside the tab that it holds a request up. */
+  function noticeHidden(aiName: string): void {
+    if (hiddenNoticed || !deps.notifyHidden) return;
+    hiddenNoticed = true;
+    deps.whenVisible?.(() => (hiddenNoticed = false));
+    try {
+      deps.notifyHidden(aiName);
+    } catch {
+      // best effort: the card on the Requests screen says why the request waits
+    }
+  }
+
+  /**
+   * One console line when a preparation hits PREPARE_TIMEOUT_MS, as evidence of where background tabs stall: hidden
+   * at the start and at the end, and each live step's kind, place, state and time. Never a label or any content.
+   */
+  function logTimeout(e: PendingEntry | undefined, hiddenAtStart: boolean, startedAt: number): void {
+    const t = deps.now();
+    const steps = (e?.liveSteps ?? []).map((s) => `${s.kind} ${s.where} ${s.status} ${s.status === 'done' && s.step ? s.step.ms : t - s.startedAt} ms`);
+    console.warn('Sieve: preparing a request timed out.', `hidden at start ${hiddenAtStart}, at end ${deps.isHidden?.() === true}, ${t - startedAt} ms; steps: ${steps.join(', ') || 'none'}`);
+  }
+
   async function prepare(id: string): Promise<void> {
     const entry = entries.get(id);
     if (!entry) return;
@@ -724,8 +755,16 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
     update(id, { phase: 'preparing', liveSteps: [], answerPreview: '', proposal: undefined, error: undefined });
     publish();
     const end = deps.beginForeground();
+    const startedAt = deps.now();
+    const hiddenAtStart = deps.isHidden?.() === true;
     const expiry = setTimeout(() => ctl.abort('expired' satisfies AbortReason), Math.max(0, decisionDeadline(req) - deps.now()));
     const timeout = setTimeout(() => ctl.abort('timeout' satisfies AbortReason), PREPARE_TIMEOUT_MS);
+    // Started in a background tab and still preparing after HIDDEN_NOTICE_MS: say so well before the timeout parks it.
+    const notice = hiddenAtStart
+      ? setTimeout(() => {
+          if (deps.isHidden?.() && r.ctl === ctl && !ctl.signal.aborted) noticeHidden(aiName);
+        }, HIDDEN_NOTICE_MS)
+      : undefined;
     let proposal: Proposal | undefined;
     let failed = false;
     try {
@@ -747,16 +786,20 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
         blockedRecordIds,
         now: deps.now(),
       });
-    } catch {
+    } catch (error) {
       failed = true;
+      // A stop or an expiry is expected; any other throw is logged, since nothing else would show it in production.
+      if (!ctl.signal.aborted) console.error('Sieve: the home base could not prepare a request.', errorLine(error));
     } finally {
       end();
       clearTimeout(expiry);
       clearTimeout(timeout);
+      clearTimeout(notice);
       if (r.ctl === ctl) r.ctl = undefined;
     }
     if (stopped || !entries.has(id)) return;
     const reason = ctl.signal.aborted ? (ctl.signal.reason as AbortReason) : undefined;
+    if (reason === 'timeout') logTimeout(entries.get(id), hiddenAtStart, startedAt);
     if (reason === 'expired') {
       removeEntry(id);   // functions mark it expired
       publish();
@@ -776,6 +819,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
         liveSteps: [{ id: `${id}:hidden`, kind: 'select', label: HOME_BASE.waitingHidden, where: 'device', status: 'running', startedAt: deps.now() }],
       });
       publish();
+      noticeHidden(aiName);
       const resume = () => {
         r.waiting = undefined;
         if (entries.has(id) && deps.now() < decisionDeadline(entries.get(id)!.request)) void pump();

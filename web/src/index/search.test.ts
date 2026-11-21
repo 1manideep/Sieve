@@ -1,8 +1,9 @@
 // 20 section 20, search: A-SR-2 to A-SR-8 and A-SR-10 on the seeded Playground with the hash embedder.
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { createHashEmbedClient, type HashEmbedClient } from '../../../tests/harness/hashEmbedder';
 import { nodeFile } from '../../../tests/harness/indexEnv';
 import { setMlClient } from '../ml/client';
+import type { EmbedInput, MlTask } from '../ml/protocol';
 import { seedPlayground } from '../playground/seed';
 import { addUploads } from '../sources/uploads';
 import { MAX_PER_THREAD } from './config';
@@ -286,5 +287,74 @@ describe('search', () => {
     expect(ids).toHaveLength(1);
     const dups = await duplicatesOf(db, ids[0] as string);
     expect(dups.map((r) => r.id)).toEqual([ids[0] === b.id ? a?.recordId : b.id]);
+  });
+});
+
+describe('search, when the question embedding fails', () => {
+  /**
+   * The question's embedding is the one foreground run; the background queue's runs still reach the hash embedder.
+   * `fail` stands in for the model on the question and gives what it throws.
+   */
+  function failQuestionEmbed(fail: () => unknown) {
+    const real = ml.run.bind(ml);
+    const questions: string[][] = [];
+    const spy = vi.spyOn(ml, 'run').mockImplementation((async (task: MlTask, input: unknown, o?: { priority?: 'foreground' | 'background'; signal?: AbortSignal }) => {
+      if (o?.priority !== 'foreground') return real(task, input, o);
+      questions.push((input as EmbedInput).texts);
+      throw fail();
+    }) as typeof ml.run);
+    return { questions, restore: () => spy.mockRestore() };
+  }
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('a worker that rejects: no vector list, the keyword list answers, and the report says model-failed', async () => {
+    await peekQueue(db)?.whenIdle();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const f = failQuestionEmbed(() => new Error('The on-device model stopped working.'));
+    let report: SearchReport | undefined;
+    const res = await search(db, 'Where is order #88231?', { onReport: (r) => (report = r) });
+    f.restore();
+    expect(f.questions).toHaveLength(1);
+    expect(report?.vector).toMatchObject({ ran: false, reason: 'model-failed' });
+    expect(report?.vector.ms).toBeGreaterThanOrEqual(0);
+    expect(report?.fusion?.vector).toBe(0);
+    expect(res[0]?.recordId).toBe('playground:pg-mail-21');
+    expect(res.every((c) => c.matchedBy === 'keyword')).toBe(true);
+    // one console line that names the error and never the question
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[1])).toBe('Error: The on-device model stopped working.');
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('88231');
+  });
+
+  it("the client's time limit: the report says timeout, and the pass that drops a date filter does not wait for the model again", async () => {
+    await peekQueue(db)?.whenIdle();
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const f = failQuestionEmbed(() => new DOMException('The on-device model took too long.', 'TimeoutError'));
+    let report: SearchReport | undefined;
+    // only the insurance declarations are from January 2026, so the date filter is dropped and a second pass runs
+    const res = await search(db, 'Where is order 88231?', { hints: { after: '2026-01-01', before: '2026-01-31' }, onReport: (r) => (report = r) });
+    f.restore();
+    expect(report?.dateRelaxed).toEqual({ after: '2026-01-01', before: '2026-01-31' });
+    expect(f.questions).toHaveLength(1);
+    expect(report?.vector).toEqual({ ran: false, ms: 0, reason: 'timeout' });
+    expect(res.map((c) => c.recordId)).toContain('playground:pg-mail-21');
+  });
+
+  it('a stopped search stays stopped: an AbortError from the model is passed on, and so is a stop during a failure', async () => {
+    await peekQueue(db)?.whenIdle();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const f = failQuestionEmbed(() => new DOMException('The operation was aborted.', 'AbortError'));
+    await expect(search(db, 'Where is order #88231?')).rejects.toMatchObject({ name: 'AbortError' });
+    f.restore();
+    // the caller stops the search while the model fails with another error: the stop wins
+    const ctl = new AbortController();
+    const g = failQuestionEmbed(() => {
+      ctl.abort();
+      return new Error('The on-device model stopped working.');
+    });
+    await expect(search(db, 'Where is order #88231?', { signal: ctl.signal })).rejects.toMatchObject({ name: 'AbortError' });
+    g.restore();
+    expect(warn).not.toHaveBeenCalled();
   });
 });

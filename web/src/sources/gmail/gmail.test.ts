@@ -255,6 +255,26 @@ describe('connect and backfill (A-GM-4, A-GM-5)', () => {
     expect((await db.records.get('gmail:new1'))?.text).toBe('fresh body');
   }, 60_000);
 
+  it('a later sync goes back for an email that never got its body', async () => {
+    gmail.add({ id: 'a', subject: 'First', text: 'the body of a' });
+    gmail.add({ id: 'b', subject: 'Second', text: 'the body of b' });
+    await connect();
+    // as after a backfill that stopped before its bodies step: the record is there, its body is not
+    const { ingestInternal } = await import('../../index/ingest');
+    const before = await db.records.get('gmail:a');
+    await ingestInternal(db, { source: 'gmail', sourceRef: 'a', kind: 'email', title: 'First', from: before?.from, threadId: before?.threadId, date: before?.date ?? 0, text: 'First' }, 'own', { bodyPending: true });
+    expect((await db.records.get('gmail:a'))?.text).toBeUndefined();
+    gmail.calls = [];
+    await runGmailSync(db);   // history only: nothing new arrived
+    expect((await db.records.get('gmail:a'))?.text).toBe('the body of a');
+    expect((await db.records.get('gmail:b'))?.text).toBe('the body of b');
+    expect(gmail.calls.filter((c) => c.startsWith('GET /messages/*'))).toHaveLength(1);
+    expect((await db.sources.get('gmail'))?.phase).toBe('idle');
+    gmail.calls = [];
+    await runGmailSync(db);   // nothing left to fetch
+    expect(gmail.calls.filter((c) => c.startsWith('GET /messages/*'))).toHaveLength(0);
+  });
+
   it('keeps the token only on the real Gmail row, never in web storage; logs replace it', async () => {
     gmail.add({ id: 'a', subject: 'Hello', text: 'hi' });
     await connect();

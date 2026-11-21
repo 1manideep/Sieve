@@ -3,7 +3,7 @@ import json
 import re
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sieve import config, links, tools
 from tests.emulator._grants import put_request
@@ -158,6 +158,26 @@ def test_h12_open_request_limit(db):
     assert all(f"\"{rid}\"" in over["message"] for rid in [*waiting, tenth["request_id"]])
     rate = db.collection("connectors").document(links.link_hash(o.secret)).get().to_dict()
     assert rate["rateRefunds"] > 0.9                 # the refused eleventh call was given back (30 section 11)
+
+
+def test_h12b_pending_says_when_there_is_nothing_to_approve(db):
+    """Still queued or claimed: being prepared on the person's computer, so nothing to approve yet (and after 150 s
+    the Sieve tab may be in the background). Only awaiting-person keeps the approval wording."""
+    o = owner(db)
+    s = emu.LegacySession(o.secret)
+    grant = o.grant["grantId"]
+    young = put_request(db, o.uid, grant, status="claimed", created_ago=timedelta(seconds=10))
+    old = put_request(db, o.uid, grant, status="queued", created_ago=timedelta(seconds=200))
+    waiting = put_request(db, o.uid, grant, status="awaiting-person", created_ago=timedelta(seconds=200))
+    out = {rid: check(s, rid)[1] for rid in (young, old, waiting)}
+    assert all(r["status"] == "pending" and r["request_id"] == rid for rid, r in out.items())
+    assert out[young]["message"] == tools.MSG_PREPARING.replace("{id}", young)
+    assert out[old]["message"] == tools.MSG_PREPARING_SLOW.replace("{id}", old)
+    assert out[waiting]["message"] == tools.pending_result(waiting).message
+    # a new question that no home base picks up stays queued: the ladder tool says it is still being prepared
+    _, fresh = ladder(s, question="A question nobody prepares?")
+    assert fresh["status"] == "pending"
+    assert fresh["message"] == tools.MSG_PREPARING.replace("{id}", fresh["request_id"])
 
 
 def test_h13_modern_header_mismatch(db):

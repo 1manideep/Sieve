@@ -3,6 +3,7 @@
 import { RELAY_DECISION_MINUTES } from '@sieve/shared';
 
 export const PREPARE_TIMEOUT_MS = 120_000;             // abort prepareProposal for a relay request
+export const HIDDEN_NOTICE_MS = 20_000;                // started in a hidden tab and still preparing: tell the person
 export const ASK_TIMEOUT_MS = 120_000;                 // abort prepareProposal for an in-app question
 export const CLAIM_RETRY_MS = [2_000, 5_000, 10_000];  // offline claim (and other transition) retries
 export const AUTO_FLOOR_MS = 3_000;                    // 11.6: an automatic outcome leaves no sooner than this after arrival
