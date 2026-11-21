@@ -47,8 +47,9 @@ export function activityText(activity: IndexingActivity): string {
   }
 }
 
-/** `resume`: the card's own Resume for the battery pause (the Sources screen has its header button instead). */
-export function IndexingCard({ lastSyncAt, resume = true }: { lastSyncAt?: number; resume?: boolean }) {
+/** `resume`: the card's own Resume for the battery pause. `plain`: no card around it (inside the Sources panel). */
+export function IndexingCard({ lastSyncAt, resume = true, plain = false }: { lastSyncAt?: number; resume?: boolean; plain?: boolean }) {
+  const frame = plain ? styles.indexingPlain : `${kit.glassSm} ${styles.indexing}`;
   const { state, pausedBy, left, done, total, fraction, etaMs, activity, counting } = useIndexing(
     useShallow((s) => ({
       state: s.state, pausedBy: s.pausedBy, left: s.left, done: s.done, total: s.total, fraction: s.fraction, etaMs: s.etaMs, activity: s.activity, counting: s.counting,
@@ -57,7 +58,7 @@ export function IndexingCard({ lastSyncAt, resume = true }: { lastSyncAt?: numbe
 
   if (state === 'idle') {
     return (
-      <section className={`${kit.glassSm} ${styles.indexing}`} aria-label={SOURCES.idleTitle}>
+      <section className={frame} aria-label={SOURCES.idleTitle}>
         <p className={styles.upToDate}>
           <span className={styles.check}>
             <Icon name="check" size={20} />
@@ -89,7 +90,7 @@ export function IndexingCard({ lastSyncAt, resume = true }: { lastSyncAt?: numbe
   else text = fillText(SOURCES.runningLeft, { left: formatCount(left) });
 
   return (
-    <section className={`${kit.glassSm} ${styles.indexing}`} aria-labelledby="indexing-card-title">
+    <section className={frame} aria-labelledby="indexing-card-title">
       <h2 id="indexing-card-title" className={styles.cardTitle}>
         {title}
       </h2>

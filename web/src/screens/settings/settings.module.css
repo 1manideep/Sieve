@@ -1,159 +1,65 @@
-/* Settings (docs/design/final-flow.md F5): two columns at 1200px and wider (the 280 px rail takes its share). Each
-   section is a plain heading with its content in a small glass box, or glass rows (category rules, assistants). */
-.grid { display: grid; gap: 22px 18px; grid-template-columns: minmax(0, 1fr); align-items: start; }
-@media (min-width: 1200px) { .grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
-.column { display: grid; gap: 22px; min-width: 0; align-content: start; }
+/* Settings (design handoff of Nov 20, 2026): the pieces only this screen has. The marks, the panel, rows, chips
+   and switches are in kit/ground.module.css. */
+.screen { gap: 28px; }
+.two { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px 32px; align-items: start; }
+@media (max-width: 900px) { .two { grid-template-columns: minmax(0, 1fr); } }
 
-.card { display: grid; gap: 10px; align-content: start; min-width: 0; scroll-margin-top: 16px; }
-.cardHeader { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
-.cardTitle { margin: 0; font: 500 16px/1.3 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text, #ffffff); }
-.cardTitle:focus { outline: none; }
-.cardTitle:focus-visible { box-shadow: var(--focus-ring, 0 0 0 2px #000000, 0 0 0 4px #8ab4f8); border-radius: 4px; }
-.cardRight { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.saveStatus { font: 400 12px/1.4 var(--font-mono, 'Google Sans Code', ui-monospace, monospace); color: var(--color-text-muted, rgba(255, 255, 255, 0.55)); }
-.cardBody { padding: 16px 18px; display: grid; gap: 12px; }
-
-.sub { margin: 0; font: 400 13px/1.5 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text-muted, rgba(255, 255, 255, 0.55)); }
-.text { margin: 0; font: 400 14px/1.5 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text-secondary, rgba(255, 255, 255, 0.75)); overflow-wrap: anywhere; }
-.note { margin: 0; font: 400 12px/1.5 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text-muted, rgba(255, 255, 255, 0.55)); }
-.warnText { margin: 0; font: 400 13px/1.45 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-warn-text, #fdd663); }
-.h3 { margin: 0; font: 500 14px/1.4 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text, #ffffff); }
-.danger { color: var(--color-never-text, #f28b82); }
-.divider { border: none; border-top: 1px solid rgba(255, 255, 255, 0.1); margin: 4px 0; width: 100%; }
+.saveStatus { font: 400 12px/1.4 var(--font-mono); color: var(--color-text-muted); }
+.text { margin: 0; font: 400 14px/1.5 var(--font-sans); color: var(--color-text-secondary); overflow-wrap: anywhere; }
+.note { margin: 0; font: 400 12px/1.5 var(--font-sans); color: var(--color-text-muted); }
+.warnText { margin: 0; font: 400 13px/1.45 var(--font-sans); color: var(--color-warn-text); }
 .group { display: grid; gap: 8px; }
 .inline { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .tagsRow { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.kbd {
-  font: 500 12px/1.4 var(--font-mono, 'Google Sans Code', ui-monospace, monospace);
-  padding: 1px 6px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  border-radius: 6px;
-  background: var(--color-bg, #000000);
-  color: var(--color-text, #ffffff);
-}
+.kbd { padding: 1px 6px; border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 6px; background: var(--color-bg); color: var(--color-text); font: 500 12px/1.4 var(--font-mono); }
 
-/* Assistants */
-.grantList { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.grantList[hidden] { display: none; }
-.grantRow { padding: 16px 18px; display: grid; gap: 6px; min-width: 0; }
-.grantTop { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; }
-.grantName { margin: 0; font: 500 14px/1.45 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text, #ffffff); overflow-wrap: anywhere; min-width: 0; }
-.grantLimits { margin: 0; font: 400 12px/1.45 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text-muted, rgba(255, 255, 255, 0.55)); overflow-wrap: anywhere; }
-.grantMeta { margin: 0; font: 400 12px/1.45 var(--font-mono, 'Google Sans Code', ui-monospace, monospace); color: var(--color-text-muted, rgba(255, 255, 255, 0.55)); overflow-wrap: anywhere; }
-.grantActions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
-.emptyRow { padding: 16px 18px; display: grid; gap: 10px; }
-.connect { justify-self: stretch; }
-.disclosure {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: var(--target-min, 44px);
-  padding: 8px 4px;
-  background: none;
-  border: none;
-  border-radius: 10px;
-  font: 500 14px/1.45 var(--font-sans, 'Google Sans', system-ui, sans-serif);
-  color: var(--color-text-secondary, rgba(255, 255, 255, 0.75));
-  cursor: pointer;
-}
-.disclosure:hover { background: rgba(255, 255, 255, 0.06); }
+/* The open assistant */
+.autoPill { display: inline-flex; align-items: center; min-height: 30px; padding: 0 12px; border: 1px solid rgba(138, 180, 248, 0.45); border-radius: 999px; background: rgba(138, 180, 248, 0.14); color: var(--color-text); font-size: 12px; white-space: nowrap; }
+.expires { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.expires > :first-child { font-size: 16px; color: var(--color-text); }
+.bar { display: block; width: 100%; max-width: 320px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+.bar > span { display: block; height: 100%; background: var(--color-accent); }
+.confirm { display: flex; flex-direction: column; gap: 10px; margin-top: auto; padding-top: 14px; border-top: 1px solid rgba(242, 139, 130, 0.4); }
+.confirm:focus { outline: none; }
+.confirmTitle { margin: 0; font: 500 14px/1.4 var(--font-sans); color: var(--color-text); }
 
-/* Dialog forms */
+/* Connecting, and the Change limits dialog */
 .dialogBody { display: grid; gap: 16px; }
-.stepTitle { margin: 0; font: 500 16px/1.35 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text, #ffffff); }
+.stepTitle { margin: 0; font: 500 16px/1.35 var(--font-sans); color: var(--color-text); }
 .stepTitle:focus { outline: none; }
-.chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.fieldset { border: none; margin: 0; padding: 0; display: grid; gap: 2px; min-width: 0; }
-.legend { font: 500 14px/1.45 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text, #ffffff); padding: 0; margin-bottom: 4px; }
+.fieldset { display: grid; gap: 2px; min-width: 0; margin: 0; padding: 0; border: none; }
+.legend { margin-bottom: 4px; padding: 0; font: 500 14px/1.45 var(--font-sans); color: var(--color-text); }
 .twoColumns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 16px; }
-.choice {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  min-height: var(--target-min, 44px);
-  padding: 10px 0;
-  cursor: pointer;
-}
-.choice input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--color-accent, #8ab4f8); flex: 0 0 auto; }
-.choiceLabel { font: 400 15px/1.45 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text, #ffffff); }
+.choice { display: flex; align-items: flex-start; gap: 10px; min-height: var(--target-min); padding: 10px 0; cursor: pointer; }
+.choice input { flex: 0 0 auto; width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--color-accent); }
+.choiceLabel { font: 400 15px/1.45 var(--font-sans); color: var(--color-text); }
 .choiceRow { display: grid; }
-.choiceNote { margin: -8px 0 6px 28px; font: 400 13px/1.45 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text-muted, rgba(255, 255, 255, 0.55)); }
-.suffix { font: 400 13px/1.45 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text-muted, rgba(255, 255, 255, 0.55)); }
-.linkRow { display: flex; flex-wrap: wrap; gap: 8px; }
-.link { flex: 1 1 280px; font: 14px/1.4 var(--font-mono, 'Google Sans Code', ui-monospace, monospace); }
-.howTo { margin: 0; font: 500 15px/1.45 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text, #ffffff); }
-.steps { margin: 0; padding-left: 20px; display: grid; gap: 8px; font: 400 14px/1.5 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text-secondary, rgba(255, 255, 255, 0.75)); overflow-wrap: anywhere; }
+.choiceNote { margin: -8px 0 6px 28px; font: 400 13px/1.45 var(--font-sans); color: var(--color-text-muted); }
+.linkRow { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+.link { flex: 1 1 280px; font: 14px/1.4 var(--font-mono); }
+.steps { display: grid; gap: 8px; margin: 0; padding-left: 20px; font: 400 14px/1.5 var(--font-sans); color: var(--color-text-secondary); }
 
-/* Category rules */
-.rules { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
-.ruleRow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 12px 18px; min-width: 0; }
-.ruleMain { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.ruleName { font: 400 14px/1.4 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text, #ffffff); }
-.ruleLine { font: 400 12px/1.4 var(--font-sans, 'Google Sans', system-ui, sans-serif); }
+/* Your rules: bare tiles, the rule in a word under each. */
+.tiles { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.tile { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; padding: 12px 6px 10px; border: 0; border-radius: 16px; background: transparent; color: var(--color-text); font: 500 13px/1.3 var(--font-sans); cursor: pointer; }
+.tileGlyph { display: inline-flex; align-items: center; height: 38px; transition: filter 0.15s; }
+.tile[aria-pressed='true'] .tileGlyph { filter: drop-shadow(0 0 9px rgba(138, 180, 248, 0.6)); }
+.tileRule { font: 400 11px/1.3 var(--font-mono); color: rgba(255, 255, 255, 0.65); }
+@media (max-width: 900px) { .tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
-/* Computers */
-.devices { list-style: none; margin: 0; padding: 0; display: grid; }
-.deviceRow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-.deviceRow:last-child { border-bottom: none; }
-.deviceMain { flex: 1 1 240px; min-width: 0; display: grid; gap: 4px; }
-.deviceName { margin: 0; font: 500 14px/1.45 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text, #ffffff); overflow-wrap: anywhere; }
+/* Account */
+.who { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1 1 260px; }
+.avatar { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--color-primary); color: var(--color-on-primary); font: 500 16px/1 var(--font-sans); object-fit: cover; }
 
-/* Delete checklist */
-.checklist { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; font: 400 14px/1.5 var(--font-sans, 'Google Sans', system-ui, sans-serif); }
+/* More */
+.moreWrap { display: flex; flex-direction: column; gap: 6px; }
+.moreButton { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 44px; padding: 0 2px; border: 0; border-radius: 10px; background: transparent; color: var(--color-text); font: 500 14px/1.4 var(--font-sans); text-align: left; cursor: pointer; }
+.moreSub { font-weight: 400; color: rgba(255, 255, 255, 0.65); }
+.past { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; font-size: 13px; color: rgba(255, 255, 255, 0.65); text-align: right; }
+
+/* Delete my account: the live checklist */
+.checklist { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; font: 400 14px/1.5 var(--font-sans); }
 .checkItem { display: flex; align-items: center; gap: 8px; }
-.checkDone { color: var(--color-ok, #6dd58c); display: inline-flex; }
-.checkWaiting { width: 16px; height: 16px; border: 2px solid rgba(255, 255, 255, 0.25); border-radius: 50%; display: inline-block; }
-
-/* The assistant marks (F5B, Nov 20): one row at the top of Settings; a pressed mark filters the connections below. */
-.marks { display: flex; flex-wrap: wrap; gap: 14px 18px; margin: 0; padding: 0; list-style: none; }
-.mark {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  width: 92px;
-  padding: 10px 4px 8px;
-  border-radius: 16px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--color-text, #ffffff);
-  font: 400 13px/1.3 var(--font-sans, 'Google Sans', system-ui, sans-serif);
-  cursor: pointer;
-  text-align: center;
-}
-.mark:hover { background: rgba(255, 255, 255, 0.06); }
-.mark[aria-pressed='true'] { border-color: rgba(138, 180, 248, 0.6); background: rgba(138, 180, 248, 0.1); }
-.markName { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.markState { display: inline-flex; align-items: center; gap: 5px; font: 400 11px/1.2 var(--font-mono, 'Google Sans Code', ui-monospace, monospace); letter-spacing: 0.04em; text-transform: uppercase; color: var(--color-text-muted, rgba(255, 255, 255, 0.55)); }
-.markState.on { color: var(--color-ok, #6dd58c); }
-.markDot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.grantHead { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.more { display: grid; gap: 22px; }
-.more[hidden] { display: none; }
-.moreButton {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 48px;
-  padding: 0 18px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: transparent;
-  color: var(--color-text, #ffffff);
-  font: 500 14px/1.4 var(--font-sans, 'Google Sans', system-ui, sans-serif);
-  cursor: pointer;
-  text-align: left;
-  width: 100%;
-}
-.moreButton:hover { background: rgba(255, 255, 255, 0.06); }
-.moreSub { font: 400 13px/1.4 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text-muted, rgba(255, 255, 255, 0.55)); margin-left: auto; }
-.top { display: grid; gap: 22px; }
-.moreWrap { display: grid; gap: 22px; }
+.checkDone { display: inline-flex; color: var(--color-ok); }
+.checkWaiting { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255, 255, 255, 0.25); border-radius: 50%; }

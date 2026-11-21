@@ -9,6 +9,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary';
 import { REQUESTS, SENTENCE, fillText } from '@/copy/screens-controls';
 import { SCREENS, TITLES } from '@/copy/strings';
 import { useHomeBase, type PendingEntry } from '@/state/homeBase';
+import ground from '../settings/kit/ground.module.css';
 import kit from '../settings/kit/kit.module.css';
 import { MakeHomeBaseDialog } from '../settings/kit/MakeHomeBaseDialog';
 import { ScreenHead } from '../settings/kit/ScreenHead';
@@ -54,7 +55,18 @@ export function Component() {
 
   return (
     <div className={kit.screen}>
-      <ScreenHead title={SCREENS.requests.heading} tryNow />
+      <ScreenHead
+        title={SCREENS.requests.heading}
+        tryNow
+        actions={
+          role === 'active' || role === 'standby' || role === 'other-device' ? (
+            <span className={`${ground.pill} ${role === 'active' ? ground.pillOk : ''}`}>
+              <span className={ground.pillDot} aria-hidden="true" />
+              {role === 'other-device' ? fillText(REQUESTS.homeBaseOn, { label: label ?? REQUESTS.otherDeviceFallback }) : REQUESTS.homeBaseHere}
+            </span>
+          ) : undefined
+        }
+      />
       <RoleBanner onMakeHomeBase={() => setDialogOpen(true)} />
       <AutoApproveNotice />
       <GmailTokenBanner />
@@ -72,8 +84,8 @@ export function Component() {
               <RequestDetail key={selectedEntry.requestId} entry={selectedEntry} />
             </ErrorBoundary>
           ) : (
-            <div className={`${kit.glassSm} ${styles.sideCard}`}>
-              <h2 className={kit.sectionTitle}>{REQUESTS.howTitle}</h2>
+            <div className={styles.sideCard}>
+              <h2 className={kit.sectionTitle}>{list.length === 0 && recent.length === 0 ? REQUESTS.noneWaitingTitle : REQUESTS.howTitle}</h2>
               <p className={kit.small}>{REQUESTS.howBody}</p>
               <p className={kit.note}>{REQUESTS.pickOne}</p>
             </div>

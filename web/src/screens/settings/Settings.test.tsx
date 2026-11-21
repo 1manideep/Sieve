@@ -1,4 +1,5 @@
-// Settings (40 section 13.8): every card's states with axe and exact copy, and the store calls behind each control.
+// Settings (40 section 13.8; design handoff of Nov 20, 2026): every part's states with axe and exact copy, and the
+// store calls behind each control. The assistants' own states are in AisCard.test.tsx.
 import { act, render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -71,18 +72,25 @@ function renderSettings(path = '/settings') {
   return router;
 }
 
-/** The default step and cloud fallback sit under "More settings" (F5B): open it when a test needs them. */
+/** The default step, cloud fallback, past connections and Delete sit under "More": open it when a test needs them. */
 function openMore(): void {
   const more = screen.getByRole('button', { name: new RegExp(`^${SETTINGS.moreHeading}`) });
   if (more.getAttribute('aria-expanded') !== 'true') fireEvent.click(more);
 }
 
+/** A section of the screen, found by its heading. */
 function cardOf(heading: string): HTMLElement {
-  if (!screen.queryByRole('heading', { level: 2, name: heading })) openMore();
-  const h = screen.getByRole('heading', { level: 2, name: heading });
-  const section = h.closest('section');
-  if (!section) throw new Error(`no card for ${heading}`);
+  const section = screen.getByRole('heading', { level: 2, name: heading }).closest('section');
+  if (!section) throw new Error(`no section for ${heading}`);
   return section;
+}
+
+/** A row under "More", found by its label. */
+function moreRow(label: string): HTMLElement {
+  openMore();
+  const row = within(screen.getByRole('list', { name: SETTINGS.moreHeading })).getByText(label).closest('li');
+  if (!row) throw new Error(`no row for ${label}`);
+  return row;
 }
 
 const sentence = (text: string) => (_: string, el: Element | null) =>
@@ -103,25 +111,31 @@ afterEach(() => {
 });
 
 describe('Settings', () => {
-  it('lays out every card and focuses the one named by the hash', async () => {
+  it('lays out every part and focuses the one named by the hash', async () => {
     renderSettings('/settings#rules');
     expect(document.title).toBe('Settings · Sieve');
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: CONSOLE.tryNow })).toHaveAttribute('href', '/try');
-    openMore();
-    for (const h of [
-      SETTINGS.aisHeading, SETTINGS.rulesHeading, SETTINGS.defaultStepHeading, SETTINGS.cloudHeading,
-      SETTINGS.notificationsHeading, SETTINGS.accountHeading,
-    ]) {
+    for (const h of [SETTINGS.aisHeading, SETTINGS.rulesHeading, SETTINGS.notificationsHeading, SETTINGS.accountHeading]) {
       expect(screen.getByRole('heading', { level: 2, name: h })).toBeInTheDocument();
     }
     await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: SETTINGS.rulesHeading })).toHaveFocus());
-    expect(screen.getByText(SETTINGS.aisEmpty)).toBeInTheDocument();
-    // The blue button that opens the dialog sits under the assistants, with the explainer line.
-    const ais = cardOf(SETTINGS.aisHeading);
-    expect(within(ais).getByRole('button', { name: SETTINGS.connectAi })).toBeInTheDocument();
-    expect(within(ais).getByText(SETTINGS.aisSub)).toBeInTheDocument();
+    // With nothing connected the first assistant's connect steps are open in place.
+    expect(screen.getByText(SETTINGS.aisNoteNone)).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: fillText(SETTINGS.connectHeading, { name: 'Claude' }) })).toBeInTheDocument();
+    // More is closed until pressed.
+    const more = screen.getByRole('button', { name: new RegExp(`^${SETTINGS.moreHeading}`) });
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText(SETTINGS.defaultStepHeading)).not.toBeVisible();
+    openMore();
+    for (const label of [SETTINGS.defaultStepHeading, SETTINGS.cloudHeading, SETTINGS.deleteHeading]) expect(screen.getByText(label)).toBeVisible();
     await expectNoAxeViolations();
+  });
+
+  it('opens More and focuses the row a hash names inside it', async () => {
+    renderSettings('/settings#cloud');
+    await waitFor(() => expect(screen.getByText(SETTINGS.cloudHeading)).toHaveFocus());
+    expect(screen.getByRole('button', { name: new RegExp(`^${SETTINGS.moreHeading}`) })).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('shows skeleton rows while connections load', async () => {
@@ -131,7 +145,7 @@ describe('Settings', () => {
     await expectNoAxeViolations();
   });
 
-  it('lists connections with their limits, and keeps past ones under a disclosure', async () => {
+  it('opens each connection with its limits, and keeps past ones as a line under More', async () => {
     const user = userEvent.setup();
     useGrants.setState({
       grants: [
@@ -142,21 +156,24 @@ describe('Settings', () => {
     });
     renderSettings();
     const ais = cardOf(SETTINGS.aisHeading);
-    expect(within(ais).getByText(SETTINGS.aisSub)).toBeInTheDocument();
-    expect(within(ais).getByText('Answers and excerpts · All except Health · Gmail and Local folder')).toBeInTheDocument();
-    expect(within(ais).getByText(`Expires ${formatDate(NOW + 20 * DAY)} · Last used 3 hours ago · Link ends in …k3x9`)).toBeInTheDocument();
-    expect(within(ais).getByText('Answers only · All categories · All sources')).toBeInTheDocument();
-    expect(within(ais).getByText(`Expires ${formatDate(NOW + 2 * DAY)} · Never used · Link ends in …k3x9`)).toBeInTheDocument();
-    expect(within(ais).getByText(SETTINGS.grantActive)).toBeInTheDocument();
-    expect(within(ais).getByText(SETTINGS.grantExpiring)).toBeInTheDocument();
-    expect(within(ais).getAllByRole('button', { name: SETTINGS.narrow })).toHaveLength(2);
-    const past = within(ais).getByRole('button', { name: fillText(SETTINGS.past, { n: 1 }) });
-    expect(past).toHaveAttribute('aria-expanded', 'false');
-    expect(within(ais).getByText('Up to full items · Work, Travel · Files you add')).not.toBeVisible();
+    expect(within(ais).getByText(fillText(SETTINGS.aisNote, { n: 2 }))).toBeInTheDocument();
+    const first = within(ais).getByRole('article', { name: AI });
+    expect(within(first).getByText(`Link ends in …k3x9 · made ${formatDate(NOW - 10 * DAY)} · last used 3 hours ago`)).toBeInTheDocument();
+    expect(within(first).getByText(SETTINGS.capExcerpt)).toBeInTheDocument();
+    expect(within(first).getByText(SETTINGS.allButHealth)).toBeInTheDocument();
+    expect(within(first).getByText('Local folder')).toBeInTheDocument();
+    expect(within(first).getByText(formatDate(NOW + 20 * DAY))).toBeInTheDocument();
     await expectNoAxeViolations();
-    await user.click(past);
-    expect(within(ais).getByText('Up to full items · Work, Travel · Files you add')).toBeVisible();
-    expect(within(ais).getByText(SETTINGS.grantRevoked)).toBeInTheDocument();
+
+    await user.click(within(ais).getByRole('button', { name: /^Other/ }));
+    const second = within(ais).getByRole('article', { name: 'Notes helper' });
+    expect(within(second).getByText(SETTINGS.capAnswer)).toBeInTheDocument();
+    expect(within(second).getByText(SETTINGS.allCategories)).toBeInTheDocument();
+    expect(within(second).getByText('Files you add')).toBeInTheDocument();
+    expect(within(second).getByText(/^Expires soon · /)).toBeInTheDocument();
+
+    const past = moreRow(fillText(SETTINGS.past, { n: 1 }));
+    expect(within(past).getByText(fillText(SETTINGS.pastRevoked, { aiName: 'Old helper', date: formatDate(NOW - DAY) }))).toBeInTheDocument();
   });
 
   it('narrows a grant to lower steps and fewer categories or sources only (AT-22)', async () => {
@@ -193,41 +210,51 @@ describe('Settings', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
-  it('revokes a grant after confirming', async () => {
+  it('revokes a grant after confirming in place', async () => {
     const user = userEvent.setup();
     useGrants.setState({ grants: [grant({})] });
     renderSettings();
     await user.click(screen.getByRole('button', { name: SETTINGS.revoke }));
-    const dialog = screen.getByRole('dialog', { name: fillText(SETTINGS.revokeTitle, { aiName: AI }) });
-    expect(within(dialog).getByText(SETTINGS.revokeBody)).toBeInTheDocument();
+    const confirm = screen.getByRole('group', { name: fillText(SETTINGS.revokeTitle, { aiName: AI }) });
+    expect(within(confirm).getByText(SETTINGS.revokeBody)).toBeInTheDocument();
     await expectNoAxeViolations();
-    await user.click(within(dialog).getByRole('button', { name: SETTINGS.revokeConfirm }));
+    await user.click(within(confirm).getByRole('button', { name: SETTINGS.revokeConfirm }));
     expect(grantActions.revoke).toHaveBeenCalledWith('g1');
     expect(useToasts.getState().toasts.map((t) => t.title)).toContain(`${AI} can't ask any more.`);
   });
 
-  it('opens Connect an assistant from ?connect=1 and removes the param, keeping the hash', async () => {
+  it('opens the first assistant with no connection from ?connect=1 and removes the param, keeping the hash', async () => {
+    useGrants.setState({ grants: [grant({ aiName: 'Claude' })] });
     const router = renderSettings('/settings?connect=1#ais');
-    expect(await screen.findByRole('dialog', { name: SETTINGS.connectTitle })).toBeInTheDocument();
+    expect(await screen.findByRole('article', { name: fillText(SETTINGS.connectHeading, { name: 'Claude Code' }) })).toBeInTheDocument();
     await waitFor(() => expect(router.state.location.search).toBe(''));
     expect(router.state.location.hash).toBe('#ais');
   });
 
-  it('changes a rule at once, and asks before moving a category away from never (AT-24)', async () => {
+  it('shows each rule in a word on its tile, changes a rule at once, and asks before moving a category away from never (AT-24)', async () => {
     const user = userEvent.setup();
     renderSettings();
     const rules = cardOf(SETTINGS.rulesHeading);
-    expect(within(rules).getByText(SETTINGS.rulesSub)).toBeInTheDocument();
-    // Each row says what its rule means, under the category name.
-    const rowOf = (category: string) => within(rules).getByText(category, { selector: 'span' }).closest('li') as HTMLElement;
-    expect(within(rowOf('Home')).getByText(SETTINGS.ruleLineApprove)).toBeInTheDocument();
-    expect(within(rowOf('Health')).getByText(SETTINGS.ruleLineNever)).toBeInTheDocument();
-    expect(within(rowOf('Money')).getByText(SETTINGS.ruleLineAskFirst)).toBeInTheDocument();
+    expect(within(rules).getByText(SETTINGS.rulesNote)).toBeInTheDocument();
+    const tiles = within(rules).getByRole('list', { name: SETTINGS.rulesLabel });
+    const tile = (category: string) => within(tiles).getByRole('button', { name: new RegExp(`^${category}`) });
+    expect(within(tiles).getAllByRole('button')).toHaveLength(9);
+    expect(tile('Home')).toHaveTextContent(SETTINGS.ruleWord.approve);
+    expect(tile('Health')).toHaveTextContent(SETTINGS.ruleWord.never);
+    expect(tile('Money')).toHaveTextContent(SETTINGS.ruleWord['ask-first']);
+    expect(within(rules).queryByRole('radiogroup')).not.toBeInTheDocument();
+
+    await user.click(tile('Home'));
+    expect(tile('Home')).toHaveAttribute('aria-pressed', 'true');
     const home = within(rules).getByRole('radiogroup', { name: 'Rule for Home' });
     expect(within(home).getByRole('radio', { name: SETTINGS.ruleApprove })).toHaveAttribute('aria-checked', 'true');
+    expect(within(rules).getByText(SETTINGS.ruleNote.approve)).toBeInTheDocument();
+    await expectNoAxeViolations();
     await user.click(within(home).getByRole('radio', { name: SETTINGS.ruleAskFirst }));
     expect(settingsActions.setCategoryRule).toHaveBeenCalledWith('Home', 'ask-first');
 
+    await user.click(tile('Health'));
+    expect(within(rules).queryByRole('radiogroup', { name: 'Rule for Home' })).not.toBeInTheDocument();
     const health = within(rules).getByRole('radiogroup', { name: 'Rule for Health' });
     expect(within(health).getByRole('radio', { name: SETTINGS.ruleNever })).toHaveAttribute('aria-checked', 'true');
     await user.click(within(health).getByRole('radio', { name: SETTINGS.ruleApprove }));
@@ -240,14 +267,18 @@ describe('Settings', () => {
     await user.click(within(health).getByRole('radio', { name: SETTINGS.ruleApprove }));
     await user.click(within(screen.getByRole('dialog', { name: 'Allow sharing Health?' })).getByRole('button', { name: SETTINGS.allowConfirm }));
     expect(settingsActions.setCategoryRule).toHaveBeenCalledWith('Health', 'approve');
+
+    // Pressing the open tile again closes its band.
+    await user.click(tile('Health'));
+    expect(within(rules).queryByRole('radiogroup')).not.toBeInTheDocument();
   });
 
-  it('shows each card\'s save status, including offline (AT-23)', async () => {
+  it('shows each part\'s save status, including offline (AT-23)', async () => {
     useSettings.setState({ saving: { 'rule:Money': 'queued', defaultStep: 'saved', cloudFallbackForOwnData: 'error', pushEnabled: 'saving' } });
     renderSettings();
     expect(within(cardOf(SETTINGS.rulesHeading)).getByText(SETTINGS.queued)).toBeInTheDocument();
-    expect(within(cardOf(SETTINGS.defaultStepHeading)).getByText(SETTINGS.saved)).toBeInTheDocument();
-    expect(within(cardOf(SETTINGS.cloudHeading)).getByText(SETTINGS.saveError)).toBeInTheDocument();
+    expect(within(moreRow(SETTINGS.defaultStepHeading)).getByText(SETTINGS.saved)).toBeInTheDocument();
+    expect(within(moreRow(SETTINGS.cloudHeading)).getByText(SETTINGS.saveError)).toBeInTheDocument();
     expect(within(cardOf(SETTINGS.notificationsHeading)).getByText(SETTINGS.saving)).toBeInTheDocument();
     await expectNoAxeViolations();
   });
@@ -255,9 +286,9 @@ describe('Settings', () => {
   it('sets the default step', async () => {
     const user = userEvent.setup();
     renderSettings();
-    const card = cardOf(SETTINGS.defaultStepHeading);
-    expect(within(card).getByText(SETTINGS.defaultStepSub)).toBeInTheDocument();
-    const group = within(card).getByRole('radiogroup', { name: SETTINGS.defaultStepHeading });
+    const row = moreRow(SETTINGS.defaultStepHeading);
+    expect(within(row).getByText(SETTINGS.defaultStepSub)).toBeInTheDocument();
+    const group = within(row).getByRole('radiogroup', { name: SETTINGS.defaultStepHeading });
     expect(within(group).getAllByRole('radio').map((r) => r.textContent)).toEqual(['Answer only', 'Excerpt', 'Full item']);
     await user.click(within(group).getByRole('radio', { name: 'Excerpt' }));
     expect(settingsActions.setDefaultStep).toHaveBeenCalledWith('excerpt');
@@ -267,18 +298,19 @@ describe('Settings', () => {
     const user = userEvent.setup();
     useAvailability.setState({ text: 'available' });
     renderSettings();
-    const card = cardOf(SETTINGS.cloudHeading);
-    expect(within(card).getByText(SETTINGS.cloudHasNano)).toBeInTheDocument();
-    const box = within(card).getByRole('checkbox', { name: SETTINGS.cloudCheckbox });
-    expect(box).toHaveAccessibleDescription(SETTINGS.cloudNote);
-    await user.click(box);
+    const row = moreRow(SETTINGS.cloudHeading);
+    const toggle = within(row).getByRole('switch', { name: SETTINGS.cloudCheckbox });
+    expect(toggle).toHaveAttribute('aria-checked', 'false');
+    expect(toggle).toHaveAccessibleDescription(`${SETTINGS.cloudNote} ${SETTINGS.cloudHasNano}`);
+    await user.click(toggle);
     const dialog = screen.getByRole('dialog', { name: SETTINGS.cloudTitle });
     expect(within(dialog).getByText(SETTINGS.cloudBody)).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: SETTINGS.cloudConfirm }));
     expect(settingsActions.setCloudFallback).toHaveBeenCalledWith(true);
 
-    useSettings.setState({ settings: { ...useSettings.getState().settings, cloudFallbackForOwnData: true } });
-    await user.click(within(card).getByRole('checkbox', { name: SETTINGS.cloudCheckbox }));
+    act(() => useSettings.setState({ settings: { ...useSettings.getState().settings, cloudFallbackForOwnData: true } }));
+    expect(within(row).getByRole('switch', { name: SETTINGS.cloudCheckbox })).toHaveAttribute('aria-checked', 'true');
+    await user.click(within(row).getByRole('switch', { name: SETTINGS.cloudCheckbox }));
     expect(settingsActions.setCloudFallback).toHaveBeenLastCalledWith(false);
   });
 
@@ -287,15 +319,15 @@ describe('Settings', () => {
     settingsActions.setPushEnabled.mockResolvedValueOnce('denied').mockResolvedValueOnce('unsupported').mockResolvedValueOnce('error');
     renderSettings();
     const card = cardOf(SETTINGS.notificationsHeading);
-    const box = within(card).getByRole('checkbox', { name: SETTINGS.pushCheckbox });
-    expect(box).toHaveAccessibleDescription(SETTINGS.pushNote);
-    await user.click(box);
+    const toggle = within(card).getByRole('switch', { name: SETTINGS.pushCheckbox });
+    expect(toggle).toHaveAccessibleDescription(SETTINGS.pushNote);
+    await user.click(toggle);
     expect(settingsActions.setPushEnabled).toHaveBeenCalledWith(true);
     expect(await within(card).findByText(SETTINGS.pushDenied)).toBeInTheDocument();
     await expectNoAxeViolations();
-    await user.click(box);
+    await user.click(toggle);
     expect(await within(card).findByText(SETTINGS.pushUnsupported)).toBeInTheDocument();
-    expect(box).toBeDisabled();
+    expect(toggle).toBeDisabled();
   });
 
   it('lists the computers and makes this one the home base through the 11.2 dialog', async () => {
@@ -307,15 +339,16 @@ describe('Settings', () => {
     });
     renderSettings();
     const card = cardOf(SETTINGS.notificationsHeading);
+    // The rows: the push switch, this computer, then the others.
     const rows = within(card).getAllByRole('listitem');
     // This computer has no device doc yet: its row uses the default label (jsdom's is "This computer" too).
-    expect(within(rows[0]).getAllByText(SETTINGS.thisComputer).length).toBeGreaterThan(0);
-    expect(within(rows[0]).queryByText(SETTINGS.homeBase)).not.toBeInTheDocument();
-    expect(within(rows[1]).getByText('Chrome on Windows')).toBeInTheDocument();
-    expect(within(rows[1]).getByText(SETTINGS.homeBase)).toBeInTheDocument();
-    expect(within(rows[1]).getByText(SETTINGS.pushOn)).toBeInTheDocument();
+    expect(within(rows[1]!).getAllByText(SETTINGS.thisComputer).length).toBeGreaterThan(0);
+    expect(within(rows[1]!).queryByText(SETTINGS.homeBase)).not.toBeInTheDocument();
+    expect(within(rows[2]!).getByText('Chrome on Windows')).toBeInTheDocument();
+    expect(within(rows[2]!).getByText(SETTINGS.homeBase)).toBeInTheDocument();
+    expect(within(rows[2]!).getByText(SETTINGS.pushOn)).toBeInTheDocument();
     await expectNoAxeViolations();
-    await user.click(within(rows[0]).getByRole('button', { name: SETTINGS.makeHomeBase }));
+    await user.click(within(rows[1]!).getByRole('button', { name: SETTINGS.makeHomeBase }));
     const dialog = screen.getByRole('dialog', { name: HOME_BASE_DIALOG.title });
     expect(within(dialog).getByText('Chrome on Windows is your home base now. Requests already waiting there stay there.')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: HOME_BASE_DIALOG.confirm }));
@@ -370,6 +403,7 @@ describe('Settings', () => {
     const router = renderSettings();
     const card = cardOf(SETTINGS.accountHeading);
     expect(within(card).getByText('Signed in as person@example.com')).toBeInTheDocument();
+    expect(within(card).getByText(SETTINGS.accountSub)).toBeInTheDocument();
     await user.click(within(card).getByRole('button', { name: SETTINGS.signOut }));
     expect(signOut).toHaveBeenCalledOnce();
     await waitFor(() => expect(router.state.location.pathname).toBe('/'));
@@ -387,9 +421,9 @@ describe('Settings', () => {
       });
     });
     renderSettings();
-    const card = cardOf(SETTINGS.accountHeading);
-    expect(within(card).getByText(SETTINGS.deleteText)).toBeInTheDocument();
-    await user.click(within(card).getByRole('button', { name: SETTINGS.deleteButton }));
+    const row = moreRow(SETTINGS.deleteHeading);
+    expect(within(row).getByText(SETTINGS.deleteText)).toBeInTheDocument();
+    await user.click(within(row).getByRole('button', { name: SETTINGS.deleteButton }));
     const dialog = screen.getByRole('dialog', { name: SETTINGS.deleteTitle });
     expect(within(dialog).getByText(SETTINGS.deleteBody)).toBeInTheDocument();
     const confirm = within(dialog).getByRole('button', { name: SETTINGS.deleteConfirm });
@@ -417,7 +451,7 @@ describe('Settings', () => {
     const user = userEvent.setup();
     vi.mocked(runDeleteAccount).mockResolvedValueOnce('cancelled');
     renderSettings();
-    await user.click(within(cardOf(SETTINGS.accountHeading)).getByRole('button', { name: SETTINGS.deleteButton }));
+    await user.click(within(moreRow(SETTINGS.deleteHeading)).getByRole('button', { name: SETTINGS.deleteButton }));
     const dialog = screen.getByRole('dialog', { name: SETTINGS.deleteTitle });
     await user.type(within(dialog).getByLabelText(SETTINGS.deleteField), 'DELETE');
     await user.click(within(dialog).getByRole('button', { name: SETTINGS.deleteConfirm }));

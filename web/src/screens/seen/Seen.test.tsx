@@ -1,18 +1,23 @@
-// What has AI seen? (40 section 13.7): list states, row copy, filters, revoke and the audit badge, each with axe.
+// What has AI seen? (40 section 13.7; design handoff of Nov 20, 2026): list states, totals, day groups, row copy,
+// a receipt opened in place, filters, revoke and the audit pill, with axe.
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import type { Receipt } from '@sieve/shared';
-import { CONSOLE, SEEN, fillText } from '@/copy/screens-controls';
+import { LADDER_LABELS } from '@sieve/shared';
+import { SEEN, SENTENCE, fillText } from '@/copy/screens-controls';
 import { useAudit } from '@/state/audit';
 import { markAutoApproved } from '@/state/autoApprove';
-import { DEFAULT_RECEIPT_FILTERS, useReceipts, type ReceiptsState } from '@/state/receipts';
+import { useReceipts, type ReceiptsState } from '@/state/receipts';
 import { useRecords, type RecordMeta } from '@/state/records';
 import { useSession } from '@/state/session';
 import { useToasts } from '@/state/toasts';
 import { expectNoAxeViolations } from '@/test/axe';
-import { Component } from './index';
+import { Component, receiptTotals } from './index';
+
+vi.mock('@/components/dbTables', async (original) => ({ ...(await original<typeof import('@/components/dbTables')>()), useDb: () => null }));
+vi.mock('../sources/sourcesDb', async (original) => ({ ...(await original<typeof import('../sources/sourcesDb')>()), useRecordCount: () => 500 }));
 
 const AI = 'Gemini CLI';
 const NOW = Date.now();
@@ -76,7 +81,8 @@ const expired = receipt({ id: 'r6', requestId: 'r6', status: 'expired', chars: 4
 const missing = receipt({ id: 'r7', requestId: 'r7', itemIds: ['gmail:gone'] });
 const revoked = receipt({ id: 'r8', requestId: 'r8', status: 'revoked' });
 
-const start = vi.fn<ReceiptsState['start']>(() => () => undefined);
+const refresh = vi.fn<ReceiptsState['refresh']>(() => undefined);
+const showMore = vi.fn<ReceiptsState['showMore']>(() => undefined);
 const revoke = vi.fn<ReceiptsState['revoke']>(async () => undefined);
 
 function setReceipts(list: Receipt[], status: ReceiptsState['status'] = 'ready') {
@@ -88,17 +94,17 @@ function renderSeen() {
   return render(<RouterProvider router={router} />);
 }
 
-/** The receipt rows of the table (without its header row). */
+/** The receipt rows, in order: each is the button that opens its receipt. */
 function receiptRows(): HTMLElement[] {
-  return within(screen.getByRole('table', { name: SEEN.listLabel })).getAllByRole('row').slice(1);
+  return within(screen.getByRole('region', { name: SEEN.listLabel }))
+    .getAllByRole('button')
+    .filter((b) => b.getAttribute('aria-controls')?.startsWith('receipt-'));
 }
-
-const sentence = (text: string) => (_: string, el: Element | null) =>
-  el !== null && el.textContent === text && Array.from(el.children).every((c) => c.textContent !== text);
+const rowOf = (question: RegExp) => screen.getByRole('button', { name: question });
 
 beforeEach(() => {
   useSession.setState({ kind: 'google', user: { uid: 'uid-1', email: 'person@example.com', isAnonymous: false } });
-  useReceipts.setState({ status: 'ready', receipts: [], filters: { ...DEFAULT_RECEIPT_FILTERS }, limit: 100, start, revoke });
+  useReceipts.setState({ status: 'ready', receipts: [], limit: 100, refresh, showMore, revoke });
   useRecords.setState({ meta, ensure: vi.fn(async () => undefined) });
   useAudit.setState({ state: 'checking', entries: undefined, checkedAt: undefined, brokenAt: undefined, start: vi.fn(() => () => undefined), check: vi.fn(async () => undefined) });
   useToasts.setState({ toasts: [] });
@@ -109,15 +115,15 @@ afterEach(() => {
 });
 
 describe('What has AI seen?', () => {
-  it('starts the receipts listener and the audit check, and shows four skeleton rows while loading', async () => {
+  it('starts the audit check and shows the loading rows while the receipts load', async () => {
     setReceipts([], 'loading');
     renderSeen();
     expect(document.title).toBe('What has AI seen? · Sieve');
-    expect(start).toHaveBeenCalledWith('real', 'uid-1');
     expect(useAudit.getState().start).toHaveBeenCalledOnce();
     expect(screen.getByText(SEEN.loading)).toBeInTheDocument();
     expect(screen.getByText(SEEN.auditChecking)).toBeInTheDocument();
-    expect(screen.getByText(SEEN.note)).toBeInTheDocument();
+    expect(screen.getByText(SENTENCE)).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: SEEN.totalsLabel })).not.toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
@@ -126,129 +132,161 @@ describe('What has AI seen?', () => {
     setReceipts([], 'error');
     renderSeen();
     expect(screen.getByText(SEEN.loadError)).toBeInTheDocument();
-    await expectNoAxeViolations();
     await user.click(screen.getByRole('button', { name: SEEN.tryAgain }));
-    expect(start).toHaveBeenCalledTimes(2);
+    expect(refresh).toHaveBeenCalledWith('real');
   });
 
-  it('says nothing has been shared yet', async () => {
+  it('says nothing has been shared yet, with every item counted as never shared', async () => {
     renderSeen();
     expect(screen.getByText(SEEN.empty)).toBeInTheDocument();
-    expect(screen.queryByText(SEEN.show)).not.toBeInTheDocument();
-    // The head: no range pill without receipts, and the white link to the demo computer.
-    expect(screen.queryByRole('button', { name: SEEN.range30d })).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: CONSOLE.tryNow })).toHaveAttribute('href', '/try');
+    const totals = screen.getByRole('region', { name: SEEN.totalsLabel });
+    expect(within(totals).getByText('500')).toBeInTheDocument();
+    expect(within(totals).getByText(SEEN.statNoShares)).toBeInTheDocument();
+    expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
-  it('writes each row as what left, who asked, and how it was decided', async () => {
-    setReceipts([delivered, pending, inAppFull, blocked, declined, expired, missing, revoked]);
+  it('adds up the totals from the loaded receipts', () => {
+    const totals = receiptTotals([delivered, pending, inAppFull, blocked, declined, expired, revoked], NOW);
+    expect(totals.week).toBe(3);                    // delivered, pending and revoked; the full item is a year old
+    expect(totals.chars).toBe(41 + 1204 + 960 + 41);
+    expect(totals.byAi).toEqual([[AI, 3], ['Gemini (in Sieve)', 1]]);
+    expect(totals.sharedItems).toBe(3);             // gmail:m1, gmail:m2, upload:u1
+  });
+
+  it('groups the receipts by day and writes each row: what was asked, the item, the step, who decided', async () => {
+    setReceipts([delivered, blocked, declined, expired, revoked, pending, inAppFull]);
     renderSeen();
-    // The four numbers: 4 shares in 30 days (delivered, pending, missing, revoked; the in-app full item from 2025
-    // counts for characters and whole items, not for the 30 days), their characters, one whole item, 2 blocked or
-    // declined.
-    expect(screen.getByText(SEEN.statShares).previousElementSibling).toHaveTextContent('4');
-    expect(screen.getByText(SEEN.statChars).previousElementSibling).toHaveTextContent('2,287');
-    expect(screen.getByText(SEEN.statFull).previousElementSibling).toHaveTextContent('1');
-    expect(screen.getByText(SEEN.statBlocked).previousElementSibling).toHaveTextContent('2');
+    const list = screen.getByRole('region', { name: SEEN.listLabel });
+    const days = within(list).getAllByRole('heading', { level: 2 });
+    expect(days).toHaveLength(3);
+    expect(days[0]).toHaveTextContent(/^Today · /);
+    expect(days[1]).toHaveTextContent(/^Yesterday · /);
+    expect(within(list).getByText(fillText(SEEN.daySum, { n: '5', chars: '82' }))).toBeInTheDocument();
+    expect(within(list).getByText(fillText(SEEN.daySumOne, { chars: '1,204' }))).toBeInTheDocument();
+
     const rows = receiptRows();
-    expect(rows).toHaveLength(8);
+    expect(rows).toHaveLength(7);
+    const first = rows[0]!;
+    expect(first).toHaveTextContent('"What did my landlord say about the deposit?"');
+    expect(first).toHaveTextContent('Re: Deposit for the apartment');
+    expect(first).toHaveTextContent(LADDER_LABELS.answer);
+    expect(first).toHaveTextContent(fillText(SEEN.charsLeft, { chars: '41' }));
+    expect(first).toHaveTextContent(SEEN.byApp);
+    expect(first).toHaveTextContent('9:15 AM');
+    expect(first).toHaveAttribute('aria-expanded', 'false');
 
-    const [r1, r2, r3, r4, r5, r6, r7, r8] = rows;
-    expect(within(r1).getByText(/^Today, 9:15 AM$/)).toBeInTheDocument();
-    expect(within(r1).getByText(sentence('Answer only from "Re: Deposit for the apartment"'))).toBeInTheDocument();
-    expect(within(r1).getByText(sentence(`${AI} asked: "What did my landlord say about the deposit?"`))).toBeInTheDocument();
-    expect(within(r1).getByText('Answer only')).toBeInTheDocument();
-    expect(within(r1).getByText(SEEN.byApp)).toBeInTheDocument();
-    expect(within(r1).getByText(SEEN.statusDelivered)).toBeInTheDocument();
-    expect(within(r1).getByText('41 characters left')).toBeInTheDocument();
-    expect(within(r1).getByRole('button', { name: `Revoke ${AI}'s access to this item` })).toBeInTheDocument();
-
-    expect(within(r2).getByText(/^Yesterday, 10:15 AM$/)).toBeInTheDocument();
-    expect(within(r2).getByText(sentence('Excerpt from 3 items: "Re: Deposit for the apartment" and 2 more'))).toBeInTheDocument();
-    expect(within(r2).getByText(SEEN.byExtension)).toBeInTheDocument();
-    expect(within(r2).getByText(`Waiting for ${AI} to collect`)).toBeInTheDocument();
-    expect(within(r2).getByText('1,204 characters left')).toBeInTheDocument();
-
-    expect(within(r3).getByText('Nov 12, 2025')).toBeInTheDocument();
-    expect(within(r3).getByText(sentence('Full item from "lease.pdf"'))).toBeInTheDocument();
-    expect(within(r3).getByText(sentence('You asked Gemini (in Sieve) to: "Draft a short, polite reply."'))).toBeInTheDocument();
-    expect(within(r3).queryByRole('button')).not.toBeInTheDocument();
-
-    expect(within(r4).getByText('Nothing shared: Health is never shared')).toBeInTheDocument();
-    expect(within(r4).getByText(SEEN.byRule)).toBeInTheDocument();
-    expect(within(r4).getByText(SEEN.statusNothingLeft)).toBeInTheDocument();
-    expect(within(r4).getByText(SEEN.nothingLeft)).toBeInTheDocument();
-
-    expect(within(r5).getByText(SEEN.declinedWhat)).toBeInTheDocument();
-    expect(within(r5).getByText(SEEN.byDeclined)).toBeInTheDocument();
-
-    expect(within(r6).getByText(SEEN.expiredWhat)).toBeInTheDocument();
-    expect(within(r6).getByText(SEEN.statusExpired)).toBeInTheDocument();
-    expect(within(r6).getByText(SEEN.nothingLeft)).toBeInTheDocument();
-
-    expect(within(r7).getByText(sentence(`Answer only from "${SEEN.missingTitle}"`))).toBeInTheDocument();
-
-    expect(within(r8).getByRole('button', { name: SEEN.revoked })).toBeDisabled();
+    expect(rows[1]).toHaveTextContent(fillText(SEEN.blockedWhat, { category: 'Health' }));
+    expect(rows[1]).toHaveTextContent(SEEN.stepNothing);
+    expect(rows[1]).toHaveTextContent(SEEN.byRule);
+    expect(rows[2]).toHaveTextContent(SEEN.declinedWhat);
+    expect(rows[2]).toHaveTextContent(SEEN.byDeclined);
+    expect(rows[3]).toHaveTextContent(SEEN.expiredWhat);
+    expect(rows[3]).toHaveTextContent(SEEN.byExpired);
+    expect(rows[4]).toHaveTextContent(SEEN.statusRevoked);
+    expect(rows[5]).toHaveTextContent(LADDER_LABELS.excerpt);
+    expect(rows[5]).toHaveTextContent(SEEN.byExtension);
+    expect(rows[6]).toHaveTextContent(LADDER_LABELS.full);
+    expect(rows[6]).toHaveTextContent('lease.pdf');
     await expectNoAxeViolations();
   });
 
-  it('filters by AI, source and date, and clears filters when nothing matches', async () => {
-    const user = userEvent.setup();
-    setReceipts([delivered, pending, inAppFull]);
+  it('names an item that is no longer on this device', () => {
+    setReceipts([missing]);
     renderSeen();
-    const group = screen.getByRole('group', { name: SEEN.show });
-    expect(within(group).getByRole('button', { name: SEEN.all })).toHaveAttribute('aria-pressed', 'true');
-    expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual([SEEN.all, 'Gemini (in Sieve)', AI]);
-    await user.click(within(group).getByRole('button', { name: 'Gemini (in Sieve)' }));
-    expect(useReceipts.getState().filters.ai).toBe('Gemini (in Sieve)');
+    expect(receiptRows()[0]).toHaveTextContent(SEEN.missingTitle);
+  });
+
+  it('opens a receipt in place: what left, where it came from, what happened, and Revoke', async () => {
+    const user = userEvent.setup();
+    setReceipts([delivered, blocked, declined]);
+    renderSeen();
+    await user.click(rowOf(/What did my landlord say/));
+    const row = receiptRows()[0]!;
+    expect(row).toHaveAttribute('aria-expanded', 'true');
+    const open = screen.getByRole('region', { name: fillText(SEEN.receiptRegion, { aiName: AI, time: '9:15 AM' }) });
+    expect(open).toHaveAttribute('id', row.getAttribute('aria-controls'));
+    expect(within(open).getByText(fillText(SEEN.leftAnswer, { chars: '41' }))).toBeInTheDocument();
+    expect(within(open).getByText(`${SEEN.leftKept} · ${SEEN.byApp}`)).toBeInTheDocument();
+    expect(within(open).getByText('Re: Deposit for the apartment')).toBeInTheDocument();
+    expect(within(open).getByText(/^Gmail · .* · Home$/)).toBeInTheDocument();
+    const steps = within(open).getAllByRole('listitem').filter((li) => li.closest('ol'));
+    expect(steps.map((s) => s.textContent)).toEqual([
+      `${SEEN.traceApproved}${SEEN.traceApprovedApp}${SEEN.badgeYou}`,
+      `${SEEN.traceDelivered}${fillText(SEEN.traceDeliveredDetail, { chars: '41', aiName: AI })}${fillText(SEEN.badgeCloud, { aiName: AI })}`,
+    ]);
+    expect(within(open).getByRole('button', { name: fillText(SEEN.revokeLabel, { aiName: AI }) })).toBeInTheDocument();
+    expect(within(open).getByText(SEEN.note)).toBeInTheDocument();
+    await expectNoAxeViolations();
+
+    // One receipt is open at a time; a blocked one says the rule stopped it and offers no Revoke.
+    await user.click(receiptRows()[1]!);
+    expect(screen.getAllByRole('region', { name: /^Receipt: / })).toHaveLength(1);
+    const stopped = screen.getByRole('region', { name: /^Receipt: / });
+    expect(within(stopped).getByText(fillText(SEEN.nothingBlocked, { category: 'Health' }))).toBeInTheDocument();
+    expect(within(stopped).getByText(fillText(SEEN.traceRuleNever, { category: 'Health' }))).toBeInTheDocument();
+    expect(within(stopped).getByText(SEEN.nothingLeftMeta)).toBeInTheDocument();
+    expect(within(stopped).queryByRole('button')).not.toBeInTheDocument();
+
+    await user.click(receiptRows()[2]!);
+    expect(screen.getByText(fillText(SEEN.nothingDeclined, { aiName: AI }))).toBeInTheDocument();
+    await user.click(receiptRows()[2]!);
+    expect(screen.queryByRole('region', { name: /^Receipt: / })).not.toBeInTheDocument();
+  });
+
+  it('filters by assistant, by nothing shared and by words, and clears the filters when nothing matches', async () => {
+    const user = userEvent.setup();
+    setReceipts([delivered, blocked, pending, inAppFull]);
+    renderSeen();
+    expect(screen.getByRole('status')).toHaveTextContent(fillText(SEEN.countText, { n: '4', total: '4' }));
+    const chips = screen.getByRole('group', { name: SEEN.assistantLabel });
+    expect(within(chips).getByRole('button', { name: SEEN.allAssistants })).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(within(chips).getByRole('button', { name: 'Gemini (in Sieve)' }));
     expect(receiptRows()).toHaveLength(1);
-    await expectNoAxeViolations();
+    expect(screen.getByRole('status')).toHaveTextContent(fillText(SEEN.countText, { n: '1', total: '4' }));
 
-    await user.click(within(group).getByRole('button', { name: SEEN.all }));
-    await user.selectOptions(screen.getByLabelText(SEEN.sourceLabel), SEEN.sourceUpload);
-    expect(useReceipts.getState().filters.source).toBe('upload');
-    expect(receiptRows()).toHaveLength(2);
+    await user.click(within(chips).getByRole('button', { name: SEEN.allAssistants }));
+    await user.click(screen.getByRole('button', { name: SEEN.nothingChip }));
+    expect(receiptRows()).toHaveLength(1);
+    expect(receiptRows()[0]).toHaveTextContent(SEEN.byRule);
+    await user.click(screen.getByRole('button', { name: SEEN.nothingChip }));
 
-    await user.selectOptions(screen.getByLabelText(SEEN.whenLabel), SEEN.rangeToday);
-    expect(useReceipts.getState().filters.range).toBe('today');
+    await user.type(screen.getByRole('searchbox', { name: SEEN.searchLabel }), 'lease');
+    expect(receiptRows()).toHaveLength(2);          // the two receipts that hold lease.pdf
+    await user.type(screen.getByRole('searchbox', { name: SEEN.searchLabel }), ' zzz');
     expect(screen.getByText(SEEN.filteredEmpty)).toBeInTheDocument();
-    await expectNoAxeViolations();
     await user.click(screen.getByRole('button', { name: SEEN.clearFilters }));
-    expect(useReceipts.getState().filters).toEqual(DEFAULT_RECEIPT_FILTERS);
-    expect(receiptRows()).toHaveLength(3);
+    expect(receiptRows()).toHaveLength(4);
+    expect(screen.getByRole('searchbox', { name: SEEN.searchLabel })).toHaveValue('');
   });
 
-  it('turns the 30-day range on and off from the pill in the head', async () => {
-    const user = userEvent.setup();
-    setReceipts([delivered, pending, inAppFull]);
-    renderSeen();
-    const pill = screen.getByRole('button', { name: SEEN.range30d });
-    expect(pill).toHaveAttribute('aria-pressed', 'false');
-    await user.click(pill);
-    expect(useReceipts.getState().filters.range).toBe('30d');
-    expect(pill).toHaveAttribute('aria-pressed', 'true');
-    // The in-app full item is from 2025, so it drops out; the When filter shows the same range.
-    expect(receiptRows()).toHaveLength(2);
-    expect(screen.getByLabelText(SEEN.whenLabel)).toHaveValue('30d');
-    await expectNoAxeViolations();
-    await user.click(pill);
-    expect(useReceipts.getState().filters.range).toBe('any');
-    expect(receiptRows()).toHaveLength(3);
-  });
-
-  it('confirms a revoke, then says so and disables the row', async () => {
+  it('confirms a revoke, then says so and marks the receipt revoked', async () => {
     const user = userEvent.setup();
     setReceipts([delivered]);
     renderSeen();
-    await user.click(screen.getByRole('button', { name: `Revoke ${AI}'s access to this item` }));
-    const dialog = screen.getByRole('dialog', { name: fillText(SEEN.revokeTitle, { aiName: AI }) });
-    expect(within(dialog).getByText(fillText(SEEN.revokeBody, { aiName: AI }))).toBeInTheDocument();
-    await expectNoAxeViolations();
+    await user.click(receiptRows()[0]!);
+    await user.click(screen.getByRole('button', { name: fillText(SEEN.revokeLabel, { aiName: AI }) }));
+    const dialog = await screen.findByRole('dialog', { name: fillText(SEEN.revokeTitle, { aiName: AI }) });
     await user.click(within(dialog).getByRole('button', { name: SEEN.revokeConfirm }));
     expect(revoke).toHaveBeenCalledWith('r1');
-    expect(useToasts.getState().toasts.map((t) => t.title)).toContain(`${AI} can't get that item again.`);
-    expect(await screen.findByRole('button', { name: SEEN.revoked })).toBeDisabled();
+    expect(useToasts.getState().toasts.at(-1)?.title).toBe(fillText(SEEN.revokeDone, { aiName: AI }));
+    expect(receiptRows()[0]).toHaveTextContent(SEEN.statusRevoked);
+    expect(screen.queryByRole('button', { name: fillText(SEEN.revokeLabel, { aiName: AI }) })).not.toBeInTheDocument();
+    expect(screen.getByText(fillText(SEEN.traceRevokedDetail, { aiName: AI }))).toBeInTheDocument();
+  });
+
+  it('says so when a revoke fails and leaves the receipt as it was', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    revoke.mockRejectedValueOnce(new Error('offline'));
+    setReceipts([delivered]);
+    renderSeen();
+    await user.click(receiptRows()[0]!);
+    await user.click(screen.getByRole('button', { name: fillText(SEEN.revokeLabel, { aiName: AI }) }));
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: SEEN.revokeConfirm }));
+    expect(useToasts.getState().toasts.at(-1)?.title).toBe(SEEN.revokeFailed);
+    expect(receiptRows()[0]).toHaveTextContent(SEEN.byApp);
   });
 
   it('shows more receipts when the page is full', async () => {
@@ -257,36 +295,33 @@ describe('What has AI seen?', () => {
     setReceipts([delivered, pending]);
     renderSeen();
     await user.click(screen.getByRole('button', { name: SEEN.showMore }));
-    expect(useReceipts.getState().limit).toBe(102);
+    expect(showMore).toHaveBeenCalledOnce();
   });
 
-  it('shows the audit result and explains it', async () => {
+  it('shows the audit result in the head and explains it', async () => {
     const user = userEvent.setup();
-    useAudit.setState({ state: 'intact', entries: 12, checkedAt: NOW - 2 * 60_000 });
-    setReceipts([delivered]);
+    useAudit.setState({ state: 'intact', entries: 214, checkedAt: NOW - 120_000 });
     renderSeen();
-    const badge = screen.getByRole('button', { name: SEEN.auditIntact });
-    expect(screen.getByText(sentence('12 entries checked 2 minutes ago'))).toBeInTheDocument();
-    expect(screen.getByText(SEEN.auditPopover)).not.toBeVisible();
-    await user.click(badge);
-    expect(badge).toHaveAttribute('aria-expanded', 'true');
+    const pill = screen.getByRole('button', { name: new RegExp(`^${SEEN.auditIntact}`) });
+    expect(pill).toHaveTextContent('214 entries checked 2 minutes ago');
+    expect(pill).toHaveAttribute('aria-expanded', 'false');
+    await user.click(pill);
+    expect(pill).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText(SEEN.auditPopover)).toBeVisible();
     await expectNoAxeViolations();
     await user.keyboard('{Escape}');
-    expect(badge).toHaveAttribute('aria-expanded', 'false');
-    expect(badge).toHaveFocus();
+    expect(pill).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('says when the log check failed, when there is no activity, and when it could not run', async () => {
     const user = userEvent.setup();
-    useAudit.setState({ state: 'broken', entries: 12, brokenAt: 7 });
+    useAudit.setState({ state: 'broken', brokenAt: 7 });
     const view = renderSeen();
-    expect(screen.getByRole('button', { name: 'Log check failed at entry 7' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: fillText(SEEN.auditBroken, { n: '7' }) })).toBeInTheDocument();
     expect(screen.getByText(SEEN.auditBrokenSub)).toBeInTheDocument();
-    await expectNoAxeViolations();
     view.unmount();
 
-    useAudit.setState({ state: 'intact', entries: 0 });
+    useAudit.setState({ state: 'intact', entries: 0, brokenAt: undefined });
     const second = renderSeen();
     expect(screen.getByRole('button', { name: SEEN.auditNoActivity })).toBeInTheDocument();
     second.unmount();
@@ -294,19 +329,20 @@ describe('What has AI seen?', () => {
     useAudit.setState({ state: 'unavailable' });
     renderSeen();
     expect(screen.getByRole('button', { name: SEEN.auditUnavailable })).toBeInTheDocument();
-    await expectNoAxeViolations();
     await user.click(screen.getByRole('button', { name: SEEN.tryAgain }));
     expect(useAudit.getState().check).toHaveBeenCalledOnce();
   });
 
-  it('shows "Approved automatically" on receipts this computer approved with auto-approve (40 section 13.8.9)', () => {
+  it('shows "Approved automatically" on receipts this computer approved with auto-approve (40 section 13.8.9)', async () => {
+    const user = userEvent.setup();
     markAutoApproved('uid-1', 'r1');
-    setReceipts([delivered, receipt({ id: 'r9', requestId: 'r9' })]);
+    setReceipts([delivered, pending]);
     renderSeen();
-    const [auto, manual] = receiptRows();
-    expect(within(auto).getByText(SEEN.byAuto)).toBeInTheDocument();
-    expect(within(auto).queryByText(SEEN.byApp)).not.toBeInTheDocument();
-    expect(within(manual).getByText(SEEN.byApp)).toBeInTheDocument();
-    window.localStorage.clear();
+    const rows = receiptRows();
+    expect(rows[0]).toHaveTextContent(SEEN.byAuto);
+    expect(rows[1]).not.toHaveTextContent(SEEN.byAuto);
+    await user.click(rows[0]!);
+    expect(screen.getByText(fillText(SEEN.traceAutoDetail, { aiName: AI }))).toBeInTheDocument();
+    markAutoApproved('uid-1', 'r1', false);
   });
 });

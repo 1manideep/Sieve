@@ -5,6 +5,7 @@ import { SEEN, fillText } from '@/copy/screens-controls';
 const clock = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' });
 const dayMonth = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
 const dayMonthYear = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 const relative = new Intl.RelativeTimeFormat('en', { numeric: 'auto' });
 
 const ICU_SPACES = new RegExp('[' + String.fromCharCode(0x202f, 0x00a0) + ']', 'g');
@@ -38,6 +39,21 @@ export function formatDayTime(at: number, now: number = Date.now()): string {
   if (day === today) return fillText(SEEN.today, { time: formatClock(at) });
   if (day === startOfDay(today - 12 * 3_600_000)) return fillText(SEEN.yesterday, { time: formatClock(at) });
   return formatDate(at, now);
+}
+
+/** The local day a moment falls on (its midnight), for grouping rows by day. */
+export function dayOf(at: number): number {
+  return startOfDay(at);
+}
+
+/** "Today · Friday, Nov 20", "Yesterday · Thursday, Nov 19", else "Wednesday, Nov 18". */
+export function formatDayHeading(at: number, now: number = Date.now()): string {
+  const today = startOfDay(now);
+  const day = startOfDay(at);
+  const date = plain(weekday.format(at));
+  if (day === today) return fillText(SEEN.dayToday, { date });
+  if (day === startOfDay(today - 12 * 3_600_000)) return fillText(SEEN.dayYesterday, { date });
+  return date;
 }
 
 /** "now", "5 minutes ago", "yesterday", "in 3 days". */

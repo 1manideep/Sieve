@@ -10,7 +10,7 @@ import { useNetwork } from '@/state/network';
 import { useToasts } from '@/state/toasts';
 import type { GrantView } from '@/state/types';
 import { REAL_SOURCES } from '../sources/sourcesDb';
-import { CAP_LABELS, CAP_NOTES, Choice } from './ConnectAiDialog';
+import { CAP_LABELS, CAP_NOTES, Choice } from './Choice';
 import { callableMessage } from './settingsText';
 import kit from './kit/kit.module.css';
 import styles from './settings.module.css';

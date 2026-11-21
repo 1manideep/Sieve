@@ -1,37 +1,41 @@
-// Sources (40 section 13.6): source cards in every state, the indexing card, confirms, uploads and categories.
+// Sources (40 section 13.6; design handoff of Nov 20, 2026): the totals, the source marks with one panel in place
+// in every state, the confirms and uploads, and the grid of categories by source.
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
-import type { Category, SourceKind } from '@sieve/shared';
-import { CONSOLE, SOURCES, fillText } from '@/copy/screens-controls';
+import type { Category, ItemKind, SourceKind } from '@sieve/shared';
+import { SETTINGS, SOURCES, fillText } from '@/copy/screens-controls';
 import { useIndexing } from '@/state/indexing';
+import { useReceipts } from '@/state/receipts';
 import { useSettings } from '@/state/settings';
 import { useSources, type SourceRowView, type SourcesState } from '@/state/sources';
+import type { ReceiptView } from '@/state/types';
 import { expectNoAxeViolations } from '@/test/axe';
-import { Component } from './index';
+import { Component, sourceState } from './index';
+import { radius } from './SourcesGrid';
+import { senderName } from './sourcesDb';
 
-interface FakeRecord { id: string; source: SourceKind; category: Category; date: number; title: string }
+interface FakeRecord { id: string; source: SourceKind; category: Category; date: number; title: string; kind: ItemKind; from?: string; caption?: string }
 
 const fake = vi.hoisted(() => ({ rows: [] as SourceRowView[], records: [] as FakeRecord[] }));
 
 vi.mock('@/index', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/index')>();
+  const by = (index: 'category' | 'source', value: string) => fake.records.filter((r) => r[index] === value);
   const db = {
     name: 'sieve',
     sources: { toArray: async () => fake.rows },
     records: {
       where: (index: 'category' | 'source') => ({
-        equals: (value: string) => ({ count: async () => fake.records.filter((r) => r[index] === value).length }),
+        equals: (value: string) => ({
+          count: async () => by(index, value).length,
+          primaryKeys: async () => by(index, value).map((r) => r.id),
+          reverse: () => ({ limit: (n: number) => ({ toArray: async () => [...by(index, value)].reverse().slice(0, n) }) }),
+        }),
       }),
       orderBy: () => ({
-        reverse: () => ({
-          filter: (fn: (r: FakeRecord) => boolean) => ({
-            limit: (n: number) => ({
-              toArray: async () => [...fake.records].sort((a, b) => b.date - a.date).filter(fn).slice(0, n),
-            }),
-          }),
-        }),
+        reverse: () => ({ limit: (n: number) => ({ toArray: async () => [...fake.records].sort((a, b) => b.date - a.date).slice(0, n) }) }),
       }),
     },
   };
@@ -44,13 +48,15 @@ function row(kind: SourceKind, over: Partial<SourceRowView> = {}): SourceRowView
   return { kind, connected: true, paused: false, progress: { done: 0, total: 0 }, ...over };
 }
 
-function records(source: SourceKind, category: Category, n: number): FakeRecord[] {
+function records(source: SourceKind, category: Category, n: number, from?: string): FakeRecord[] {
   return Array.from({ length: n }, (_, i) => ({
     id: `${source}:${category}-${i}`,
     source,
     category,
     date: NOW - i * 86_400_000,
     title: `${category} item ${i + 1}`,
+    kind: 'email' as const,
+    from,
   }));
 }
 
@@ -70,16 +76,19 @@ function renderSources() {
     [
       { path: '/sources', element: <main><Component /></main> },
       { path: '/settings', element: <main><p>settings page</p></main> },
+      { path: '/ask', element: <main><p>ask page</p></main> },
     ],
     { initialEntries: ['/sources'] },
   );
   return render(<RouterProvider router={router} />);
 }
 
-/** The card for one source, found by its heading. */
-function card(name: string): HTMLElement {
-  return screen.getByRole('article', { name });
-}
+/** A source's mark in the row, and the one panel under the row. */
+const mark = (name: string) => within(screen.getByRole('list', { name: SOURCES.sourcesLabel })).getByRole('button', { name: new RegExp(`^${name}`) });
+const panel = (name: string) => screen.getByRole('article', { name });
+const totals = () => screen.getByRole('region', { name: SOURCES.totalsLabel });
+/** The grid's category rows, in order: each is the button that opens its items. */
+const gridRows = () => screen.getAllByRole('button').filter((b) => b.getAttribute('aria-controls')?.startsWith('category-'));
 
 // The screen opens the index with a dynamic import, and the mock above loads the whole real module. Load it once
 // here, so its first transform (seconds on a busy machine) never counts against a findBy window.
@@ -91,7 +100,8 @@ beforeEach(() => {
   fake.rows = [];
   fake.records = [];
   useSources.setState({ busy: {}, ...actions });
-  useIndexing.setState({ state: 'idle', pausedBy: undefined, left: 0, done: 0, total: 0, etaMs: undefined, activity: undefined, counting: false, onBattery: false, batteryOverride: false });
+  useReceipts.setState({ status: 'ready', receipts: [] });
+  useIndexing.setState({ state: 'idle', pausedBy: undefined, left: 0, done: 0, total: 0, etaMs: undefined, activity: undefined, counting: false, onBattery: false, batteryOverride: false, bySource: {} });
 });
 
 afterEach(() => {
@@ -100,197 +110,168 @@ afterEach(() => {
 });
 
 describe('Sources', () => {
-  it('shows every source as not connected, the Gmail testing-mode note and the categories', async () => {
+  it('with nothing connected: every mark offers to connect, Gmail is open with the testing-mode note', async () => {
+    Object.assign(window, { showDirectoryPicker: vi.fn() });
     renderSources();
     expect(document.title).toBe('Sources · Sieve');
-    expect(await screen.findByRole('heading', { level: 1, name: 'Sources' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: CONSOLE.tryNow })).toHaveAttribute('href', '/try');
-    for (const name of ['Gmail', 'Local folder', 'Files you add']) {
-      expect(within(card(name)).getByText(SOURCES.tagNotConnected)).toBeInTheDocument();
-    }
-    expect(within(card('Gmail')).getByText(SOURCES.details.gmail)).toBeInTheDocument();
-    expect(within(card('Gmail')).getByText(SOURCES.gmailTesting)).toBeInTheDocument();
-    expect(within(card('Gmail')).getByRole('button', { name: SOURCES.connect.gmail })).toBeInTheDocument();
-    // jsdom has no showDirectoryPicker.
-    expect(within(card('Local folder')).getByText(SOURCES.noFolderPicker)).toBeInTheDocument();
-    expect(within(card('Files you add')).getByRole('button', { name: SOURCES.connect.upload })).toBeInTheDocument();
-    expect(screen.getByText(SOURCES.laterSources)).toBeInTheDocument();
-    expect(screen.queryByText(SOURCES.idleTitle)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: SOURCES.pause })).toBeDisabled();
-    expect(screen.getByRole('button', { name: SOURCES.rebuild })).toBeDisabled();
-    expect(screen.getByRole('link', { name: SOURCES.changeRules })).toHaveAttribute('href', '/settings#rules');
+    expect(mark('Gmail')).toHaveTextContent(SOURCES.markConnect);
+    expect(mark('Gmail')).toHaveAttribute('aria-pressed', 'true');
+    expect(mark('Local folder')).toHaveTextContent(SOURCES.markConnect);
+    expect(mark('Files you add')).toHaveTextContent(SOURCES.markAdd);
+    expect(mark('Google Drive')).toHaveTextContent(SOURCES.markLater);
+    expect(mark('Calendar')).toHaveTextContent(SOURCES.markLater);
+    const gmail = panel('Connect Gmail');
+    expect(within(gmail).getByText(SOURCES.tagNotConnected)).toBeInTheDocument();
+    expect(within(gmail).getByText(SOURCES.details.gmail)).toBeInTheDocument();
+    expect(within(gmail).getByText(SOURCES.gmailTesting)).toBeInTheDocument();
+    expect(screen.getByText(SOURCES.sourcesNoteNone)).toBeInTheDocument();
+    expect(within(totals()).getByText(SOURCES.statItems).previousElementSibling).toHaveTextContent('0');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
-  it('connects straight from the click', async () => {
+  it('connects straight from the click, for Gmail and for a folder', async () => {
     const user = userEvent.setup();
-    Object.defineProperty(window, 'showDirectoryPicker', { value: () => undefined, configurable: true });
+    Object.assign(window, { showDirectoryPicker: vi.fn() });
     renderSources();
-    await user.click(await within(card('Gmail')).findByRole('button', { name: SOURCES.connect.gmail }));
+    await user.click(within(panel('Connect Gmail')).getByRole('button', { name: SOURCES.connect.gmail }));
     expect(actions.connect).toHaveBeenCalledWith('gmail');
-    await user.click(within(card('Local folder')).getByRole('button', { name: SOURCES.connect.folder }));
-    expect(actions.connect).toHaveBeenCalledWith('folder');
-    await user.click(within(card('Gmail')).getByRole('button', { name: SOURCES.useFolderInstead }));
+    await user.click(mark('Local folder'));
+    expect(mark('Local folder')).toHaveAttribute('aria-pressed', 'true');
+    await user.click(within(panel('Connect Local folder')).getByRole('button', { name: SOURCES.connect.folder }));
     expect(actions.connect).toHaveBeenLastCalledWith('folder');
   });
 
-  it('shows progress while indexing and the indexing card with an ETA', async () => {
-    fake.rows = [
-      row('gmail', { progress: { done: 40, total: 100 } }),
-      row('folder', { progress: { done: 12, total: 12 }, folderName: 'Taxes' }),
-    ];
-    fake.records = [...records('gmail', 'Home', 3), ...records('folder', 'Money', 2)];
+  it('says so when this browser cannot open folders', async () => {
+    const user = userEvent.setup();
+    renderSources();
+    await user.click(mark('Local folder'));
+    expect(within(panel('Connect Local folder')).getByText(SOURCES.noFolderPicker)).toBeInTheDocument();
+  });
+
+  it('shows the totals, each mark with its count, and the open source with what it holds', async () => {
+    const user = userEvent.setup();
+    fake.rows = [row('gmail', { lastSyncAt: NOW - 120_000 }), row('folder', { folderName: 'Taxes' })];
+    fake.records = [...records('gmail', 'Home', 3), ...records('gmail', 'Health', 2), ...records('folder', 'Money', 2), ...records('upload', 'Personal', 1)];
+    useReceipts.setState({
+      receipts: [{ id: 'r1', requestId: 'r1', requester: { kind: 'outside', grantId: 'g', aiName: 'Claude' }, question: 'q', step: 'answer', itemIds: ['gmail:Home-0', 'gmail:Home-1'], status: 'delivered', chars: 9, createdAt: NOW } as ReceiptView],
+    });
+    renderSources();
+    expect(await screen.findByText(fillText(SOURCES.sourcesNote, { n: 3 }))).toBeInTheDocument();
+    const t = totals();
+    expect(within(t).getByText(SOURCES.statItems).previousElementSibling).toHaveTextContent('8');
+    expect(within(t).getByText(SOURCES.statCategories).previousElementSibling).toHaveTextContent('4');
+    expect(within(t).getByText(fillText(SOURCES.statNever, { pct: 75 })).previousElementSibling).toHaveTextContent('6');
+    expect(within(t).getByText((_, el) => el?.tagName === 'SPAN' && el.textContent === 'Gmail 5')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(`${SOURCES.pillUpToDate}· 8 items`);
+
+    expect(mark('Gmail')).toHaveTextContent('5 emails');
+    expect(mark('Local folder')).toHaveTextContent('2 items');
+    expect(mark('Files you add')).toHaveTextContent('1 files');
+    const gmail = panel('Gmail');
+    expect(within(gmail).getByText(SOURCES.tagLive)).toBeInTheDocument();
+    expect(within(gmail).getByText(/^5 emails · Up to date · new mail is added while Sieve is open · synced 2 minutes ago$/)).toBeInTheDocument();
+    const holds = within(gmail).getAllByRole('listitem');
+    expect(holds.map((li) => li.textContent)).toEqual(['Home3', 'Health2']);
+    expect(within(gmail).queryByText(SOURCES.gmailTesting)).not.toBeInTheDocument();
+    expect(within(gmail).getByRole('button', { name: SOURCES.pause })).toBeInTheDocument();
+    await expectNoAxeViolations();
+
+    await user.click(mark('Local folder'));
+    const folder = panel('Local folder');
+    expect(within(folder).getByText(SOURCES.tagConnected)).toBeInTheDocument();
+    expect(within(folder).getByText((_, el) => el?.tagName === 'SPAN' && el.textContent === `2 items · Folder: Taxes · ${SOURCES.metaOnDevice}`)).toBeInTheDocument();
+  });
+
+  it('shows progress while indexing: on the mark, in the head and in the open panel', async () => {
+    fake.rows = [row('gmail', { progress: { done: 40, total: 100 } }), row('folder', { progress: { done: 12, total: 12 } })];
+    fake.records = records('gmail', 'Home', 3);
     useIndexing.setState({ state: 'running', left: 60, done: 40, total: 100, etaMs: 120_000 });
     renderSources();
-    const gmail = card('Gmail');
-    // Gmail reads "Live" while connected; the folder reads "Connected". Each card shows its count and, while it
-    // indexes, the percentage over the progress bar.
-    expect(await within(gmail).findByText(SOURCES.tagLive)).toBeInTheDocument();
-    expect(within(card('Local folder')).getByText(SOURCES.tagConnected)).toBeInTheDocument();
-    expect(within(gmail).getByText('indexing 40%')).toBeInTheDocument();
-    expect(within(gmail).getByText(SOURCES.countLabel).previousElementSibling).toHaveTextContent('3');
-    expect(within(gmail).getByText('Indexing 40 of 100 items')).toBeInTheDocument();
-    expect(within(gmail).queryByText(SOURCES.gmailTesting)).not.toBeInTheDocument();
-    expect(within(card('Local folder')).getByText((_, el) => el?.tagName === 'P' && el.textContent === 'Up to date · Folder: Taxes')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: SOURCES.runningTitle })).toBeInTheDocument();
-    expect(screen.getByText('40 of 100 items · about 2 min left')).toBeInTheDocument();
-    expect(screen.getByText(SOURCES.runningSub)).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /^Home 3 items$/ })).toBeInTheDocument();
+    expect(await screen.findByRole('article', { name: 'Gmail' })).toBeInTheDocument();
+    expect(mark('Gmail')).toHaveTextContent('indexing 40%');
+    expect(screen.getByRole('status')).toHaveTextContent(`${SOURCES.pillIndexing}· 60 left`);
+    const gmail = panel('Gmail');
+    expect(within(gmail).getByRole('heading', { name: SOURCES.runningTitle })).toBeInTheDocument();
+    expect(within(gmail).getByText('40 of 100 items · about 2 min left')).toBeInTheDocument();
+    expect(within(gmail).getByText(SOURCES.runningSub)).toBeInTheDocument();
     await expectNoAxeViolations();
   });
 
-  it('says what is left without an ETA, and while a question runs', async () => {
-    fake.rows = [row('gmail', { progress: { done: 10, total: 30 } })];
-    useIndexing.setState({ state: 'running', left: 1204, done: 10, total: 1214 });
-    const view = renderSources();
-    expect(await screen.findByText('1,204 items left')).toBeInTheDocument();
-    useIndexing.setState({ state: 'yielding' });
-    expect(await screen.findByText(SOURCES.yieldingText)).toBeInTheDocument();
-    view.unmount();
+  it('says what it works on now, in the order the work runs (20 section 13.5)', async () => {
+    fake.rows = [row('folder', { progress: { done: 2, total: 22 } })];
+    useIndexing.setState({ state: 'running', left: 20, done: 2, total: 22, activity: { stage: 'reading', inventory: { pdfs: 7, notes: 3, photos: 12 } } });
+    renderSources();
+    expect(await screen.findByText('Reading 7 PDFs, 3 notes and 12 photos')).toBeInTheDocument();
   });
 
   it('shows the paused state and resumes indexing', async () => {
     const user = userEvent.setup();
     fake.rows = [row('gmail', { paused: true, progress: { done: 40, total: 100 } })];
-    useIndexing.setState({ state: 'paused', left: 60, done: 40, total: 100 });
+    useIndexing.setState({ state: 'paused', pausedBy: 'person', left: 60, done: 40, total: 100 });
     renderSources();
-    const gmail = card('Gmail');
-    expect(await within(gmail).findByText(SOURCES.tagPaused)).toBeInTheDocument();
-    expect(within(gmail).getByText(SOURCES.pausedLabel)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: SOURCES.pausedTitle })).toBeInTheDocument();
-    expect(screen.getByText('Resume to finish the index. 60 items left.')).toBeInTheDocument();
-    await expectNoAxeViolations();
-    await user.click(screen.getByRole('button', { name: SOURCES.resume }));
+    const gmail = await screen.findByRole('article', { name: 'Gmail' });
+    expect(mark('Gmail')).toHaveTextContent(SOURCES.tagPaused);
+    expect(screen.getByRole('status')).toHaveTextContent(SOURCES.pillPaused);
+    expect(within(gmail).getByRole('heading', { name: SOURCES.pausedTitle })).toBeInTheDocument();
+    await user.click(within(gmail).getByRole('button', { name: SOURCES.resume }));
     expect(actions.setPaused).toHaveBeenCalledWith(false);
   });
 
-  it('says what it works on now, in the order the work runs (20 section 13.5)', async () => {
-    fake.rows = [row('folder', { progress: { done: 0, total: 22 }, folderName: 'Taxes' })];
-    useIndexing.setState({ state: 'running', left: 22, done: 0, total: 22, activity: { stage: 'reading', inventory: { pdfs: 7 } } });
+  it('pauses indexing from the open source', async () => {
+    const user = userEvent.setup();
+    fake.rows = [row('gmail')];
+    renderSources();
+    await user.click(within(await screen.findByRole('article', { name: 'Gmail' })).getByRole('button', { name: SOURCES.pause }));
+    expect(actions.setPaused).toHaveBeenCalledWith(true);
+  });
+
+  it('the switch "Describe photos with Gemini Nano" sits with the folder, is on by default and saves on this device', async () => {
+    const user = userEvent.setup();
+    const setDescribePhotos = vi.fn(async () => undefined);
+    useSettings.setState({ describePhotos: true, setDescribePhotos });
+    fake.rows = [row('folder')];
+    renderSources();
+    const folder = await screen.findByRole('article', { name: 'Local folder' });
+    const toggle = within(folder).getByRole('switch', { name: SOURCES.describePhotos });
+    expect(toggle).toHaveAttribute('aria-checked', 'true');
+    expect(toggle).toHaveAccessibleDescription(SOURCES.describePhotosHelp);
+    await user.click(toggle);
+    expect(setDescribePhotos).toHaveBeenCalledWith(false);
+  });
+
+  it('opens the source that needs the person: Gmail asks to continue, an error offers to try again', async () => {
+    const user = userEvent.setup();
+    fake.rows = [row('folder'), row('gmail', { needsAuth: true })];
     const view = renderSources();
-    expect(await screen.findByText('Reading 7 PDFs')).toBeInTheDocument();
-    useIndexing.setState({ activity: { stage: 'reading', inventory: { pdfs: 7, notes: 3, photos: 12 } } });
-    expect(await screen.findByText('Reading 7 PDFs, 3 notes and 12 photos')).toBeInTheDocument();
-    useIndexing.setState({ activity: { stage: 'label', count: 10 } });
-    expect(await screen.findByText('Sorting 10 items with Gemini Nano')).toBeInTheDocument();
-    useIndexing.setState({ activity: { stage: 'embed' } });
-    expect(await screen.findByText('Making the search index')).toBeInTheDocument();
-    useIndexing.setState({ activity: { stage: 'privacy' } });
-    expect(await screen.findByText('Checking for personal details')).toBeInTheDocument();
-    useIndexing.setState({ activity: { stage: 'caption', count: 12 } });
-    expect(await screen.findByText('Describing 12 photos with Gemini Nano')).toBeInTheDocument();
-    useIndexing.setState({ activity: { stage: 'caption', count: 1 } });
-    expect(await screen.findByText('Describing 1 photo with Gemini Nano')).toBeInTheDocument();
-    expect(screen.getByText('22 items left')).toBeInTheDocument();
-    // while a source is still finding items: "so far", no ETA (20 section 13.5)
-    useIndexing.setState({ counting: true, done: 128, total: 5_670, etaMs: 44 * 60_000 });
-    expect(await screen.findByText('128 of 5,670 items so far. Still finding more.')).toBeInTheDocument();
-    expect(screen.queryByText(/about 44 min left/)).toBeNull();
-    await expectNoAxeViolations();
-    view.unmount();
-  });
-
-  it('paused on battery: says so, and the header Resume indexes anyway', async () => {
-    const user = userEvent.setup();
-    fake.rows = [row('folder', { progress: { done: 2, total: 9 }, folderName: 'Taxes' })];
-    useIndexing.setState({ state: 'paused', pausedBy: 'battery', left: 7, done: 2, total: 9, onBattery: true });
-    renderSources();
-    expect(await screen.findByText(SOURCES.batteryText)).toBeInTheDocument();
-    expect(screen.getByText('Paused on battery. Plug in, or press Resume to index anyway.')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: SOURCES.pausedTitle })).toBeInTheDocument();
-    // the card's own Resume is for the Ask home; here the header button is the one
-    expect(screen.queryByRole('button', { name: SOURCES.batteryResume })).not.toBeInTheDocument();
-    await expectNoAxeViolations();
-    await user.click(screen.getByRole('button', { name: SOURCES.resume }));
-    expect(actions.setPaused).toHaveBeenCalledWith(false);
-  });
-
-  it('the switch "Describe photos with Gemini Nano" is on by default and saves on this device', async () => {
-    const user = userEvent.setup();
-    const set = vi.spyOn(useSettings.getState(), 'setDescribePhotos');
-    useSettings.setState({ describePhotos: true, setDescribePhotos: set as unknown as (on: boolean) => Promise<void> });
-    set.mockImplementation(async (on: boolean) => {
-      useSettings.setState({ describePhotos: on });
-    });
-    renderSources();
-    const sw = await screen.findByRole('switch', { name: SOURCES.describePhotos });
-    expect(sw).toBeChecked();
-    expect(sw).toHaveAccessibleDescription(SOURCES.describePhotosHelp);
-    await user.click(sw);
-    expect(set).toHaveBeenCalledWith(false);
-    expect(sw).not.toBeChecked();
-    set.mockRestore();
-  });
-
-  it('says the index is up to date with the last sync time', async () => {
-    fake.rows = [row('gmail', { lastSyncAt: NOW - 5 * 60_000 }), row('folder', { lastSyncAt: NOW - 3_600_000 })];
-    renderSources();
-    expect(await screen.findByText(SOURCES.idleTitle)).toBeInTheDocument();
-    expect(screen.getByText((_, el) => el?.tagName === 'P' && el.textContent === 'Last updated 5 minutes ago')).toBeInTheDocument();
-    expect(within(card('Gmail')).getByText(SOURCES.upToDateGmail)).toBeInTheDocument();
-    await expectNoAxeViolations();
-  });
-
-  it('asks Google again when Gmail needs a new sign-in, and retries a source with an error', async () => {
-    const user = userEvent.setup();
-    fake.rows = [row('gmail', { needsAuth: true }), row('folder', { error: "Couldn't read the folder.", folderName: 'Taxes' })];
-    renderSources();
-    const gmail = card('Gmail');
-    expect(await within(gmail).findByText(SOURCES.needsAuthGmail)).toBeInTheDocument();
+    const gmail = await screen.findByRole('article', { name: 'Gmail' });
+    expect(mark('Gmail')).toHaveAttribute('aria-pressed', 'true');
+    expect(mark('Gmail')).toHaveTextContent(SOURCES.markNeedsYou);
+    expect(within(gmail).getByText(SOURCES.needsAuthGmail)).toBeInTheDocument();
     await user.click(within(gmail).getByRole('button', { name: SOURCES.continue }));
     expect(actions.reauthorize).toHaveBeenCalledWith('gmail');
-    const folder = card('Local folder');
+    view.unmount();
+
+    fake.rows = [row('gmail', { needsAuth: true, errorCode: 'auth-needed', error: 'refused' })];
+    const second = renderSources();
+    expect(await screen.findByText(SOURCES.needsAuthGmailRefused)).toBeInTheDocument();
+    expect(screen.queryByText('refused')).not.toBeInTheDocument();
+    second.unmount();
+
+    fake.rows = [row('folder', { error: "Couldn't read the folder." })];
+    renderSources();
+    const folder = await screen.findByRole('article', { name: 'Local folder' });
     expect(within(folder).getByText("Couldn't read the folder.")).toBeInTheDocument();
     await user.click(within(folder).getByRole('button', { name: SOURCES.tryAgain }));
     expect(actions.connect).toHaveBeenCalledWith('folder');
-    await expectNoAxeViolations();
-  });
-
-  it('Gmail asks with a plain note; the warning is only for Google refusing access after Continue', async () => {
-    fake.rows = [row('gmail', { needsAuth: true })];
-    const view = renderSources();
-    const note = (await within(card('Gmail')).findByText(SOURCES.needsAuthGmail)).closest('[data-tone]');
-    expect(note).toHaveAttribute('data-tone', 'info');
-    view.unmount();
-
-    fake.rows = [row('gmail', { needsAuth: true, errorCode: 'auth-needed', error: SOURCES.needsAuthGmailRefused })];
-    renderSources();
-    const gmail = card('Gmail');
-    const warning = (await within(gmail).findByText(SOURCES.needsAuthGmailRefused)).closest('[data-tone]');
-    expect(warning).toHaveAttribute('data-tone', 'warning');
-    expect(within(gmail).getAllByText(SOURCES.needsAuthGmailRefused)).toHaveLength(1);   // not repeated as an error line
-    expect(within(gmail).getByRole('button', { name: SOURCES.continue })).toBeInTheDocument();
-    expect(within(gmail).queryByRole('button', { name: SOURCES.tryAgain })).toBeNull();
   });
 
   it('asks Chrome again for a folder it can no longer read', async () => {
     const user = userEvent.setup();
     fake.rows = [row('folder', { needsAuth: true, folderName: 'Taxes' })];
     renderSources();
-    const folder = card('Local folder');
-    expect(
-      await within(folder).findByText((_, el) => el?.textContent === 'Chrome needs your OK to read "Taxes" again.' && el.children.length === 1),
-    ).toBeInTheDocument();
+    const folder = await screen.findByRole('article', { name: 'Local folder' });
+    expect(within(folder).getByText((_, el) => el?.textContent === 'Chrome needs your OK to read "Taxes" again.')).toBeInTheDocument();
     await user.click(within(folder).getByRole('button', { name: SOURCES.allowAgain }));
     expect(actions.reauthorize).toHaveBeenCalledWith('folder');
   });
@@ -298,26 +279,25 @@ describe('Sources', () => {
   it('confirms before disconnecting, with the item count and the Google account note', async () => {
     const user = userEvent.setup();
     fake.rows = [row('gmail')];
-    fake.records = records('gmail', 'Work', 7);
+    fake.records = records('gmail', 'Home', 3);
     renderSources();
-    await user.click(await within(card('Gmail')).findByRole('button', { name: SOURCES.disconnect }));
-    const dialog = screen.getByRole('dialog', { name: fillText(SOURCES.disconnectTitle, { name: 'Gmail' }) });
-    expect(
-      within(dialog).getByText(`${fillText(SOURCES.disconnectBody, { n: '7', name: 'Gmail' })} ${SOURCES.disconnectGmailExtra}`),
-    ).toBeInTheDocument();
-    await expectNoAxeViolations();
+    const gmail = await screen.findByRole('article', { name: 'Gmail' });
+    await within(gmail).findByText(/^3 emails/);
+    await user.click(within(gmail).getByRole('button', { name: SOURCES.disconnect }));
+    const dialog = await screen.findByRole('dialog', { name: fillText(SOURCES.disconnectTitle, { name: 'Gmail' }) });
+    expect(dialog).toHaveTextContent(fillText(SOURCES.disconnectBody, { n: '3', name: 'Gmail' }));
+    expect(dialog).toHaveTextContent(SOURCES.disconnectGmailExtra);
     await user.click(within(dialog).getByRole('button', { name: SOURCES.disconnectConfirm }));
     expect(actions.disconnect).toHaveBeenCalledWith('gmail');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('confirms before rebuilding the index', async () => {
     const user = userEvent.setup();
-    fake.rows = [row('folder')];
+    fake.rows = [row('gmail')];
     renderSources();
-    await user.click(await screen.findByRole('button', { name: SOURCES.rebuild }));
-    const dialog = screen.getByRole('dialog', { name: SOURCES.rebuildTitle });
-    expect(within(dialog).getByText(SOURCES.rebuildBody)).toBeInTheDocument();
+    await user.click(within(await screen.findByRole('article', { name: 'Gmail' })).getByRole('button', { name: SOURCES.rebuild }));
+    const dialog = await screen.findByRole('dialog', { name: SOURCES.rebuildTitle });
+    expect(actions.rebuild).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole('button', { name: SOURCES.rebuildConfirm }));
     expect(actions.rebuild).toHaveBeenCalledOnce();
   });
@@ -327,8 +307,8 @@ describe('Sources', () => {
     fake.rows = [row('upload')];
     fake.records = records('upload', 'Personal', 2);
     const view = renderSources();
-    const upload = card('Files you add');
-    expect(await within(upload).findByText('2 files')).toBeInTheDocument();
+    const upload = await screen.findByRole('article', { name: 'Files you add' });
+    expect(await within(upload).findByText(`2 files · ${SOURCES.details.upload}`)).toBeInTheDocument();
     const input = view.container.querySelector<HTMLInputElement>('input[type="file"]');
     if (!input) throw new Error('no file input');
 
@@ -349,22 +329,137 @@ describe('Sources', () => {
     await expectNoAxeViolations();
   });
 
-  it('expands a category to its newest titles and shows each rule', async () => {
+  it('says what a later source would be', async () => {
     const user = userEvent.setup();
-    fake.rows = [row('gmail')];
-    fake.records = [...records('gmail', 'Home', 7), ...records('gmail', 'Health', 1)];
     renderSources();
-    const aside = screen.getByRole('complementary', { name: SOURCES.categoriesLabel });
-    const home = await within(aside).findByRole('button', { name: /^Home 7 items$/ });
-    expect(home).toHaveAttribute('aria-expanded', 'false');
-    await user.click(home);
-    expect(home).toHaveAttribute('aria-expanded', 'true');
-    const titles = await within(aside).findAllByText(/^Home item \d$/);
-    expect(titles.map((t) => t.textContent)).toEqual(['Home item 1', 'Home item 2', 'Home item 3', 'Home item 4', 'Home item 5']);
-    await user.click(within(aside).getByRole('button', { name: /^Travel 0 items$/ }));
-    expect(await within(aside).findByText(SOURCES.categoryEmpty)).toBeInTheDocument();
-    expect(within(aside).getAllByText('Never shared').length).toBeGreaterThan(0);
-    expect(within(aside).getAllByText('Ask first').length).toBeGreaterThan(0);
+    await user.click(mark('Google Drive'));
+    const drive = panel('Google Drive');
+    expect(within(drive).getByText(SOURCES.later.drive.lead)).toBeInTheDocument();
+    expect(within(drive).getByText(fillText(SOURCES.laterText, { name: 'Google Drive' }))).toBeInTheDocument();
+    expect(within(drive).queryByRole('button')).not.toBeInTheDocument();
+  });
+});
+
+describe('Sources: the grid', () => {
+  beforeEach(() => {
+    fake.rows = [row('gmail'), row('folder')];
+    fake.records = [
+      ...records('gmail', 'Home', 4, 'Dana Whitfield <dana@thistlewick.example>'),
+      ...records('gmail', 'Health', 2, 'Corvane Medical Group <no-reply@corvane.example>'),
+      ...records('gmail', 'Money', 6, 'Kestrelmoor Bank <alerts@kestrelmoor.example>'),
+      ...records('folder', 'Home', 1),
+      { id: 'folder:IMG_1.jpg', source: 'folder', category: 'Photos', date: NOW, title: 'IMG_1.jpg', kind: 'photo', caption: 'Trays of hot dogs and buns' },
+    ];
+    useSettings.setState((s) => ({ settings: { ...s.settings, categoryRules: { ...s.settings.categoryRules, Money: 'ask-first', Health: 'never' } } }));
+  });
+
+  it('lists every category with a count per source, who it is often from, and its rule', async () => {
+    renderSources();
+    await screen.findByText('Dana Whitfield');
+    const rows = gridRows();
+    expect(rows).toHaveLength(9);
+    // By size: Money 6, Home 5, Health 2, Photos 1, then the empty ones.
+    expect(rows.slice(0, 4).map((r) => within(r).getAllByText(/./)[0]?.textContent)).toEqual(['Money', 'Home', 'Health', 'Photos']);
+    const home = rows[1]!;
+    expect(home).toHaveTextContent('5 items');
+    expect(home).toHaveTextContent('Gmail: 4');
+    expect(home).toHaveTextContent('Local folder: 1');
+    expect(home).toHaveTextContent(`Files you add: ${SOURCES.cellNone}`);
+    expect(home).toHaveTextContent('Dana Whitfield');
+    expect(home).toHaveTextContent(SETTINGS.ruleApprove);
+    expect(rows[0]).toHaveTextContent(`6 items · ${SOURCES.rowAsk}`);
+    expect(rows[0]).toHaveTextContent(SETTINGS.ruleAskFirst);
+    expect(rows[2]).toHaveTextContent(`2 items · ${SOURCES.rowNever}`);
+    expect(rows[2]).toHaveTextContent(SETTINGS.ruleNever);
+    expect(rows[3]).toHaveTextContent(SOURCES.noOne);
+    expect(screen.getByText(SOURCES.allOfIt).parentElement).toHaveTextContent('Gmail: 12Local folder: 2Files you add: 014');
     await expectNoAxeViolations();
+  });
+
+  it('sorts by rule and by name', async () => {
+    const user = userEvent.setup();
+    renderSources();
+    await screen.findByText('Dana Whitfield');
+    const sort = screen.getByRole('radiogroup', { name: SOURCES.sortLabel });
+    await user.click(within(sort).getByRole('radio', { name: SOURCES.sortRule }));
+    expect(gridRows().slice(0, 3).map((r) => r.getAttribute('aria-controls'))).toEqual(['category-Health', 'category-Money', 'category-Home']);
+    await user.click(within(sort).getByRole('radio', { name: SOURCES.sortName }));
+    expect(gridRows().slice(0, 3).map((r) => r.getAttribute('aria-controls'))).toEqual(['category-Health', 'category-Home', 'category-Money']);
+  });
+
+  it('opens a row in place with its newest items, where they came from, its rule and two ways on', async () => {
+    const user = userEvent.setup();
+    renderSources();
+    await screen.findByText('Dana Whitfield');
+    await user.click(gridRows()[1]!);
+    expect(gridRows()[1]).toHaveAttribute('aria-expanded', 'true');
+    const open = await screen.findByRole('region', { name: 'Home' });
+    const items = await within(open).findAllByRole('listitem');
+    expect(items).toHaveLength(5);
+    expect(items[0]).toHaveTextContent('Home item 1');
+    expect(items[0]).toHaveTextContent('Local folder · ');
+    expect(items[1]).toHaveTextContent('Dana Whitfield · Gmail · ');
+    expect(within(open).getByText('Gmail 4 · Local folder 1')).toBeInTheDocument();
+    expect(within(open).getByText(SOURCES.readBy)).toBeInTheDocument();
+    expect(within(open).getByText(fillText(SOURCES.showing, { n: '5', total: '5' }))).toBeInTheDocument();
+    expect(within(open).getByRole('link', { name: SOURCES.askAbout })).toHaveAttribute('href', '/ask');
+    expect(within(open).getByRole('link', { name: SOURCES.changeRule })).toHaveAttribute('href', '/settings#rules');
+    await expectNoAxeViolations();
+
+    // A never-shared category says what an outside assistant is told; a photo shows its caption, then its file.
+    await user.click(gridRows()[2]!);
+    const health = await screen.findByRole('region', { name: 'Health' });
+    expect(screen.queryByRole('region', { name: 'Home' })).not.toBeInTheDocument();
+    expect(within(health).getByText(SOURCES.readByNever)).toBeInTheDocument();
+    expect(within(health).getByText(SOURCES.ruleSentence.never, { exact: false })).toBeInTheDocument();
+    await user.click(gridRows()[3]!);
+    const photos = await screen.findByRole('region', { name: 'Photos' });
+    expect(await within(photos).findByText('Trays of hot dogs and buns')).toBeInTheDocument();
+    expect(within(photos).getByText('IMG_1.jpg')).toBeInTheDocument();
+    await user.click(gridRows()[3]!);
+    expect(screen.queryByRole('region', { name: 'Photos' })).not.toBeInTheDocument();
+  });
+
+  it('dims the rows a search does not match, by category or by sender, and plays the circles again', async () => {
+    const user = userEvent.setup();
+    renderSources();
+    await screen.findByText('Dana Whitfield');
+    const box = screen.getByRole('searchbox', { name: SOURCES.gridSearchLabel });
+    await user.type(box, 'kestrel');
+    const dimmed = () => gridRows().filter((r) => r.className.includes('dim')).length;
+    expect(dimmed()).toBe(8);
+    expect(gridRows()[0]!.className).not.toContain('dim');
+    await user.clear(box);
+    await user.type(box, 'photo');
+    expect(dimmed()).toBe(8);
+    await user.clear(box);
+    expect(dimmed()).toBe(0);
+    await user.click(screen.getByRole('button', { name: SOURCES.play }));
+    expect(gridRows()).toHaveLength(9);
+  });
+});
+
+describe('Sources: helpers', () => {
+  it('sourceState reads one source from its row, its count and the shared indexing numbers', () => {
+    expect(sourceState('gmail', undefined, 0, undefined)).toEqual({ connected: false, paused: false, indexing: false, needsYou: false, pct: 0 });
+    expect(sourceState('upload', undefined, 2, undefined).connected).toBe(true);
+    expect(sourceState('gmail', row('gmail', { progress: { done: 1, total: 4 } }), 1, undefined)).toMatchObject({ indexing: true, pct: 25 });
+    expect(sourceState('gmail', row('gmail', { progress: { done: 1, total: 4 } }), 1, { done: 2, total: 4, fraction: 0.5 } as never)).toMatchObject({ pct: 50 });
+    expect(sourceState('folder', row('folder', { paused: true, progress: { done: 1, total: 4 } }), 1, undefined)).toMatchObject({ paused: true, indexing: false });
+    expect(sourceState('folder', row('folder', { needsAuth: true }), 1, undefined).needsYou).toBe(true);
+  });
+
+  it('radius grows with the square root of the count, within its bounds', () => {
+    expect(radius(0)).toBe(0);
+    expect(radius(1)).toBe(4.5);
+    expect(radius(400)).toBe(14);
+    expect(radius(1_000_000)).toBe(27);
+  });
+
+  it('senderName keeps the name, or the part of an address before the @', () => {
+    expect(senderName('Dana Whitfield <dana@example.com>')).toBe('Dana Whitfield');
+    expect(senderName('"Kestrelmoor Bank" <alerts@kestrelmoor.example>')).toBe('Kestrelmoor Bank');
+    expect(senderName('<alerts@kestrelmoor.example>')).toBe('alerts');
+    expect(senderName('jordan@example.com')).toBe('jordan');
   });
 });

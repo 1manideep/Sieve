@@ -138,8 +138,9 @@ describe('Requests', () => {
     expect(screen.getByRole('link', { name: CONSOLE.tryNow })).toHaveAttribute('href', '/try');
     // F11: the list pane says nothing is waiting; the right pane explains how a request arrives.
     expect(screen.getByRole('region', { name: REQUESTS.listLabel })).toBeInTheDocument();
-    expect(screen.getByText(REQUESTS.noneWaitingTitle)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 2, name: REQUESTS.howTitle })).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: REQUESTS.listLabel })).getByText(REQUESTS.noneWaitingTitle)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: REQUESTS.noneWaitingTitle })).toBeInTheDocument();
+    expect(screen.getByText(REQUESTS.howBody)).toBeInTheDocument();
     expect(screen.getByText(REQUESTS.pickOne)).toBeInTheDocument();
     expect(screen.getByText('Only what you approve leaves your computer.')).toBeInTheDocument();
     await expectNoAxeViolations();
@@ -363,7 +364,7 @@ describe('Requests', () => {
         request({ id: 'r1', status: 'answered' }),
         request({ id: 'r2', status: 'collected', question: 'Flight number?' }),
         request({ id: 'r3', status: 'blocked', question: 'Test results?' }),
-        request({ id: 'r4', status: 'offline', question: 'Old one', createdAt: NOW - 25 * 3_600_000 }),
+        request({ id: 'r4', status: 'offline', question: 'Old one', createdAt: new Date(NOW).setHours(0, 0, 0, 0) - 3_600_000 }),
       ],
     });
     renderRequests();

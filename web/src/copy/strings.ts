@@ -53,10 +53,9 @@ export const NAV = {
   newAsk: 'New ask',
   tryComputer: 'Try on a real computer',
   control: 'Control',
-  menu: 'Menu',
-  closeMenu: 'Close the menu',
-  hideMenu: 'Hide menu',
-  showMenu: 'Show menu',
+  /** The ring at the bottom of the rail. */
+  neverShared: (pct: number) => `${pct}% of your items never shared`,
+  neverSharedTip: (never: string, total: string) => `Never shared · ${never} of ${total} items`,
 } as const;
 
 /** The Nano meter card at the bottom of the rail: short words next to "Gemini Nano", the index and the home base. */

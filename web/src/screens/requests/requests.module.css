@@ -2,7 +2,7 @@
    (0.9fr) from 1200px (the 280 px rail takes its share); one column below. Content blocks wrap anywhere and flex
    children may shrink (70 R-UI-04). */
 
-.sideCard { padding: 18px 20px; display: grid; gap: 8px; }
+.sideCard { display: grid; gap: 10px; max-width: 460px; padding: 28px 0; }
 
 .tip { margin: 0; font: 400 13px/1.5 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text-muted, rgba(255, 255, 255, 0.55)); }
 .kbd {
@@ -50,28 +50,19 @@
 .panes { display: grid; gap: 18px; align-items: start; }
 .panes > * { min-width: 0; }
 @media (min-width: 1024px) { .panes { grid-template-columns: 420px minmax(0, 1fr); } }
-.listPane {
-  display: flex;
-  flex-direction: column;
-  border-radius: 16px;
-  background: var(--color-glass, rgba(11, 11, 15, 0.82));
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12));
-  overflow: hidden;
-  max-height: calc(100vh - 220px);
-  min-height: 360px;
-}
-.listTools { padding: 14px 14px 10px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.listPane { display: flex; flex-direction: column; min-width: 0; }
+.listTools { display: flex; flex-direction: column; gap: 10px; padding: 0 0 10px; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
 .search { display: flex; align-items: center; gap: 8px; height: 40px; box-sizing: border-box; padding: 0 12px 0 14px; border-radius: 999px; background: var(--color-bg, #000000); border: 1px solid rgba(255, 255, 255, 0.16); color: rgba(255, 255, 255, 0.7); }
 .search:focus-within { border-color: var(--color-accent, #8ab4f8); }
 .searchInput { flex: 1; min-width: 0; background: transparent; border: 0; outline: none; color: var(--color-text, #ffffff); font: 400 14px/1.4 var(--font-sans, 'Google Sans', system-ui, sans-serif); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .listBody { flex: 1; min-height: 0; overflow: auto; padding: 4px 0 8px; }
 .listBody:focus { outline: none; }
-.noneWaiting { margin: 10px 14px 4px; padding: 12px 14px; border-radius: 14px; border: 1px dashed rgba(138, 180, 248, 0.4); display: flex; flex-direction: column; gap: 2px; }
+.noneWaiting { display: flex; flex-direction: column; gap: 2px; margin: 12px 4px 4px; }
 .noneWaitingTitle { font: 500 14px/1.4 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text, #ffffff); }
 .noneWaitingBody { font: 400 12px/1.5 var(--font-sans, 'Google Sans', system-ui, sans-serif); color: var(--color-text-secondary, rgba(255, 255, 255, 0.7)); }
 .group { display: flex; flex-direction: column; }
-.groupHead { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 16px 6px; }
+.groupHead { display: flex; align-items: baseline; justify-content: space-between; padding: 14px 4px 6px; }
 .groupLabel { font: 400 11px/1.4 var(--font-mono, 'Google Sans Code', ui-monospace, monospace); letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted, rgba(255, 255, 255, 0.6)); }
 .groupWaiting { color: var(--color-accent, #8ab4f8); }
 .groupCount { font: 400 11px/1.4 var(--font-mono, 'Google Sans Code', ui-monospace, monospace); color: var(--color-text-muted, rgba(255, 255, 255, 0.6)); }
@@ -102,7 +93,7 @@
 .showMore:hover { background: rgba(138, 180, 248, 0.1); }
 .listEmpty { padding: 36px 24px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .clearFilters { height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.25); background: transparent; color: var(--color-text, #ffffff); font: 500 13px/1.4 var(--font-sans, 'Google Sans', system-ui, sans-serif); cursor: pointer; }
-.keysHint { margin: 0; padding: 10px 16px; border-top: 1px solid rgba(255, 255, 255, 0.08); font: 400 11px/1.4 var(--font-mono, 'Google Sans Code', ui-monospace, monospace); color: var(--color-text-muted, rgba(255, 255, 255, 0.65)); }
+.keysHint { margin: 0; padding: 10px 4px 0; border-top: 1px solid rgba(255, 255, 255, 0.08); font: 400 11px/1.4 var(--font-mono, 'Google Sans Code', ui-monospace, monospace); color: var(--color-text-muted, rgba(255, 255, 255, 0.65)); }
 .detailPane { display: grid; gap: 14px; min-width: 0; align-content: start; }
 .receiptLink { color: var(--color-accent, #8ab4f8); font: 500 14px/1.4 var(--font-sans, 'Google Sans', system-ui, sans-serif); }
 .listRows { display: flex; flex-direction: column; }

@@ -1,4 +1,4 @@
-/* The rail (280px, rgba(11,11,15,.9), a 1px right border) and the black content column. */
+/* The rail (72px, no panel: the dot grid shows through) and the black content column. */
 .shell {
   display: grid;
   grid-template-columns: var(--rail-w) minmax(0, 1fr);
@@ -12,105 +12,43 @@
   z-index: var(--z-header);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
   height: 100vh;
   height: 100dvh;
-  padding: 18px 12px 16px;
-  background: rgba(11, 11, 15, 0.9);
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  padding: 14px 0 16px;
 }
 
-.top {
+.brand {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  padding: 4px 12px 16px;
-}
-
-.topRight { display: flex; align-items: center; gap: var(--space-2); }
-
-.menuButton {
-  display: none;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--color-text-secondary);
-  cursor: pointer;
+  height: 48px;
+  margin-bottom: 10px;
+  color: var(--color-text);
+  font: 500 16px/1 var(--font-sans);
+  letter-spacing: -0.01em;
+  text-decoration: none;
 }
-.menuButton:hover { background: var(--color-surface-muted); color: var(--color-text); }
-
-/* Hide menu (top of the rail) and Show menu (top left of the content): 40px glass circles, wide screens only. */
-.railButton {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 50%;
-  background: var(--color-glass);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-.railButton:hover { background: var(--color-surface-muted); color: var(--color-text); }
-
-.reveal {
-  position: sticky;
-  top: 0;
-  z-index: var(--z-header);
-  display: flex;
-  padding: 18px 16px 0;
-  pointer-events: none;
-}
-.reveal .railButton { pointer-events: auto; }
-
-@media (min-width: 1024px) {
-  .shell[data-rail='hidden'] { grid-template-columns: minmax(0, 1fr); }
-  .shell[data-rail='hidden'] .rail { display: none; }
-}
-
-.body {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  gap: 2px;
-  overflow-y: auto;
-}
-
-.meter { margin-top: auto; padding-top: var(--space-4); }
 
 .content { display: flex; flex-direction: column; min-width: 0; }
 
 .main { flex: 1; min-width: 0; }
 .main:focus { outline: none; }
 
-/* Phones and small tablets: the rail is a top bar; the menu button opens the links and the meter. */
-@media (max-width: 1023px) {
+/* Narrow screens: the rail lies along the top, the name first. */
+@media (max-width: 720px) {
   .shell { grid-template-columns: minmax(0, 1fr); }
   .rail {
+    flex-direction: row;
     height: auto;
-    max-height: 100vh;
-    max-height: 100dvh;
-    padding: 8px 12px;
-    border-right: 0;
+    padding: 6px 10px;
+    gap: 4px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    overflow-y: auto;
+    background: rgba(0, 0, 0, 0.86);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    overflow-x: auto;
   }
-  .top { padding: 2px 4px 2px 8px; }
-  .menuButton { display: inline-flex; }
-  .hideButton, .reveal { display: none; }
-  .body { display: none; flex: none; padding: 6px 0 8px; overflow: visible; }
-  .open .body { display: flex; }
-  .meter { margin-top: var(--space-2); padding-top: 0; }
+  .brand { height: 44px; margin: 0 8px 0 4px; }
 }

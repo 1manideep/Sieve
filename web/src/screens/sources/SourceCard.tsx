@@ -2,7 +2,7 @@
 // this computer, progress while indexing, notices and the real connect, disconnect and change actions. Setup step
 // 1 (13.3) reuses it with `compact`. Connect and reauthorize run straight from the click (the Google popup and the
 // directory picker need the user gesture).
-import { useId, useRef, useState, type ChangeEvent } from 'react';
+import { useId, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Button } from '@/components/Button/Button';
 import { Notice } from '@/components/Notice/Notice';
 import { ProgressBar } from '@/components/ProgressBar/ProgressBar';
@@ -43,9 +43,16 @@ export interface SourceCardProps {
   row?: SourceRowView;
   itemCount?: number;
   compact?: boolean;
+  /**
+   * Inside the Sources panel: no card, name, count or progress of its own (the panel has them), only the notices,
+   * the errors and the real actions.
+   */
+  panel?: boolean;
+  /** More buttons in the action row (the panel's Pause and Rebuild). */
+  actions?: ReactNode;
 }
 
-export function SourceCard({ kind, row, itemCount = 0, compact = false }: SourceCardProps) {
+export function SourceCard({ kind, row, itemCount = 0, compact = false, panel = false, actions }: SourceCardProps) {
   const busy = useSources((s) => s.busy[kind] === true);
   const [confirming, setConfirming] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
@@ -116,8 +123,8 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
     kind === 'gmail' ? ` ${SOURCES.disconnectGmailExtra}` : ''
   }`;
 
-  return (
-    <article className={compact ? `${kit.glassSm} ${styles.card} ${styles.compact}` : `${kit.glass} ${styles.card}`} aria-labelledby={titleId}>
+  const head = (
+    <>
       <div className={styles.cardTop}>
         <h2 id={titleId} className={styles.sourceName}>
           {name}
@@ -162,6 +169,17 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
       ) : null}
 
       {compact ? null : <p className={styles.text}>{SOURCES.details[kind]}</p>}
+
+    </>
+  );
+
+  const Wrapper = panel ? 'div' : 'article';
+  return (
+    <Wrapper
+      className={panel ? styles.panelBody : compact ? `${kit.glassSm} ${styles.card} ${styles.compact}` : `${kit.glass} ${styles.card}`}
+      aria-labelledby={panel ? undefined : titleId}
+    >
+      {panel ? null : head}
 
       {row?.needsAuth && kind !== 'upload' ? (
         <Notice
@@ -230,6 +248,7 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
             {SOURCES.connect[kind]}
           </Button>
         ) : null}
+        {actions}
         {connected ? (
           <Button variant="secondary" size="sm" onClick={() => setConfirming(true)}>
             {SOURCES.disconnect}
@@ -266,6 +285,6 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false }: Source
           setConfirming(false);
         }}
       />
-    </article>
+    </Wrapper>
   );
 }

@@ -1,8 +1,10 @@
-// Account (40 section 13.8.8): sign out, and delete the account with a typed DELETE and a live checklist (10.7).
+// Account (40 section 13.8.8; design handoff of Nov 20, 2026): one row with the Google photo, who is signed in and
+// Sign out; under "More", the row that deletes the account with a typed DELETE and a live checklist (10.7).
 import { useId, useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/Button/Button';
 import { Dialog } from '@/components/Dialog/Dialog';
+import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary';
 import { Icon } from '@/components/icons';
 import { Spinner } from '@/components/Spinner/Spinner';
 import { SETTINGS } from '@/copy/screens-controls';
@@ -10,43 +12,74 @@ import { ACCOUNT } from '@/copy/strings';
 import { useSession } from '@/state/session';
 import { runDeleteAccount, type DeleteStep } from './accountService';
 import kit from './kit/kit.module.css';
-import { SettingsCard } from './SettingsCard';
+import ground from './kit/ground.module.css';
 import styles from './settings.module.css';
 
 const STEPS: Exclude<DeleteStep, 'done'>[] = ['stopping', 'push', 'account', 'device'];
 
 export function AccountCard() {
-  const email = useSession((s) => s.user?.email ?? s.user?.displayName ?? '');
+  const user = useSession((s) => s.user);
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
+  // The photo that failed to load, so the initial shows instead and a new account's photo is tried again.
+  const [brokenPhoto, setBrokenPhoto] = useState<string | null>(null);
+  const email = user?.email ?? user?.displayName ?? '';
+  const photo = user?.photoURL && user.photoURL !== brokenPhoto ? user.photoURL : null;
 
   return (
-    <SettingsCard id="account" title={SETTINGS.accountHeading}>
-      <div className={styles.inline}>
-        <p className={styles.text}>{ACCOUNT.signedInAs(email)}</p>
-        <Button
-          variant="secondary"
-          onClick={() => {
-            useSession
-              .getState()
-              .signOut()
-              .then(() => navigate('/'))
-              .catch(console.error);
-          }}
-        >
-          {SETTINGS.signOut}
-        </Button>
-      </div>
-      <hr className={styles.divider} />
-      <h3 className={`${styles.h3} ${styles.danger}`}>{SETTINGS.deleteHeading}</h3>
-      <p className={styles.text}>{SETTINGS.deleteText}</p>
-      <div>
-        <Button variant="danger" onClick={() => setOpen(true)}>
-          {SETTINGS.deleteButton}
-        </Button>
-      </div>
+    <ErrorBoundary>
+      <section id="account" className={ground.sec} aria-labelledby="account-heading">
+        <h2 id="account-heading" className={ground.h2} tabIndex={-1}>
+          {SETTINGS.accountHeading}
+        </h2>
+        <ul className={ground.rows} aria-label={SETTINGS.accountHeading}>
+          <li className={ground.row}>
+            <span className={styles.who}>
+              {photo ? (
+                <img className={styles.avatar} src={photo} alt="" width={40} height={40} referrerPolicy="no-referrer" onError={() => setBrokenPhoto(photo)} />
+              ) : (
+                <span className={styles.avatar} aria-hidden="true">
+                  {(email[0] ?? '?').toUpperCase()}
+                </span>
+              )}
+              <span className={ground.rowText}>
+                <bdi>{ACCOUNT.signedInAs(email)}</bdi>
+                <span className={ground.rowSub}>{SETTINGS.accountSub}</span>
+              </span>
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                useSession
+                  .getState()
+                  .signOut()
+                  .then(() => navigate('/'))
+                  .catch(console.error);
+              }}
+            >
+              {SETTINGS.signOut}
+            </Button>
+          </li>
+        </ul>
+      </section>
+    </ErrorBoundary>
+  );
+}
+
+/** Delete my account, as a row under "More": the button opens the typed-DELETE dialog. */
+export function DeleteAccountRow() {
+  const [open, setOpen] = useState(false);
+  return (
+    <li className={ground.row}>
+      <span className={ground.rowText}>
+        <span>{SETTINGS.deleteHeading}</span>
+        <span className={ground.rowSub}>{SETTINGS.deleteText}</span>
+      </span>
+      <Button variant="danger" size="sm" onClick={() => setOpen(true)}>
+        {SETTINGS.deleteButton}
+      </Button>
       <DeleteAccountDialog open={open} onClose={() => setOpen(false)} />
-    </SettingsCard>
+    </li>
   );
 }
 

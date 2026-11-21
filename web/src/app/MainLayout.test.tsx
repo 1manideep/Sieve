@@ -1,18 +1,32 @@
 import { act, render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { expectNoAxeViolations } from '@/test/axe';
-import { NAV, RAIL } from '@/copy/strings';
-import { useAvailability } from '@/state/availability';
+import { NAV } from '@/copy/strings';
 import { useHomeBase } from '@/state/homeBase';
-import { useIndexing } from '@/state/indexing';
+import { sharedItemCount, useReceipts } from '@/state/receipts';
 import { useSession } from '@/state/session';
-import { MainLayout, RAIL_KEY } from './MainLayout';
+import type { ReceiptView } from '@/state/types';
+import { MainLayout } from './MainLayout';
 
 vi.mock('firebase/app', () => import('@/test/fakes/firebaseApp'));
 vi.mock('firebase/auth', () => import('@/test/fakes/firebaseAuth'));
 vi.mock('@/ai', () => import('@/test/fakes/ai'));
+
+const listened = vi.hoisted(() => ({ uids: [] as string[], stops: 0, items: 200 }));
+vi.mock('@/app/services/receipts', () => ({
+  listenReceipts: (uid: string) => {
+    listened.uids.push(uid);
+    return () => {
+      listened.stops += 1;
+    };
+  },
+  revokeReceipt: async () => undefined,
+}));
+vi.mock('@/components/dbTables', () => ({
+  loadIndex: async () => ({ openDb: () => ({ records: { count: async () => listened.items } }) }),
+  tablesOf: (db: unknown) => db,
+}));
 
 function renderLayout(path: string) {
   const router = createMemoryRouter(
@@ -31,8 +45,28 @@ const EXPECTED_LINKS = [
   [NAV.requests, '/requests'],
   [NAV.seen, '/seen'],
   [NAV.sources, '/sources'],
-  [NAV.settings, '/settings'],
 ] as const;
+
+const receipt = (id: string, status: ReceiptView['status'], itemIds: string[]): ReceiptView => ({
+  id,
+  requestId: id,
+  requester: { kind: 'outside', aiName: 'Claude', grantId: 'g1' } as ReceiptView['requester'],
+  question: 'q',
+  step: 'answer',
+  itemIds,
+  status,
+  chars: 10,
+  createdAt: 1,
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  useHomeBase.getState().reset();
+  useReceipts.getState().reset();
+  listened.uids = [];
+  listened.stops = 0;
+  listened.items = 200;
+});
 
 describe('MainLayout: the session ends while a signed-in screen is open', () => {
   it('leaves for the landing when the Google session ends (sign-out here or in another tab)', async () => {
@@ -46,126 +80,73 @@ describe('MainLayout: the session ends while a signed-in screen is open', () => 
 });
 
 describe('MainLayout', () => {
-  afterEach(() => {
-    localStorage.removeItem(RAIL_KEY);
-    vi.restoreAllMocks();
-    useHomeBase.getState().reset();
-    useAvailability.setState({ text: 'checking', image: 'checking', setup: { state: 'idle' } });
-    useIndexing.setState({ state: 'idle', left: 0, done: 0, total: 0, etaMs: undefined });
-  });
-
-  it('renders the rail links in order, with the active one marked', async () => {
+  it('renders the rail icons in order, each named, with the current one marked', async () => {
     useSession.setState({ kind: 'google', user: { uid: 'u1', email: 'mani@example.com', isAnonymous: false } });
     renderLayout('/sources');
     expect(screen.getByRole('link', { name: 'Sieve' })).toHaveAttribute('href', '/ask');
     const nav = screen.getByRole('navigation', { name: NAV.label });
-    const links = within(nav).getAllByRole('link');
-    expect(links.map((l) => [l.textContent, l.getAttribute('href')])).toEqual(EXPECTED_LINKS.map(([n, h]) => [n, h]));
+    const lists = within(nav).getAllByRole('list');
+    const links = within(lists[0]!).getAllByRole('link');
+    expect(links.map((l) => [l.getAttribute('aria-label'), l.getAttribute('href')])).toEqual(EXPECTED_LINKS.map(([n, h]) => [n, h]));
     expect(within(nav).getByRole('link', { name: NAV.sources })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getByRole('link', { name: NAV.newAsk })).not.toHaveAttribute('aria-current');
-    expect(screen.getByRole('button', { name: 'Account' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Status: / })).toBeInTheDocument();
+    expect(within(lists[1]!).getByRole('link', { name: NAV.settings })).toHaveAttribute('href', '/settings');
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main');
+    await screen.findByRole('link', { name: NAV.neverShared(100) });
     await expectNoAxeViolations();
   });
 
-  it('names the Requests link with the waiting count', async () => {
+  it('names the Requests icon with the waiting count', async () => {
+    useSession.setState({ kind: 'google', user: { uid: 'u1', isAnonymous: false } });
     useHomeBase.setState({ awaitingCount: 2 });
     renderLayout('/ask');
     expect(screen.getByRole('link', { name: NAV.requestsWaiting(2) })).toHaveAttribute('href', '/requests');
-    await expectNoAxeViolations();
+    await screen.findByRole('link', { name: NAV.neverShared(100) });
   });
 
-  it('shows the Nano meter card from the stores', async () => {
-    useAvailability.setState({ text: 'available' });
-    useIndexing.setState({ state: 'running', left: 36, done: 64, total: 100 });
-    renderLayout('/ask');
-    const meter = screen.getByRole('button', { name: /^Status: / });
-    expect(meter).toHaveTextContent(`${RAIL.nano}${RAIL.nanoReady}`);
-    expect(meter).toHaveTextContent(`${RAIL.index}${RAIL.indexing(64)}`);
-    await expectNoAxeViolations();
-  });
-
-  it('hides the nav on /setup', async () => {
-    renderLayout('/setup');
-    expect(screen.queryByRole('navigation', { name: NAV.label })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: NAV.newAsk })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Account' })).toBeInTheDocument();
-    await expectNoAxeViolations();
-  });
-
-  it('has a menu button for phones that opens and closes the rail body', async () => {
-    const user = userEvent.setup();
-    renderLayout('/requests');
-    const menu = screen.getByRole('button', { name: NAV.menu });
-    expect(menu).toHaveAttribute('aria-expanded', 'false');
-    await user.click(menu);
-    expect(screen.getByRole('button', { name: NAV.closeMenu })).toHaveAttribute('aria-expanded', 'true');
-    await user.click(screen.getByRole('button', { name: NAV.closeMenu }));
-    expect(screen.getByRole('button', { name: NAV.menu })).toHaveAttribute('aria-expanded', 'false');
-  });
-
-  it('hides the rail and shows it again, moving focus and remembering the choice on this device', async () => {
-    const user = userEvent.setup();
-    const view = renderLayout('/requests');
-    const shell = view.container.firstElementChild as HTMLElement;
-    const rail = screen.getByRole('banner');
-    expect(shell).toHaveAttribute('data-rail', 'shown');
-    const hide = screen.getByRole('button', { name: NAV.hideMenu });
-    expect(hide).toHaveAttribute('aria-expanded', 'true');
-    expect(hide).toHaveAttribute('aria-controls', rail.id);
-    expect(screen.queryByRole('button', { name: NAV.showMenu })).toBeNull();
-
-    await user.click(hide);
-    expect(shell).toHaveAttribute('data-rail', 'hidden');
-    const show = screen.getByRole('button', { name: NAV.showMenu });
-    expect(show).toHaveAttribute('aria-expanded', 'false');
-    expect(show).toHaveAttribute('aria-controls', rail.id);
-    expect(show).toHaveFocus();
-    expect(localStorage.getItem(RAIL_KEY)).toBe('hidden');
-    await expectNoAxeViolations();
-
-    await user.keyboard('{Enter}');
-    expect(shell).toHaveAttribute('data-rail', 'shown');
-    expect(screen.queryByRole('button', { name: NAV.showMenu })).toBeNull();
-    expect(screen.getByRole('button', { name: NAV.hideMenu })).toHaveFocus();
-    expect(localStorage.getItem(RAIL_KEY)).toBe('shown');
-  });
-
-  it('starts hidden when this device hid it before, and shown by default', () => {
-    localStorage.setItem(RAIL_KEY, 'hidden');
-    const hidden = renderLayout('/ask');
-    expect(hidden.container.firstElementChild).toHaveAttribute('data-rail', 'hidden');
-    expect(screen.getByRole('button', { name: NAV.showMenu })).not.toHaveFocus();
-    hidden.unmount();
-    localStorage.removeItem(RAIL_KEY);
-    const shown = renderLayout('/ask');
-    expect(shown.container.firstElementChild).toHaveAttribute('data-rail', 'shown');
-    expect(screen.getByRole('button', { name: NAV.hideMenu })).toBeInTheDocument();
-  });
-
-  it('still hides the rail when this browser keeps nothing', async () => {
-    const user = userEvent.setup();
-    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-      throw new Error('SecurityError');
-    });
-    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
-      throw new Error('SecurityError');
-    });
+  it('listens to the receipts of the signed-in person and stops when the layout goes away', async () => {
+    useSession.setState({ kind: 'google', user: { uid: 'u7', isAnonymous: false } });
     const view = renderLayout('/ask');
-    expect(view.container.firstElementChild).toHaveAttribute('data-rail', 'shown');
-    await user.click(screen.getByRole('button', { name: NAV.hideMenu }));
-    expect(view.container.firstElementChild).toHaveAttribute('data-rail', 'hidden');
-    expect(screen.getByRole('button', { name: NAV.showMenu })).toHaveFocus();
+    await vi.waitFor(() => expect(listened.uids).toEqual(['u7']));
+    const before = listened.stops;
+    view.unmount();
+    expect(listened.stops).toBe(before + 1);
   });
 
-  it('closes the phone menu when a link changes the route', async () => {
-    const user = userEvent.setup();
-    renderLayout('/requests');
-    await user.click(screen.getByRole('button', { name: NAV.menu }));
-    expect(screen.getByRole('button', { name: NAV.closeMenu })).toHaveAttribute('aria-expanded', 'true');
-    await user.click(screen.getByRole('link', { name: NAV.sources }));
-    expect(screen.getByRole('link', { name: NAV.sources })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: NAV.menu })).toHaveAttribute('aria-expanded', 'false');
+  it('shows the share of items never shared, from the index count and the loaded receipts', async () => {
+    useSession.setState({ kind: 'google', user: { uid: 'u1', isAnonymous: false } });
+    renderLayout('/ask');
+    await screen.findByRole('link', { name: NAV.neverShared(100) });
+    act(() =>
+      useReceipts.setState({
+        status: 'ready',
+        receipts: [receipt('r1', 'delivered', ['gmail:1', 'gmail:2']), receipt('r2', 'declined', ['gmail:3']), receipt('r3', 'revoked', ['gmail:2', 'gmail:4'])],
+      }),
+    );
+    const ring = screen.getByRole('link', { name: NAV.neverShared(98) });
+    expect(ring).toHaveAttribute('href', '/sources');
+    expect(ring).toHaveTextContent('98%');
+    expect(ring).toHaveTextContent(NAV.neverSharedTip('197', '200'));
+  });
+
+  it('shows no ring while nothing is indexed', async () => {
+    listened.items = 0;
+    useSession.setState({ kind: 'google', user: { uid: 'u1', isAnonymous: false } });
+    renderLayout('/ask');
+    await vi.waitFor(() => expect(listened.uids.length).toBe(1));
+    expect(screen.queryByRole('link', { name: /never shared/ })).not.toBeInTheDocument();
+  });
+
+  it('hides the icons on /setup', () => {
+    useSession.setState({ kind: 'google', user: { uid: 'u1', isAnonymous: false } });
+    renderLayout('/setup');
+    expect(screen.getByRole('link', { name: 'Sieve' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: NAV.label })).not.toBeInTheDocument();
+  });
+});
+
+describe('sharedItemCount', () => {
+  it('counts each item once, and only for shares that left', () => {
+    expect(sharedItemCount([receipt('a', 'delivered', ['x', 'y']), receipt('b', 'pending-collection', ['y', 'z']), receipt('c', 'blocked', ['q']), receipt('d', 'expired', ['w'])])).toBe(3);
   });
 });

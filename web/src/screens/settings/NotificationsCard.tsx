@@ -1,11 +1,12 @@
-// Notifications and this computer (40 section 13.8.7, 50 section 8.9): the push checkbox, the computers with their
-// home base and push state, and the extension with its side panel shortcut and the test request (50 section 11).
-// Setup step 4 (13.3) reuses PushToggle.
+// Notifications and this computer (40 section 13.8.7, 50 section 8.9; design handoff of Nov 20, 2026), as rows on
+// the ground: the push switch, the computers with their home base and push state, and the extension with its side
+// panel shortcut and the test request (50 section 11). Setup step 4 (13.3) reuses PushToggle, the checkbox form.
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { canKeepDeviceId, defaultDeviceLabel } from '@/app/deviceId';
 import { env } from '@/app/env';
 import { Button, LinkButton } from '@/components/Button/Button';
+import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary';
 import { Tag } from '@/components/Tag/Tag';
 import { TestRequestButton } from '@/components/TestRequestButton/TestRequestButton';
 import { HOME_BASE_DIALOG, SETTINGS } from '@/copy/screens-controls';
@@ -20,18 +21,16 @@ import { selectShortcut } from '../requests/RequestNotices';
 import { Confirm } from './kit/Confirm';
 import { Fill } from './kit/Fill';
 import { MakeHomeBaseDialog } from './kit/MakeHomeBaseDialog';
-import { SettingsCard } from './SettingsCard';
+import ground from './kit/ground.module.css';
 import { saveStatusText } from './settingsText';
 import styles from './settings.module.css';
 
 const SHORTCUTS_ADDRESS = 'chrome://extensions/shortcuts';
 
-/** The push checkbox. setPushEnabled runs straight from the change event: the permission prompt needs the gesture. */
-export function PushToggle() {
+/** The push setting. setPushEnabled runs straight from the click or change event: the permission prompt needs the gesture. */
+function usePush() {
   const on = useSettings((s) => s.settings.pushEnabled);
   const [problem, setProblem] = useState<'unsupported' | 'denied' | undefined>(undefined);
-  const noteId = useId();
-  const problemId = useId();
 
   const change = (want: boolean) => {
     useSettings
@@ -48,6 +47,47 @@ export function PushToggle() {
         useToasts.getState().push({ tone: 'error', title: SETTINGS.pushError });
       });
   };
+  return { on, problem, change };
+}
+
+/** The push switch, as a row in Settings. */
+function PushRow() {
+  const { on, problem, change } = usePush();
+  const labelId = useId();
+  const noteId = useId();
+  const problemId = useId();
+  return (
+    <li className={ground.row}>
+      <span className={ground.rowText}>
+        <span id={labelId}>{SETTINGS.pushCheckbox}</span>
+        <span id={noteId} className={ground.rowSub}>
+          {SETTINGS.pushNote}
+        </span>
+        {problem ? (
+          <span id={problemId} className={styles.warnText} role="status">
+            {problem === 'unsupported' ? SETTINGS.pushUnsupported : SETTINGS.pushDenied}
+          </span>
+        ) : null}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        className={ground.switch}
+        aria-checked={on}
+        aria-labelledby={labelId}
+        aria-describedby={problem ? `${noteId} ${problemId}` : noteId}
+        disabled={problem === 'unsupported'}
+        onClick={() => change(!on)}
+      />
+    </li>
+  );
+}
+
+/** The push checkbox, for Setup step 4. */
+export function PushToggle() {
+  const { on, problem, change } = usePush();
+  const noteId = useId();
+  const problemId = useId();
 
   return (
     <div className={styles.group}>
@@ -108,9 +148,11 @@ function ExtensionRow() {
   else line = STATUS_POPOVER.extensionIdle;
 
   return (
-    <div className={styles.group}>
-      <h3 className={styles.h3}>{SETTINGS.extensionHeading}</h3>
-      <p className={styles.text}>{line}</p>
+    <li className={ground.row}>
+      <span className={ground.rowText}>
+        <span>{SETTINGS.extensionHeading}</span>
+        <span className={ground.rowSub}>{line}</span>
+      </span>
       <div className={styles.inline}>
         {status === 'connected' && shortcut !== undefined ? (
           <Button variant="secondary" size="sm" icon="copy" onClick={() => void copyAddress()}>
@@ -122,9 +164,9 @@ function ExtensionRow() {
             {STATUS_POPOVER.getExtension}
           </LinkButton>
         ) : null}
+        <TestRequestButton status={status} />
       </div>
-      <TestRequestButton status={status} />
-    </div>
+    </li>
   );
 }
 
@@ -150,18 +192,16 @@ export function NotificationsCard() {
   const row = (d: DeviceView, mine: boolean) => {
     const homeBase = mine ? thisIsHomeBase : d.isHomeBase;
     return (
-      <li key={d.id} className={styles.deviceRow}>
-        <div className={styles.deviceMain}>
-          <p className={styles.deviceName}>
-            <bdi>{d.label}</bdi>
-          </p>
-          <p className={styles.tagsRow}>
+      <li key={d.id} className={ground.row}>
+        <span className={ground.rowText}>
+          <bdi>{d.label}</bdi>
+          <span className={styles.tagsRow}>
             {mine ? <Tag tone="muted">{SETTINGS.thisComputer}</Tag> : null}
             {homeBase ? <Tag tone="device">{SETTINGS.homeBase}</Tag> : null}
             {d.hasPush ? <Tag tone="muted">{SETTINGS.pushOn}</Tag> : null}
-          </p>
-          {mine && !keepsId ? <p className={styles.note}>{SETTINGS.noDeviceId}</p> : null}
-        </div>
+          </span>
+          {mine && !keepsId ? <span className={ground.rowSub}>{SETTINGS.noDeviceId}</span> : null}
+        </span>
         {mine ? (
           homeBase ? (
             <Button variant="secondary" size="sm" onClick={() => setStopOpen(true)}>
@@ -178,29 +218,38 @@ export function NotificationsCard() {
   };
 
   return (
-    <SettingsCard id="notifications" title={SETTINGS.notificationsHeading} status={status}>
-      <PushToggle />
-      <div className={styles.group}>
-        <h3 className={styles.h3}>{SETTINGS.devicesHeading}</h3>
-        <ul className={styles.devices}>
+    <ErrorBoundary>
+      <section id="notifications" className={ground.sec} aria-labelledby="notifications-heading">
+        <div className={ground.secHead}>
+          <h2 id="notifications-heading" className={ground.h2} tabIndex={-1}>
+            {SETTINGS.notificationsHeading}
+          </h2>
+          {status ? (
+            <span className={styles.saveStatus} role="status">
+              {status}
+            </span>
+          ) : null}
+        </div>
+        <ul className={ground.rows} aria-label={SETTINGS.notificationsHeading}>
+          <PushRow />
           {row(thisDevice, true)}
           {others.map((d) => row(d, false))}
+          <ExtensionRow />
         </ul>
-      </div>
-      <ExtensionRow />
-      <MakeHomeBaseDialog open={makeOpen} onClose={() => setMakeOpen(false)} />
-      <Confirm
-        open={stopOpen}
-        title={HOME_BASE_DIALOG.stopTitle}
-        body={HOME_BASE_DIALOG.stopBody}
-        confirmLabel={HOME_BASE_DIALOG.stopConfirm}
-        tone="danger"
-        onCancel={() => setStopOpen(false)}
-        onConfirm={async () => {
-          await useHomeBase.getState().stopBeingHomeBase().catch(console.error);
-          setStopOpen(false);
-        }}
-      />
-    </SettingsCard>
+        <MakeHomeBaseDialog open={makeOpen} onClose={() => setMakeOpen(false)} />
+        <Confirm
+          open={stopOpen}
+          title={HOME_BASE_DIALOG.stopTitle}
+          body={HOME_BASE_DIALOG.stopBody}
+          confirmLabel={HOME_BASE_DIALOG.stopConfirm}
+          tone="danger"
+          onCancel={() => setStopOpen(false)}
+          onConfirm={async () => {
+            await useHomeBase.getState().stopBeingHomeBase().catch(console.error);
+            setStopOpen(false);
+          }}
+        />
+      </section>
+    </ErrorBoundary>
   );
 }

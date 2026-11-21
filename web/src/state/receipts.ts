@@ -142,3 +142,17 @@ export function filterReceipts(list: ReceiptView[], f: ReceiptFilters, now: numb
     return r.createdAt >= since;
   });
 }
+
+/** Something left the device for this receipt (or will, once collected). */
+export function isShared(r: Pick<ReceiptView, 'status'>): boolean {
+  return r.status === 'delivered' || r.status === 'pending-collection' || r.status === 'revoked';
+}
+
+/** How many items have ever left, among these receipts: each item once, and only for shares that left. */
+export function sharedItemCount(receipts: Pick<ReceiptView, 'status' | 'itemIds'>[]): number {
+  const ids = new Set<string>();
+  for (const r of receipts) {
+    if (isShared(r)) for (const id of r.itemIds) ids.add(id);
+  }
+  return ids.size;
+}
