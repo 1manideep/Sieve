@@ -4,13 +4,23 @@ import { create } from 'zustand';
 import type { IndexRecord } from '@sieve/shared';
 import type { RawItem, SieveDb } from '@/index';
 import { PLAYGROUND_FLOW } from '@/copy/strings';
+import { buildTestEmail } from '@/playground/testEmail';
 import { loadAi } from './availability';
 import { tables } from './localDb';
 import { useReceipts } from './receipts';
 import { itemKindForFile } from './sources';
 
 export interface AddedItem { recordId?: string; name: string; kind: 'file' | 'test-email'; status: 'indexing' | 'indexed' | 'error'; error?: string }
-export interface TestEmailInput { from: string; subject: string; body: string; hidden: string; hideAsWhiteText: boolean }
+export type TestEmailHideAs = 'white' | 'tags' | 'visible';
+export interface TestEmailInput {
+  from: string;
+  subject: string;
+  body: string;
+  hidden: string;
+  hideAsWhiteText: boolean;
+  hideAs?: TestEmailHideAs;    // a trick email sets it; otherwise the white-text checkbox decides
+  address?: string;            // the sender's address (example.com); the default is TEST_EMAIL_COPY.senderAddress
+}
 export interface PlaygroundState {
   status: 'idle' | 'opening' | 'seeding' | 'ready' | 'resetting' | 'error';
   seedProgress: { done: number; total: number };
@@ -40,27 +50,9 @@ type IndexExtras = {
   resetPlayground?: () => Promise<SieveDb>;
 };
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-/**
- * The test email (40 section 13.9). Mirrors playground/testEmail.ts `buildTestEmail`, which the Playground package
- * owns; switch to that export once it lands.
- */
+/** The test email (40 section 13.9): playground/testEmail.ts builds it. */
 export function buildTestEmailRaw(i: TestEmailInput): RawItem {
-  const hidden = i.hideAsWhiteText
-    ? `<p style="color:#ffffff;background:#ffffff;font-size:1px">${escapeHtml(i.hidden)}</p>`
-    : `<p>${escapeHtml(i.hidden)}</p>`;
-  return {
-    source: 'upload',
-    sourceRef: 'test-email-' + crypto.randomUUID(),
-    kind: 'email',
-    title: i.subject,
-    from: `${i.from} <it-support@example.com>`,
-    date: Date.now(),
-    html: `<p>${escapeHtml(i.body)}</p>${hidden}`,
-  };
+  return buildTestEmail(i);
 }
 
 /** Why a file cannot be added in the Playground (40 section 13.9 copy), or null. */
