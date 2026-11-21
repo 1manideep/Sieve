@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setPrivacyModelHost } from '../model/client';
 import { findSecretCodes, holdsSecretCode } from '../pii/validators/secretCode';
 import { clearScanMemo } from '../scan/scan';
-import { personSender } from '../steps/asker';
+import { keepAskerWords, personSender } from '../steps/asker';
 import { buildStepOption } from '../steps/build';
 
 const ai = vi.hoisted(() => ({ runModel: vi.fn(), getNanoAvailability: vi.fn() }));
@@ -98,6 +98,25 @@ describe('names and the words the asker typed (T02, T04, T05)', () => {
     const kay = rec({ id: 'gmail:kay', from: 'Kay Narayanan <kay.narayanan@gmail.com>', text: 'The lease starts on June 1.' });
     expect(await answer(kay, 'Kay Narayanan said the lease starts on June 1.', 'What did Kay say about the lease?')).toBe('Kay [name] said the lease starts on June 1.');
     expect(await answer(kay, 'Kay Narayanan said the lease starts on June 1.', 'What did Kay Narayanan say about the lease?')).toBe('Kay Narayanan said the lease starts on June 1.');
+  });
+
+  it('an ordinary word in the question that is also a first name does not unmask it', () => {
+    const cases: [string, string, string][] = [
+      ['Will Turner approved the refund.', 'Will Turner', 'Will I get my refund?'],
+      ['Lease signed by May Chen on March 3.', 'May Chen', 'May I see what the lease says?'],
+      ['Mark Lee sent the invoice.', 'Mark Lee', 'Did they mark the invoice as paid?'],
+      ['Grace Park confirmed the rent.', 'Grace Park', 'Is there a grace period on the rent?'],
+      ['June Park confirmed the rent.', 'June Park', 'What did the landlord say in June?'],
+    ];
+    for (const [text, name, question] of cases) {
+      const start = text.indexOf(name);
+      const spans = keepAskerWords(text, [{ start, end: start + name.length, type: 'name', by: 'validator' }], question);
+      expect(spans.map((s) => text.slice(s.start, s.end)), question).toEqual([name]);
+    }
+    const text = 'Kay Narayanan said the lease starts on June 1.';
+    const kay = [{ start: 0, end: 13, type: 'name' as const, by: 'validator' as const }];
+    expect(keepAskerWords(text, kay, 'What did Kay say?').map((s) => text.slice(s.start, s.end))).toEqual(['Narayanan']);
+    expect(keepAskerWords(text, kay, "Kay's lease: when does it start?").map((s) => text.slice(s.start, s.end))).toEqual(['Narayanan']);
   });
 
   it('a company sender in the same phrasing is not a person', async () => {
