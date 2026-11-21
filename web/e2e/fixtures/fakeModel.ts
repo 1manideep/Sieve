@@ -25,6 +25,7 @@ export const ANSWERS: SeamAnswer[] = [
   { match: 'bank balance', recordId: 'playground:pg-mail-11', answer: 'Your November statement shows the latest balance.' },
   { match: 'parcel', recordId: 'playground:pg-mail-30', answer: 'It asks you to pay a $2 redelivery fee through a link, which looks like a scam.' },
   { match: 'test email', answer: 'It asks you to confirm your account details.' },
+  { match: 'it support email', answer: 'It asks you to confirm your account details.' },
   { match: 'move-out-notes', answer: 'Your notes say to return the keys by December 31.' },
   // T02 of Nov 20: the picked item only looks like the answer; the on-device check says no, so nothing is shared.
   { match: 'vet visit', answer: 'Your vet visit is on Friday.', verify: false },

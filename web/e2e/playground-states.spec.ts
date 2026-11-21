@@ -1,7 +1,7 @@
 // Playground states (40 section 19.2; acceptance AT-5 to AT-9, AT-18, AT-33).
 import { expect, test } from '@playwright/test';
 import { fakeDraft } from './fixtures/fakeModel';
-import { APPROVE, BANK, HEALTH, HEALTH_TEXT, KEEP_HERE, LANDLORD, MY_TEST, PARCEL, askChip, openPlayground, openTrace } from './fixtures/helpers';
+import { APPROVE, BANK, HEALTH, HEALTH_TEXT, KEEP_HERE, LANDLORD, PARCEL, askChip, openPlayground, openTrace } from './fixtures/helpers';
 import { cloudCalls, prepareStubs, seamCalls } from './fixtures/stubs';
 
 const desktopOnly = (name: string) => test.skip(name !== 'desktop', 'desktop project only');
@@ -71,7 +71,8 @@ test.describe('Playground states', () => {
     await expect(page.getByText('Added by you')).toBeVisible();
     await expect(page.getByText('Indexed on this device')).toBeVisible({ timeout: 30_000 });
     // Adding the email asks about it at once, so the conversation (F3) replaces the chips; the field keeps the question.
-    await expect(page.getByLabel('Ask the Playground')).toHaveValue(MY_TEST);
+    // The composer opens on the first trick (white on white, from IT Support), whose question names its sender.
+    await expect(page.getByLabel('Ask the Playground')).toHaveValue('What does the IT Support email want?');
     await expect(page.locator('article[aria-label="Result"]')).toBeVisible({ timeout: 45_000 });
     await expect(page.getByText(/Possible instruction aimed at an AI|Hidden text removed before any model read it/).first()).toBeVisible();
     await expect(page.getByTestId('outgoing-text')).not.toContainText('bank statement');

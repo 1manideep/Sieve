@@ -123,7 +123,7 @@ function onGmailRow(db: SieveDb, watch: RowWatch, row: SourceRow | undefined): v
   const wasConnected = watch.connected;
   watch.connected = !!row?.connected;
   if (row?.connected && isLeader(db) && !stoppedDbs.has(db)) startGmailTimers(db);
-  else if (wasConnected && !row?.connected && isLeader(db)) void stopGmailSync(db);
+  else if (wasConnected && !row?.connected && isLeader(db)) void stopGmailSync(db).catch(() => undefined);
   if (row?.connected) {
     setRenewTarget({
       db, account: lastAccount.get(db), expiresAt: watch.expiresAt,
@@ -141,7 +141,7 @@ async function keepRenewedToken(db: SieveDb): Promise<void> {
   const patch: Partial<SourceRow> = { needsAuth: false };
   if (row.errorCode && CLICK_ERRORS.has(row.errorCode)) Object.assign(patch, { error: undefined, errorCode: undefined });
   await writeStoredToken(db, currentGmailToken(), patch);
-  void runGmailSync(db);
+  void runGmailSync(db).catch(() => undefined);
 }
 
 /** Sign-out or disconnect: forget the token in this tab and on the row. */
@@ -199,7 +199,7 @@ function applyRows(db: SieveDb, rows: SourceRow[], seen: Followed): void {
   seen.folder = folderConnected;
   if (folderConnected) {
     startFolderTimers(db);
-    if (folderWas === false && !folder?.paused) void scanFolder(db);
+    if (folderWas === false && !folder?.paused) void scanFolder(db).catch(() => undefined);
   } else if (folderWas) {
     stopFolderTimers(db);   // disconnected in another tab
   }
@@ -212,8 +212,8 @@ function applyRows(db: SieveDb, rows: SourceRow[], seen: Followed): void {
   }
   (peekQueue(db) ?? startIngestQueue(db)).resume();
   if (was !== true) return;   // the first read at start: startSources runs the jobs itself
-  if (gmail?.connected && !gmail.paused) void runGmailSync(db);
-  if (folder?.connected && !folder.paused) void scanFolder(db);
+  if (gmail?.connected && !gmail.paused) void runGmailSync(db).catch(() => undefined);
+  if (folder?.connected && !folder.paused) void scanFolder(db).catch(() => undefined);
 }
 
 const unfollows = new Map<SieveDb, () => void>();
@@ -301,13 +301,13 @@ export async function startSources(db: SieveDb): Promise<void> {
         if (gmail?.connected) {
           const patch = gmailStartPatch(gmail);
           if (Object.keys(patch).length > 0) await db.sources.update('gmail', patch);
-          void runGmailSync(db);   // reads the stored token; asks for Continue only when there is none
+          void runGmailSync(db).catch(() => undefined);   // reads the stored token; asks for Continue only when there is none
           startGmailTimers(db);
         }
         const folder = rows.find((r) => r.kind === 'folder');
         if (folder?.connected && folder.folderHandle) {
           const perm = await permissionOf(asDir(folder.folderHandle));
-          if (perm === 'granted') void scanFolder(db);
+          if (perm === 'granted') void scanFolder(db).catch(() => undefined);
           else await db.sources.update('folder', { errorCode: 'permission-needed', error: SOURCE_COPY.folderPermission(folder.folderName ?? 'the folder'), needsAuth: true });
           startFolderTimers(db);
         }
@@ -350,7 +350,7 @@ export async function connectGmail(db: SieveDb): Promise<void> {
   void requestPersistence();
   await startSources(db);
   if (isLeader(db)) {
-    void runGmailSync(db, 'backfill');
+    void runGmailSync(db, 'backfill').catch(() => undefined);
     startGmailTimers(db);
   }
 }
@@ -362,7 +362,7 @@ export async function connectFolder(db: SieveDb): Promise<void> {
   if (!handle) return;
   await startSources(db);
   if (isLeader(db)) {
-    void scanFolder(db);
+    void scanFolder(db).catch(() => undefined);
     startFolderTimers(db);
   }
 }
@@ -398,7 +398,7 @@ export async function reauthorize(db: SieveDb, kind: 'gmail' | 'folder'): Promis
       }
       // anything else (offline, quota) is the sync's to report
     }
-    void runGmailSync(db);
+    void runGmailSync(db).catch(() => undefined);
     startGmailTimers(db);
     return;
   }
@@ -473,7 +473,7 @@ export async function rebuildIndex(db: SieveDb): Promise<void> {
   });
   queue.enqueue(coded);
   for (const r of rows) if (r.connected) await db.sources.update(r.kind, { phase: 'idle' });
-  if (rows.some((r) => r.kind === 'gmail' && r.connected) && (await loadStoredGmailToken(db).catch(() => null))) void runGmailSync(db, 'reconcile');
+  if (rows.some((r) => r.kind === 'gmail' && r.connected) && (await loadStoredGmailToken(db).catch(() => null))) void runGmailSync(db, 'reconcile').catch(() => undefined);
 }
 
 export async function syncNow(db: SieveDb, kind: 'gmail' | 'folder'): Promise<void> {
