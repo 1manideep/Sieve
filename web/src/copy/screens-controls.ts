@@ -313,6 +313,11 @@ export const SOURCES = {
   searchValue: '{done} of {total} items searchable',
   pillReady: 'Ready to ask',
   pillBackground: '{left} in the background',
+  // A testing tool at /sources?tool=labels
+  exportLabel: 'Label export',
+  exportText: 'Testing tool: download how each Gmail item was sorted. The file has message ids and categories only, never a subject or any text.',
+  exportButton: 'Download labels',
+  exportDone: '{n} items written to {file}',
 } as const;
 
 /** What has AI seen? (40 section 13.7). */

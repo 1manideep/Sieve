@@ -13,6 +13,7 @@ import { useSources, type SourceRowView, type SourcesState } from '@/state/sourc
 import type { ReceiptView } from '@/state/types';
 import { expectNoAxeViolations } from '@/test/axe';
 import { Component, sourceState } from './index';
+import { buildLabelExport } from './LabelExport';
 import { radius } from './SourcesGrid';
 import { senderName } from './sourcesDb';
 
@@ -31,6 +32,7 @@ vi.mock('@/index', async (importOriginal) => {
         equals: (value: string) => ({
           count: async () => by(index, value).length,
           primaryKeys: async () => by(index, value).map((r) => r.id),
+          each: async (fn: (r: FakeRecord) => void) => by(index, value).forEach(fn),
           reverse: () => ({ limit: (n: number) => ({ toArray: async () => [...by(index, value)].reverse().slice(0, n) }) }),
         }),
       }),
@@ -71,14 +73,14 @@ const actions = {
   ),
 };
 
-function renderSources() {
+function renderSources(path = '/sources') {
   const router = createMemoryRouter(
     [
       { path: '/sources', element: <main><Component /></main> },
       { path: '/settings', element: <main><p>settings page</p></main> },
       { path: '/ask', element: <main><p>ask page</p></main> },
     ],
-    { initialEntries: ['/sources'] },
+    { initialEntries: [path] },
   );
   return render(<RouterProvider router={router} />);
 }
@@ -473,6 +475,32 @@ describe('Sources: the grid', () => {
     expect(dimmed()).toBe(0);
     await user.click(screen.getByRole('button', { name: SOURCES.play }));
     expect(gridRows()).toHaveLength(9);
+  });
+});
+
+describe('Sources: the label export (a testing tool)', () => {
+  it('is not on the screen unless the address asks for it', async () => {
+    fake.rows = [row('gmail')];
+    renderSources();
+    await screen.findByRole('article', { name: 'Gmail' });
+    expect(screen.queryByRole('region', { name: SOURCES.exportLabel })).not.toBeInTheDocument();
+  });
+
+  it('writes one line per Gmail item with its id, category and who chose it, and never a subject', async () => {
+    fake.rows = [row('gmail')];
+    fake.records = [...records('gmail', 'Home', 2, 'Dana Whitfield <dana@example.com>'), ...records('folder', 'Money', 1)];
+    const { openDb } = await import('@/index');
+    const { text, count } = await buildLabelExport(openDb('real'));
+    expect(count).toBe(2);
+    const lines = text.trim().split('\n').map((l) => JSON.parse(l) as Record<string, unknown>);
+    expect(lines[0]).toEqual({ id: 'Home-0', thread: null, category: 'Home', by: undefined, label: null, body: false });
+    expect(text).not.toContain('Home item');
+    expect(text).not.toContain('Dana');
+
+    renderSources('/sources?tool=labels');
+    const tool = await screen.findByRole('region', { name: SOURCES.exportLabel });
+    expect(within(tool).getByRole('button', { name: SOURCES.exportButton })).toBeInTheDocument();
+    await expectNoAxeViolations();
   });
 });
 

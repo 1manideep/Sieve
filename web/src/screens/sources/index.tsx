@@ -2,6 +2,7 @@
 // with the selected one opened in one panel in place, and the grid of what the index holds by category and source.
 // The index lives only on this device.
 import { useEffect, useId, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
 import { CATEGORIES, type Category, type CategoryRule } from '@sieve/shared';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
@@ -22,6 +23,7 @@ import kit from '../settings/kit/kit.module.css';
 import { ScreenHead } from '../settings/kit/ScreenHead';
 import { formatRelative } from '../settings/kit/when';
 import { IndexingCard } from './IndexingCard';
+import { LabelExport } from './LabelExport';
 import { SourceCard } from './SourceCard';
 import { LineIcon, SOURCE_ICONS } from './sourceIcons';
 import { SourcesGrid } from './SourcesGrid';
@@ -272,6 +274,7 @@ export function Component() {
   const receipts = useReceipts((s) => s.receipts);
   const [picked, setPicked] = useState<MarkId | null>(null);
   const [confirmRebuild, setConfirmRebuild] = useState(false);
+  const [params] = useSearchParams();
 
   const paused = indexing.state === 'paused';
   const rowOf = (kind: RealSource) => rows?.find((r) => r.kind === kind);
@@ -404,6 +407,7 @@ export function Component() {
       </section>
 
       <SourcesGrid db={db} split={split} sourceCounts={sourceCounts} rules={rules} />
+      {params.get('tool') === 'labels' ? <LabelExport db={db} /> : null}
 
       <p className={kit.sentence}>{SENTENCE}</p>
       <Confirm
