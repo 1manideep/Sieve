@@ -105,6 +105,31 @@ describe('scans', () => {
     expect((await db.sources.get('folder'))?.phase).toBe('idle');
   });
 
+  it('a rescan does not read again the files it could not index, while they are unchanged', async () => {
+    setPdfExtractor(async (data) => {
+      const text = new TextDecoder().decode(data);
+      if (text.includes('LOCKED')) throw Object.assign(new Error('password'), { name: 'PdfReadError', reason: 'password' });
+      return { text: text.replace(/^%PDF-1\.7\n/, ''), pages: 1, truncated: false };
+    });
+    folder.write('taxes.pdf', '%PDF-1.7\nLOCKED').write('blob.txt', new Uint8Array([0, 1, 2, 0, 0, 3, 0, 4])).write('ok.txt', 'fine');
+    await connectFolder(db);
+    await scanFolder(db);
+    expect(await ids()).toEqual(['folder:ok.txt']);
+    expect((await db.sources.get('folder'))?.skipped).toMatchObject({ password: 1, binary: 1 });
+    const reads = folder.readCount;
+    await scanFolder(db);
+    expect(folder.readCount - reads).toBe(3);   // the walk's size and date lookups only
+    expect((await db.sources.get('folder'))?.skipped).toMatchObject({ password: 1, binary: 1 });   // still reported
+    // a changed file is read again
+    folder.write('taxes.pdf', '%PDF-1.7\nNow open: refund $310', { lastModified: Date.now() + 60_000 });
+    await scanFolder(db);
+    expect(await ids()).toEqual(['folder:ok.txt', 'folder:taxes.pdf']);
+    const row = await db.sources.get('folder');
+    expect(row?.skipped).toMatchObject({ binary: 1 });
+    expect(row?.skipped?.password).toBeUndefined();
+    expect(Object.keys(row?.skipCache ?? {})).toEqual(['blob.txt']);
+  });
+
   it('A-CON-2: a deleted file is gone after the rescan, with its vectors', async () => {
     folder.write('keep.txt', 'keep this').write('gone.txt', 'zebracorn notes');
     await connectFolder(db);

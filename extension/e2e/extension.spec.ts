@@ -33,7 +33,7 @@ test('ID is stable: the key gives the same id everywhere', async ({ extensionId 
 test('connect and empty', async ({ openStub, openPanel, sw }) => {
   const stub = await connected(openStub);
   const ack = (await stub.received())[0];
-  expect(ack).toMatchObject({ type: 'sieve/hello-ack', version: 1, extensionVersion: '0.1.0' });
+  expect(ack).toMatchObject({ type: 'sieve/hello-ack', version: 1, extensionVersion: '0.1.1' });
   const panel = await openPanel();
   await expect(panel.getByRole('heading', { name: 'No requests waiting' })).toBeVisible();
   await expect(panel.getByText('Home base online')).toBeVisible();
@@ -162,14 +162,56 @@ test('invalid messages are ignored, and 5 of them disconnect the page', async ({
   const stub = await connected(openStub);
   const panel = await openPanel();
   await stub.raw({ type: 'sieve/pending', version: 2, proposals: [DEPOSIT] });
-  await stub.raw({ type: 'sieve/pending', version: 1, proposals: [variant(DEPOSIT, { options: [{ ...DEPOSIT.options[0]!, step: 'everything' as never }, DEPOSIT.options[1]!, DEPOSIT.options[2]!] })] });
+  await stub.raw({ type: 'sieve/pending', version: 1, proposals: 'not a list' });
   await expect(panel.getByRole('heading', { name: 'No requests waiting' })).toBeVisible();
   expect(await stub.status()).toBe('connected');
-  await stub.raw({ type: 'sieve/unknown', version: 1 });
+  await stub.raw({ type: 'sieve/hello', version: 1 });
   await stub.raw('not an object');
   await stub.raw({ type: 'sieve/resolved', version: 1, requestId: 'bad id!', outcome: 'approved' });
   await stub.waitForStatus('disconnected');
   await expect(panel.getByRole('heading', { name: "Sieve isn't open" })).toBeVisible();
+});
+
+test('a newer page: unknown values are left out and never disconnect (0.1.1)', async ({ openStub, openPanel, sw }) => {
+  const stub = await connected(openStub);
+  const panel = await openPanel();
+  const newKind = variant(LEASE, { warnings: [{ kind: 'from-next-week' as never, message: 'Something new to know.' }] });
+  const newOutcome = variant(STATEMENT, { outcome: 'needs-a-new-screen' as never });
+  const badOption = variant(DEPOSIT, { requestId: 'req-bad-option', options: [{ ...DEPOSIT.options[0]!, step: 'everything' as never }, DEPOSIT.options[1]!, DEPOSIT.options[2]!] });
+  // Far more than 5 messages, each with something this build does not know: none of them counts.
+  for (let i = 0; i < 4; i++) {
+    await stub.pending([DEPOSIT, newKind, newOutcome, badOption]);
+    await stub.raw({ type: 'sieve/settings', version: 1, anything: true });
+    await stub.raw({ type: 'sieve/resolved', version: 1, requestId: 'req-other', outcome: 'revoked' });
+  }
+  await expect.poll(() => badgeText(sw)).toBe('2');
+  expect(await stub.status()).toBe('connected');
+  await expect(panel.getByRole('heading', { name: 'A request is waiting' })).toBeVisible();
+  await expect(panel.getByText(`Test assistant asked for: "${DEPOSIT.question}"`)).toBeVisible();
+  await expect(panel.getByText('Also waiting (1)')).toBeVisible();
+  await panel.getByRole('button', { name: /Planner/ }).click();
+  await expect(panel.getByText(`Planner asked for: "${LEASE.question}"`)).toBeVisible();
+  await expect(panel.getByText('Something new to know.')).toHaveCount(0);
+  await expect(panel.getByText(STATEMENT.question)).toHaveCount(0);
+});
+
+test('text hash: an approval names the text on screen; a text that changed is checked again (0.1.1)', async ({ openStub, openPanel }) => {
+  const stub = await connected(openStub);
+  const panel = await openPanel();
+  await stub.pending([{ ...DEPOSIT, textHash: 'e2e0000000000001' }]);
+  const approve = panel.getByRole('button', { name: 'Approve' });
+  await approve.click();
+  type Sent = Extract<ExtensionToPage, { type: 'sieve/decision' }> & { textHash?: string };
+  const sent = async () => (await stub.received()).filter((m): m is Sent => m.type === 'sieve/decision');
+  await expect.poll(async () => (await sent()).map((m) => m.textHash)).toEqual(['e2e0000000000001']);
+  // The page refused it: its text changed, and it sends the new list.
+  const changedText = 'Your deposit of $1,200 was paid on March 3 by check.';
+  await stub.pending([{ ...DEPOSIT, options: [{ ...DEPOSIT.options[0]!, text: changedText, chars: changedText.length }, DEPOSIT.options[1]!, DEPOSIT.options[2]!], textHash: 'e2e0000000000002' }]);
+  await expect(panel.getByRole('alert')).toHaveText('The text to send changed. Check it again before you approve.');
+  await expect(panel.getByTestId('outgoing-text')).toHaveText(changedText);
+  await expect(approve).toBeEnabled();
+  await approve.click();
+  await expect.poll(async () => (await sent()).map((m) => m.textHash)).toEqual(['e2e0000000000001', 'e2e0000000000002']);
 });
 
 test('disconnect: closing the Sieve tab shows "Sieve isn\'t open" within 3 s', async ({ openStub, openPanel, sw }) => {
@@ -304,8 +346,8 @@ test('shortcut: closes the panel page showing in the window, else opens the popu
   // The page reports its window and surface in panel/hello once chrome.windows.getCurrent() resolves.
   await expect.poll(() => sw.evaluate(() => (self as unknown as Hook).__sieveDev.panelWindows())).toContain(windowId);
   expect(await panelViews(sw)).toEqual([{ surface: 'panel', visible: true, windowId }]);
-  // Nothing of Sieve shows in another window: the command opens the popup there (this id has no window, so Chrome
-  // refuses, and the side panel fallback is refused too: nothing opens).
+  // Nothing of Sieve shows in another window: the command opens the popup there (a Chrome window has focus; this
+  // id has no window, so Chrome refuses, and nothing else is tried after the gesture).
   expect(await press(sw, windowId + 1000)).toBe('popup');
   // With the panel page showing in this window, the command sends panel/close and the page closes itself.
   const closed = panel.waitForEvent('close');

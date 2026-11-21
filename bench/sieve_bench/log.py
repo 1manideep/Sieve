@@ -191,3 +191,6 @@ def _display_path(path: Path) -> str:
 def _redact_url(url: str) -> str:
     """A Sieve connector link carries its secret in the path; never write it to a committed file."""
     return re.sub(r"/([A-Za-z0-9_-]{43})(/?)$", r"/<link secret>\2", url or "")
+
+
+redact_url = _redact_url

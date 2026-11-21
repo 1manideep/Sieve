@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_CATEGORY_RULES, LADDER_STEPS, type Decision, type IndexRecord, type Proposal, type Receipt } from '@sieve/shared';
 import type { PrepareInput } from '@/pipeline';
-import { ASK_FLOW, DRAFT_ERRORS } from '@/copy/strings';
+import { ASK_FLOW, DECIDE_ERRORS, DRAFT_ERRORS } from '@/copy/strings';
 import { compose, option, proposal, T0 } from '@/relay/__tests__/fixtures';
 
 const calls: string[] = [];
@@ -226,6 +226,72 @@ describe('useAsk: approveAndDraft', () => {
     store.getState().setStep('answer');
     await store.getState().toggleRelated('gmail:m2');
     expect(store.getState().step).toBe('excerpt');
+  });
+});
+
+describe('useAsk: an old approval never writes over a new question', () => {
+  it('a new question while finalizeDecision runs: the old approval stops, nothing is saved or drafted', async () => {
+    const store = createAskStore('real');
+    await store.getState().ask('first question');
+    let release!: () => void;
+    finalizeDecision.mockImplementationOnce(async (p: Proposal, d: Decision) => {
+      await new Promise<void>((r) => {
+        release = r;
+      });
+      const text = p.options[0].text;
+      return {
+        payload: { step: d.step!, text, chars: text.length, itemCount: 1 },
+        receipt: { id: 'old', requestId: p.requestId, requester: p.requester, question: p.question, step: d.step, itemIds: d.itemIds, status: 'delivered', decidedBy: 'app', chars: text.length, createdAt: d.decidedAt } as Receipt,
+      };
+    });
+    const approving = store.getState().approveAndDraft();
+    await vi.waitFor(() => expect(finalizeDecision).toHaveBeenCalled());
+    expect(store.getState().approving).toBe(true);
+    await store.getState().ask('second question');
+    expect(store.getState()).toMatchObject({ question: 'second question', phase: 'ready', approving: false });
+    // the new question can be approved while the old approval is still waiting
+    release();
+    await approving;
+    const s = store.getState();
+    expect(s).toMatchObject({ question: 'second question', phase: 'ready', draft: undefined, outcome: undefined, draftError: undefined });
+    expect(s.extraTrace).toEqual([]);
+    expect(saveReceipt).not.toHaveBeenCalled();
+    expect(draftReply).not.toHaveBeenCalled();
+  });
+
+  it('a new question while the draft runs: the old draft does not land on it', async () => {
+    const store = createAskStore('real');
+    await store.getState().ask('first question');
+    let release!: () => void;
+    draftReply.mockImplementationOnce(async (text: string) => {
+      await new Promise<void>((r) => {
+        release = r;
+      });
+      return { ok: true as const, value: { draft: 'Old draft.' }, trace: { kind: 'draft' as const, label: 'Drafted', where: 'cloud' as const, ms: 900, at: T0, charsSent: text.length } };
+    });
+    const approving = store.getState().approveAndDraft();
+    await vi.waitFor(() => expect(store.getState().phase).toBe('drafting'));
+    await store.getState().ask('second question');
+    release();
+    await approving;
+    const s = store.getState();
+    expect(s).toMatchObject({ question: 'second question', phase: 'ready', draft: undefined, outcome: undefined });
+    expect(s.extraTrace).toEqual([]);
+    // and the new question's own approval runs normally
+    await store.getState().approveAndDraft();
+    expect(store.getState()).toMatchObject({ phase: 'done', draft: 'Hi, thanks.' });
+  });
+
+  it('a step that is not available says so instead of doing nothing', async () => {
+    const store = createAskStore('real');
+    prepareProposal.mockImplementationOnce(async (input: PrepareInput) => {
+      const p = proposal({ requestId: input.requestId, requester: input.requester, maxStep: 'full', question: input.question });
+      return { ...p, options: p.options.map((o) => ({ ...o, available: false })) };
+    });
+    await store.getState().ask('q');
+    await store.getState().approveAndDraft();
+    expect(store.getState().draftError).toBe(DECIDE_ERRORS.invalidStep);
+    expect(finalizeDecision).not.toHaveBeenCalled();
   });
 });
 

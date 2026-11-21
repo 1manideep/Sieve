@@ -196,7 +196,7 @@ def handle_ladder_tool(deps: Any, ctx: CallCtx, *, tool: str, args: tools.Ladder
     if admitted.kind == "offline":
         return tools.offline_result()
     if admitted.kind == "key-reused":
-        return tools.error_result(tools.MSG_KEY_REUSED)
+        return tools.key_reused_result()
     if admitted.kind == "limit":
         return tools.open_limit_result(list(admitted.waiting))
     request_id = str(admitted.request_id)

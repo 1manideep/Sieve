@@ -1,6 +1,10 @@
 // Validation of PageToExtension messages (50 section 6.6). Hand-written guards only: the extension CSP forbids
 // validators that compile schemas with `new Function`. Each guard returns a fresh object holding only the known
 // fields (unknown fields are dropped), or null.
+// Tolerant since 0.1.1: the web app deploys continuously while installed extensions lag, so a value this build does
+// not know never breaks the connection. A warning of an unknown kind is dropped; a proposal that fails any check
+// (an unknown outcome among them) is skipped and the rest of the list is kept; a message of an unknown type, or a
+// resolved with an unknown outcome, is ignored. None of these counts as an invalid message (register.ts).
 import {
   CATEGORIES,
   LADDER_STEPS,
@@ -22,7 +26,7 @@ import type {
   WarningKind,
 } from '@sieve/shared';
 import { SURFACES } from './internal';
-import type { PanelToWorker } from './internal';
+import type { PanelToWorker, Preview } from './internal';
 
 export const LIMITS = {
   maxMessageChars: 512 * 1024, // JSON.stringify(msg).length
@@ -35,6 +39,7 @@ export const LIMITS = {
   maxReasonChars: 200,
   maxGrantIdChars: 128,
   requestId: /^[A-Za-z0-9_-]{1,128}$/,
+  textHash: /^[A-Za-z0-9_-]{1,64}$/, // the page's hash of a preview's option texts, echoed, never computed here
 } as const;
 
 export const IN_APP_AI_NAME = 'Gemini (in Sieve)';
@@ -117,13 +122,20 @@ function parseOption(v: unknown, step: LadderStep): StepOption | null {
   return option;
 }
 
-function parseWarning(v: unknown): Warning | null {
-  if (!isObject(v) || !oneOf(WARNING_KINDS, v.kind) || !str(v.message, 1, LIMITS.maxWarningChars)) return null;
+export function isTextHash(v: unknown): v is string {
+  return typeof v === 'string' && LIMITS.textHash.test(v);
+}
+
+/** A warning; 'unknown' for a kind this build does not know (dropped, the proposal stays); null when malformed. */
+function parseWarning(v: unknown): Warning | 'unknown' | null {
+  if (!isObject(v)) return null;
+  if (!oneOf(WARNING_KINDS, v.kind)) return typeof v.kind === 'string' ? 'unknown' : null;
+  if (!str(v.message, 1, LIMITS.maxWarningChars)) return null;
   return { kind: v.kind, message: v.message };
 }
 
-/** One ProposalPreview, or null. */
-export function parsePreview(raw: unknown): ProposalPreview | null {
+/** One ProposalPreview (with the page's text hash when it sent one), or null. */
+export function parsePreview(raw: unknown): Preview | null {
   if (!isObject(raw)) return null;
   if (!isRequestId(raw.requestId)) return null;
   const requester = parseRequester(raw.requester);
@@ -149,9 +161,10 @@ export function parsePreview(raw: unknown): ProposalPreview | null {
   for (const w of raw.warnings) {
     const parsed = parseWarning(w);
     if (!parsed) return null;
-    warnings.push(parsed);
+    if (parsed !== 'unknown') warnings.push(parsed);
   }
   if (!oneOf(OUTCOMES, raw.outcome)) return null;
+  if (raw.textHash !== undefined && !isTextHash(raw.textHash)) return null;
   return {
     requestId: raw.requestId,
     requester,
@@ -163,6 +176,7 @@ export function parsePreview(raw: unknown): ProposalPreview | null {
     rule: raw.rule,
     warnings,
     outcome: raw.outcome,
+    ...(isTextHash(raw.textHash) ? { textHash: raw.textHash } : {}),
   };
 }
 
@@ -174,30 +188,57 @@ function serializedLength(v: unknown): number {
   }
 }
 
-/** One PageToExtension message, or null when it is not exactly one of the three known shapes. */
-export function parsePageMessage(raw: unknown): PageToExtension | null {
-  if (!isObject(raw) || raw.version !== MESSAGE_VERSION || !oneOf(PAGE_MESSAGE_TYPES, raw.type)) return null;
-  if (serializedLength(raw) > LIMITS.maxMessageChars) return null;
+/**
+ * What one page message is: a message to act on ('message', with the count of proposals skipped from a pending
+ * list), a well-formed message this build does not know ('unknown': ignored, not counted), or 'invalid' (counted
+ * toward MAX_INVALID).
+ */
+export type PageMessageRead =
+  | { kind: 'message'; msg: PageToExtension; skipped: number }
+  | { kind: 'unknown' }
+  | { kind: 'invalid' };
+
+const INVALID: PageMessageRead = { kind: 'invalid' };
+const UNKNOWN: PageMessageRead = { kind: 'unknown' };
+
+export function readPageMessage(raw: unknown): PageMessageRead {
+  if (!isObject(raw) || raw.version !== MESSAGE_VERSION || typeof raw.type !== 'string') return INVALID;
+  if (serializedLength(raw) > LIMITS.maxMessageChars) return INVALID;
+  if (!oneOf(PAGE_MESSAGE_TYPES, raw.type)) return UNKNOWN; // a type a newer page sends: ignore it
+  const ok = (msg: PageToExtension, skipped = 0): PageMessageRead => ({ kind: 'message', msg, skipped });
   switch (raw.type) {
     case 'sieve/hello':
-      if (typeof raw.homeBase !== 'boolean' || !str(raw.appVersion, 1, LIMITS.maxAppVersionChars)) return null;
-      return { type: 'sieve/hello', version: MESSAGE_VERSION, homeBase: raw.homeBase, appVersion: raw.appVersion };
+      if (typeof raw.homeBase !== 'boolean' || !str(raw.appVersion, 1, LIMITS.maxAppVersionChars)) return INVALID;
+      return ok({ type: 'sieve/hello', version: MESSAGE_VERSION, homeBase: raw.homeBase, appVersion: raw.appVersion });
     case 'sieve/pending': {
-      if (!Array.isArray(raw.proposals) || raw.proposals.length > LIMITS.maxProposals) return null;
-      const proposals: ProposalPreview[] = [];
+      if (!Array.isArray(raw.proposals) || raw.proposals.length > LIMITS.maxProposals) return INVALID;
+      const proposals: Preview[] = [];
       const ids = new Set<string>();
+      let skipped = 0;
       for (const p of raw.proposals) {
         const parsed = parsePreview(p);
-        if (!parsed || ids.has(parsed.requestId)) return null;
+        // A proposal this build cannot read, or a second one with the same id, is left out; the rest still show.
+        if (!parsed || ids.has(parsed.requestId)) {
+          skipped += 1;
+          continue;
+        }
         ids.add(parsed.requestId);
         proposals.push(parsed);
       }
-      return { type: 'sieve/pending', version: MESSAGE_VERSION, proposals };
+      return ok({ type: 'sieve/pending', version: MESSAGE_VERSION, proposals }, skipped);
     }
     case 'sieve/resolved':
-      if (!isRequestId(raw.requestId) || !oneOf(RESOLVED_OUTCOMES, raw.outcome)) return null;
-      return { type: 'sieve/resolved', version: MESSAGE_VERSION, requestId: raw.requestId, outcome: raw.outcome };
+      if (!isRequestId(raw.requestId) || typeof raw.outcome !== 'string') return INVALID;
+      // An outcome a newer page sends: the request left the waiting state, and its next pending list says so.
+      if (!oneOf(RESOLVED_OUTCOMES, raw.outcome)) return UNKNOWN;
+      return ok({ type: 'sieve/resolved', version: MESSAGE_VERSION, requestId: raw.requestId, outcome: raw.outcome });
   }
+}
+
+/** One PageToExtension message, or null when there is nothing to act on (invalid or unknown). */
+export function parsePageMessage(raw: unknown): PageToExtension | null {
+  const read = readPageMessage(raw);
+  return read.kind === 'message' ? read.msg : null;
 }
 
 /** A message from the extension's own panel page, popup or side panel (50 section 8.1), or null. */
@@ -219,11 +260,13 @@ export function parsePanelMessage(raw: unknown): PanelToWorker | null {
     case 'panel/decide':
       if (!isRequestId(raw.requestId) || typeof raw.approved !== 'boolean') return null;
       if (raw.step !== undefined && !isLadderStep(raw.step)) return null;
+      if (raw.textHash !== undefined && !isTextHash(raw.textHash)) return null;
       return {
         type: 'panel/decide',
         requestId: raw.requestId,
         approved: raw.approved,
         ...(isLadderStep(raw.step) ? { step: raw.step } : {}),
+        ...(isTextHash(raw.textHash) ? { textHash: raw.textHash } : {}),
       };
     case 'panel/open-app':
       if (raw.requestId !== undefined && !isRequestId(raw.requestId)) return null;

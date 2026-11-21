@@ -5,6 +5,7 @@ import { b64url, FakeGmail } from '../../../../tests/harness/fakeGmail';
 import { installFakeGis } from '../../../../tests/harness/fakeGis';
 import { createHashEmbedClient } from '../../../../tests/harness/hashEmbedder';
 import { dropDb, freshDb, until } from '../../../../tests/harness/indexEnv';
+import { BACKOFF } from '../../index/config';
 import { verifyFresh } from '../../index/consistency';
 import { openDbNamed, type SieveDb, type SourceRow } from '../../index/db';
 import { closeDb, ready } from '../../index/lifecycle';
@@ -19,7 +20,7 @@ import { GmailRateError, gmailFetch, getProfile, resetGmailBucket } from './api'
 import { buildGmailQuery } from './liveSearch';
 import { decodeMimeWords, decodeSnippet, extractBodies, header, isSkippable } from './mime';
 import { UnitBucket } from './rateLimit';
-import { runGmailSync } from './sync';
+import { GMAIL_MESSAGE_MAX_FAILURES, runGmailSync } from './sync';
 import { storedTokenOf } from './tokenStore';
 
 vi.mock('@/ai', async () => (await import('../../../../tests/harness/aiMock')).aiModule);
@@ -127,7 +128,31 @@ describe('UnitBucket (A-GM-2)', () => {
   });
 });
 
+describe('UnitBucket on a long-lived signal', () => {
+  it('removes its abort listener once the units are granted', async () => {
+    const bucket = new UnitBucket({ unitsPerMinute: 1e12, capacity: 1e9, maxConcurrency: 4 });
+    const ac = new AbortController();
+    const add = vi.spyOn(ac.signal, 'addEventListener');
+    const remove = vi.spyOn(ac.signal, 'removeEventListener');
+    for (let i = 0; i < 5; i++) (await bucket.acquire(1, 'background', ac.signal))();
+    expect(add).toHaveBeenCalledTimes(5);
+    expect(remove).toHaveBeenCalledTimes(5);
+  });
+});
+
 describe('REST errors (A-GM-3)', () => {
+  it('a long Retry-After waits BACKOFF.maxMs at most', async () => {
+    await requestGmailToken({ prompt: 'select_account' });
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    gmail.script([{ match: 'GET /profile', status: 429, headers: { 'Retry-After': '3600' } }]);
+    const p = getProfile();
+    await vi.advanceTimersByTimeAsync(BACKOFF.maxMs - 100);
+    expect(gmail.calls.filter((c) => c.startsWith('GET /profile'))).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(200);
+    await expect(p).resolves.toMatchObject({ emailAddress: gmail.email });
+    expect(gmail.calls.filter((c) => c.startsWith('GET /profile'))).toHaveLength(2);
+  });
+
   it('waits for Retry-After on 429 and gives GmailRateError after 6 attempts', async () => {
     await requestGmailToken({ prompt: 'select_account' });
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
@@ -159,6 +184,42 @@ describe('REST errors (A-GM-3)', () => {
     // the refused token leaves the row too, so no tab takes it back (20 section 15.1)
     await until(async () => storedTokenOf(await db.sources.get('gmail')) === null);
     await expect(gmailFetch('/profile', { units: 1, priority: 'interactive' })).rejects.toMatchObject({ name: 'GmailAuthError' });
+  });
+
+  it('a message that keeps failing is skipped after a few syncs, so the rest of the mailbox still indexes', async () => {
+    gmail.add({ id: 'a', subject: 'One', text: 'one' });
+    gmail.add({ id: 'bad', subject: 'Broken', text: 'x' });
+    gmail.add({ id: 'c', subject: 'Three', text: 'three' });
+    const inner = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes('/messages/bad')) return new Response(JSON.stringify({ error: { code: 400, message: 'Invalid id value' } }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      return inner(input, init);
+    }) as typeof fetch;
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await connect();   // the first failure stops this sync
+    expect((await db.sources.get('gmail'))?.errorCode).toBe('unknown');
+    for (let i = 1; i < GMAIL_MESSAGE_MAX_FAILURES; i++) await runGmailSync(db);
+    const row = await db.sources.get('gmail');
+    expect(row).toMatchObject({ phase: 'idle' });
+    expect(row?.errorCode).toBeUndefined();
+    expect(await db.records.get('gmail:a')).toBeDefined();
+    expect(await db.records.get('gmail:c')).toBeDefined();
+    expect(await db.records.get('gmail:bad')).toBeUndefined();
+  });
+
+  it('storage full during a sync leaves the row idle and paused for storage, so Resume shows', async () => {
+    gmail.add({ id: 'a', subject: 'One', text: 'one' });
+    await connect();
+    gmail.add({ id: 'b', subject: 'Two', text: 'two' });
+    const prev = (navigator as unknown as { storage?: unknown }).storage;
+    Object.defineProperty(navigator, 'storage', { configurable: true, value: { estimate: async () => ({ usage: 99, quota: 100 }), persisted: async () => false, persist: async () => false } });
+    try {
+      await runGmailSync(db);
+      expect(await db.sources.get('gmail')).toMatchObject({ phase: 'idle', paused: true, pausedBy: 'storage', errorCode: 'storage-full' });
+    } finally {
+      Object.defineProperty(navigator, 'storage', { configurable: true, value: prev });
+    }
   });
 
   it('403 insufficientPermissions sets gmail-forbidden with its reason', async () => {

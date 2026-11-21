@@ -25,7 +25,8 @@ def test_grant_connector_receipt_round_trip():
          "createdAt": NOW, "expiresAt": NOW, "linkHint": "abcd"}
     assert models.GrantMeta.model_validate(g).to_firestore() == g
     c = {"uid": "u", "grantId": "G" * 20, "token": "t", "identity": {"agentId": "grant-x", "fingerprint": "f" * 16},
-         "createdAt": NOW, "expiresAt": NOW, "revokedRootIds": [], "revokedTokenIds": [], "rateCount": 0}
+         "createdAt": NOW, "expiresAt": NOW, "revokedRootIds": [], "revokedTokenIds": [], "rateUsed": 0.0,
+         "rateRefunds": 0.0}
     assert models.ConnectorDoc.model_validate(c).to_firestore() == c
     r = {"id": "r", "requestId": "r", "requester": {"kind": "outside", "grantId": "g", "aiName": "A"},
          "question": "Q", "itemRefs": ["a" * 64], "status": "pending-collection", "chars": 3, "createdAt": NOW}

@@ -1,7 +1,7 @@
 // Firestore listeners that come back (70 section 3.6). A Firestore onSnapshot that errors never fires again; a dead
 // requests listener would leave a home base that looks online and never claims. On error: permission-denied or
 // unauthenticated refreshes the ID token once and resubscribes (or stops); anything else resubscribes after
-// 1, 2, 5, 10, 30 s, then every 30 s, and the backoff resets after 60 s live.
+// 1, 2, 5, 10, 30 s, then every 30 s. The backoff and the token refresh reset after 60 s live.
 import type { FirestoreError, Unsubscribe } from 'firebase/firestore';
 
 const BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
@@ -23,6 +23,13 @@ export function resilientSnapshot(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let state: ListenerState | undefined;
 
+  // After RESET_AFTER_MS live, the listener starts over: the backoff, and the one token refresh a permission error
+  // gets (an ID token expires every hour, so a long-lived listener can need it again).
+  const resetBackoff = () => {
+    attempt = 0;
+    reauthed = false;
+  };
+
   const setState = (s: ListenerState) => {
     if (s === state) return;
     state = s;
@@ -36,7 +43,7 @@ export function resilientSnapshot(
         () => {
           if (closed) return;
           if (state !== 'live') liveSince = now();
-          else if (now() - liveSince >= RESET_AFTER_MS) attempt = 0;
+          else if (now() - liveSince >= RESET_AFTER_MS) resetBackoff();
           setState('live');
         },
         (e) => onError(e),
@@ -58,7 +65,7 @@ export function resilientSnapshot(
     if (closed) return;
     unsub?.();
     unsub = null;
-    if (state === 'live' && now() - liveSince >= RESET_AFTER_MS) attempt = 0;
+    if (state === 'live' && now() - liveSince >= RESET_AFTER_MS) resetBackoff();
     console.error(`${name} listener`, e?.code ?? 'error');
     if (e?.code === 'permission-denied' || e?.code === 'unauthenticated') {
       if (reauthed || !opts.reauth) {

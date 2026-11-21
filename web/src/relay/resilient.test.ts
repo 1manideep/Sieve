@@ -41,6 +41,32 @@ describe('resilientSnapshot (70 section 3.6)', () => {
     expect(states.at(-1)).toBe('live');
   });
 
+  it('a permission error after 60 s live refreshes the token again, instead of stopping for good', async () => {
+    let t = 0;
+    const states: ListenerState[] = [];
+    const handlers: { next: () => void; onError: (e: FirestoreError) => void }[] = [];
+    const subscribe = vi.fn((next: () => void, onError: (e: FirestoreError) => void) => {
+      handlers.push({ next, onError });
+      return vi.fn();
+    });
+    const reauth = vi.fn(async () => true);
+    resilientSnapshot('requests', subscribe, { onState: (s) => states.push(s), reauth, now: () => t });
+    handlers[0].next();
+    handlers[0].onError(err('permission-denied'));   // the first hour's token ran out
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reauth).toHaveBeenCalledTimes(1);
+    handlers[1].next();
+    t += 61_000;
+    handlers[1].next();
+    t += 3_600_000;
+    handlers[1].onError(err('permission-denied'));   // and the next one
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reauth).toHaveBeenCalledTimes(2);
+    expect(subscribe).toHaveBeenCalledTimes(3);
+    handlers[2].next();
+    expect(states.at(-1)).toBe('live');
+  });
+
   it('permission errors refresh the token once, then stop', async () => {
     const states: ListenerState[] = [];
     const handlers: ((e: FirestoreError) => void)[] = [];

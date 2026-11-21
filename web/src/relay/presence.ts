@@ -4,6 +4,26 @@
 import { onDisconnect, onValue, ref, remove, serverTimestamp, set } from 'firebase/database';
 import { rtdb } from '@/app/services/database';
 
+/** Offline, Realtime Database writes never resolve: sign-out and delete wait this long at most for presence. */
+export const PRESENCE_TEARDOWN_MS = 2_000;
+
+/** Resolves when `work` settles or after `ms`, whichever comes first; never rejects. */
+export function settleWithin(work: Promise<unknown>, ms = PRESENCE_TEARDOWN_MS): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    work.then(
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+    );
+  });
+}
+
 export function startPresence(uid: string, deviceId: string, onState: (s: 'online' | 'offline') => void): { stop(): Promise<void> } {
   const db = rtdb();
   const me = ref(db, `presence/${uid}/${deviceId}`);
@@ -31,19 +51,21 @@ export function startPresence(uid: string, deviceId: string, onState: (s: 'onlin
       if (stopped) return;
       stopped = true;
       off();
-      try {
-        await onDisconnect(me).cancel();
-        await set(me, { state: 'offline', isHomeBase: false, lastChanged: serverTimestamp() });
-      } catch {
-        // Offline or signed out: the server-side onDisconnect (if any) still marks this device offline.
-      }
+      // Offline or signed out these writes may never answer: the server-side onDisconnect still marks this device
+      // offline, so sign-out goes on after PRESENCE_TEARDOWN_MS.
+      await settleWithin(
+        (async () => {
+          await onDisconnect(me).cancel();
+          await set(me, { state: 'offline', isHomeBase: false, lastChanged: serverTimestamp() });
+        })(),
+      );
     },
   };
 }
 
-/** Delete my account (40 section 10.7): this device's presence node goes away. */
+/** Delete my account (40 section 10.7): this device's presence node goes away (the server removes it with the account). */
 export async function removePresence(uid: string, deviceId: string): Promise<void> {
-  await remove(ref(rtdb(), `presence/${uid}/${deviceId}`));
+  await settleWithin(remove(ref(rtdb(), `presence/${uid}/${deviceId}`)));
 }
 
 // Google's clock (70 section 3.4) lives in robust/clock.ts; app/googleSession.ts starts it next to the presence.

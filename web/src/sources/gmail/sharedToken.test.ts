@@ -182,14 +182,16 @@ describe('the token is kept on this computer and shared by every tab', () => {
     }
   });
 
-  it('signing out of Sieve clears the token in memory and on the row', async () => {
+  it('signing out of Sieve revokes the token at Google and clears it in memory and on the row', async () => {
     await connect();
+    const token = gmail.token;
     const listener = fakeAuth.onAuthStateChanged.mock.calls.at(-1)?.[1];
     expect(listener).toBeTypeOf('function');
     fakeAuth.setFakeAuthUser(null);
     listener?.(null);
     await until(async () => keptToken(await db.sources.get('gmail')) === null);
     expect(getGmailToken()).toBeNull();
+    expect(gis.revoked).toContain(token);
   });
 
   it('disconnect revokes and clears the stored token', async () => {

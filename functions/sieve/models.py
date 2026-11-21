@@ -120,8 +120,9 @@ class ConnectorDoc(FsModel):           # connectors/{linkHash} (30 CCR 1)
     revoked_at: datetime | None = None
     revoked_root_ids: list[str] = Field(default_factory=list)
     revoked_token_ids: list[str] = Field(default_factory=list)
-    rate_window_start: datetime | None = None
-    rate_count: int = 0
+    rate_used: float = 0.0             # call units in the rate bucket as of rate_at (30 section 11; CCR 9)
+    rate_refunds: float = 0.0          # refused calls given back, as of rate_at
+    rate_at: datetime | None = None
 
 
 class Receipt(FsModel):                # read-only here; functions only change `status`
@@ -144,6 +145,7 @@ class ToolResult(BaseModel):           # MCP structuredContent; snake_case on pu
     text: str | None = None
     message: str
     image: SharedImage | None = Field(default=None, exclude=True)   # delivered as an image content block only
+    refused: bool = Field(default=False, exclude=True)   # turned away before any work: not counted (30 section 11)
 
     def to_wire(self) -> dict[str, Any]:
         return self.model_dump(exclude_none=True)

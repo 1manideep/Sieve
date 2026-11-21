@@ -1,6 +1,6 @@
 // Delete my account (40 section 10.7, AT-30): the order of the steps, the re-authentication and the cancelled path.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ACCOUNT_DELETE } from '@/copy/strings';
+import { ACCOUNT_DELETE, SHELL } from '@/copy/strings';
 
 const order: string[] = [];
 const user = { uid: 'u1', isAnonymous: false, email: 'm@example.com', getIdToken: vi.fn(async () => 't') };
@@ -33,7 +33,9 @@ const deleteAccountCallable = vi.fn(async () => {
 });
 vi.mock('./callables', () => ({ deleteAccountCallable }));
 vi.mock('./itemRefs', () => ({ forgetLocalSalt: vi.fn(async () => void order.push('salt')) }));
-vi.mock('@/index', () => ({ wipeDb: vi.fn(async () => void order.push('wipe')), openDb: vi.fn() }));
+const wipeDb = vi.fn(async () => void order.push('wipe'));
+vi.mock('@/index', () => ({ wipeDb, openDb: vi.fn(() => ({ name: 'sieve-real' })) }));
+vi.mock('@/sources', () => ({ revokeGmailAccess: vi.fn(async () => void order.push('revokeGmail')) }));
 const navigate = vi.fn();
 vi.mock('@/app/router', () => ({ router: { navigate } }));
 
@@ -48,6 +50,9 @@ beforeEach(() => {
   useSettings.setState((s) => ({ settings: { ...s.settings, pushEnabled: true } }));
   window.localStorage.setItem('sieve.realDbOwner', 'u1');
   window.localStorage.setItem('sieve.setupDone.u1', '1');
+  window.localStorage.setItem('sieve.autoApprove.u1', '{"g1":9999999999999}');
+  window.localStorage.setItem('sieve.autoApproved.u1', '["r1"]');
+  window.localStorage.setItem('sieve.autoApprove.u2', '{}');
 });
 
 describe('deleteAccount', () => {
@@ -55,9 +60,12 @@ describe('deleteAccount', () => {
     const steps: string[] = [];
     expect(await deleteAccount((s) => steps.push(s))).toBe('ok');
     expect(steps).toEqual(['stopping', 'push', 'account', 'device', 'done']);
-    expect(order).toEqual(['stop', 'presence', 'push', 'deleteAccount', 'wipe', 'salt', 'signOut']);
+    expect(order).toEqual(['stop', 'presence', 'push', 'deleteAccount', 'revokeGmail', 'wipe', 'salt', 'signOut']);
     expect(window.localStorage.getItem('sieve.realDbOwner')).toBeNull();
     expect(window.localStorage.getItem('sieve.setupDone.u1')).toBeNull();
+    expect(window.localStorage.getItem('sieve.autoApprove.u1')).toBeNull();
+    expect(window.localStorage.getItem('sieve.autoApproved.u1')).toBeNull();
+    expect(window.localStorage.getItem('sieve.autoApprove.u2')).toBe('{}');   // another account's choice stays
     await vi.waitFor(() => expect(navigate).toHaveBeenCalledWith('/'));
     expect(useToasts.getState().toasts.at(-1)).toMatchObject({ tone: 'success', title: ACCOUNT_DELETE.done });
   });
@@ -67,6 +75,14 @@ describe('deleteAccount', () => {
     expect(await deleteAccount(() => undefined)).toBe('ok');
     expect(deleteAccountCallable).toHaveBeenCalledTimes(2);
     expect(order.indexOf('reauth')).toBeLessThan(order.indexOf('deleteAccount'));
+  });
+
+  it('another tab keeping the index open: the account is still deleted, and the toast says to close it', async () => {
+    wipeDb.mockRejectedValueOnce(Object.assign(new Error('Close other Sieve tabs, then try again.'), { name: 'DbBlockedError' }));
+    expect(await deleteAccount(() => undefined)).toBe('ok');
+    const titles = useToasts.getState().toasts.map((t) => t.title);
+    expect(titles).toContain(SHELL.deleteIndexBlocked);
+    expect(order).toContain('signOut');
   });
 
   it('a closed sign-in popup cancels: nothing local is wiped and the home base restarts', async () => {

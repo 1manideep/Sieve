@@ -36,6 +36,7 @@ export const COPY = {
   receiptShared: 'Receipt saved in "What has AI seen?"',
   receiptDeclined: 'Receipt saved: declined',
   stepUnavailable: "That step isn't available for this request.",
+  textChanged: 'The text to send changed. Check it again before you approve.',
   openReceipt: 'Open the receipt',
   settings: {
     button: 'Settings',
@@ -181,6 +182,8 @@ export function rejectionCopy(reason: DecideRejection): string | null {
       return 'This request is no longer waiting.';
     case 'no-owner':
       return 'Your Sieve tab disconnected. Open Sieve to check.';
+    case 'changed':
+      return COPY.textChanged;
     case 'already-sent':
       return null;
   }

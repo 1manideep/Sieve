@@ -4,7 +4,9 @@
 import { useState } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { OWNER_CONFLICT_COPY, fill } from '@/copy/screens-main';
+import { SHELL } from '@/copy/strings';
 import { useSession } from '@/state/session';
+import { useToasts } from '@/state/toasts';
 import { Button } from '../Button/Button';
 import { Dialog } from '../Dialog/Dialog';
 
@@ -17,7 +19,9 @@ export function DialogHost() {
     try {
       await useSession.getState().resolveOwnerConflict(choice);
     } catch (error) {
-      console.error(error);
+      // Another tab keeps the index open, so it could not be deleted: the dialog stays, and says what to do.
+      if ((error as { name?: unknown } | null)?.name === 'DbBlockedError') useToasts.getState().push({ tone: 'error', title: SHELL.deleteBlocked });
+      else console.error(error);
     } finally {
       setBusy(null);
     }

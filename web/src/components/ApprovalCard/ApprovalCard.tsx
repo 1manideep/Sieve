@@ -138,6 +138,7 @@ export function ApprovalCard(props: ApprovalCardProps) {
               outcome={proposal.outcome}
               category={item?.category}
               secret={proposal.outcome === 'blocked-never' && proposal.options[0]?.unavailableReason === `${OUTCOME_COPY.secretTitle}.`}
+              oneFact={proposal.outcome === 'unsupported' && proposal.options[0]?.unavailableReason === OUTCOME_COPY.oneFactLine}
               variant={variant === 'playground' ? 'playground' : 'real'}
               onRetry={onRetry}
             />

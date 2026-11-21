@@ -2,8 +2,8 @@
 // 01 section 9 assigns no functions to this module; these are the calls 40 CR-4 and 20 section 14.1 agree on.
 
 export {
-  startSources, connectGmail, connectFolder, reauthorize, disconnectSource, setIndexingPaused, rebuildIndex,
-  syncNow, getQueue, getPrivacyQueue, startBackground, preloadGis,
+  startSources, stopSources, connectGmail, connectFolder, reauthorize, disconnectSource, setIndexingPaused, rebuildIndex,
+  syncNow, getQueue, getPrivacyQueue, startBackground, preloadGis, revokeGmailAccess,
 } from './registry';
 export type { SourcePhase, SkipReason, SourceErrorCode } from './types';
 export { SourceError, SOURCE_COPY } from './types';

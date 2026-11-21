@@ -19,6 +19,8 @@ export interface ConsentRow { recordId: string; cloudAllowedAt: number }
 export interface SourceRow {
   kind: SourceKind; connected: boolean; cursor?: string; lastSyncAt?: number;
   progress: { done: number; total: number }; paused: boolean; folderHandle?: FileSystemDirectoryHandle;
+  /** Who paused: the person's Pause, or Sieve when the browser ran out of space (Resume clears both). */
+  pausedBy?: 'person' | 'storage';
   // optional additions (20 section 22.1; the first three are 40's CR-4)
   needsAuth?: boolean; error?: string; folderName?: string;
   account?: string; phase?: SourcePhase; errorCode?: SourceErrorCode; skipped?: Partial<Record<SkipReason, number>>; etaMs?: number;
@@ -28,7 +30,12 @@ export interface SourceRow {
   stage?: IndexingStage;            // the work on this source's items now: reading, then the queue's lanes in order
   stageCount?: number;              // items of this source waiting for that stage (label and caption only)
   counting?: boolean;               // the source job is still finding items: the total may only grow ("so far")
+  /** Folder: files read once and found unindexable, by path, so a rescan skips them while size and date are unchanged. */
+  skipCache?: Record<string, FolderSkip>;
 }
+
+/** A folder file Sieve could not index (a password PDF, binary text): not read again until it changes. */
+export interface FolderSkip { size: number; lastModified: number; skip: SkipReason; at: number }
 
 /** Files a folder walk found to read (or emails a Gmail listing found), by kind. */
 export type SourceInventory = Partial<Record<'pdfs' | 'notes' | 'photos' | 'files' | 'emails', number>>;
@@ -56,13 +63,19 @@ export class SieveDb extends Dexie {
   receipts!: EntityTable<Receipt, 'id'>;
   consents!: EntityTable<ConsentRow, 'recordId'>;
   readonly sieveKind: 'real' | 'playground';
+  /** Another tab deleted or upgraded this database: the handle is closed for good, and the tab must reload. */
+  stale = false;
   constructor(name: string, sieveKind: 'real' | 'playground') {
     super(name);
     this.sieveKind = sieveKind;
     this.version(1).stores(SCHEMA_V1);
     this.on('versionchange', () => {
+      // Another tab waits for this connection to close (delete, Clear it and continue, Reset, an upgrade). Close now
+      // and keep it closed: Dexie's own handler (skipped by returning false) would reopen on the next query.
+      this.stale = true;
+      this.close({ disableAutoOpen: true });
       emitIndexEvent({ type: 'db-closed', db: name });
-      return false;   // let Dexie close the connection (its default)
+      return false;
     });
     this.on('blocked', () => {
       emitIndexEvent({ type: 'db-blocked', db: name });
@@ -86,6 +99,11 @@ export function openDbNamed(name: string, kind: 'real' | 'playground'): SieveDb 
     singletons.set(name, db);
   }
   return db;
+}
+
+/** The open handle of that name in this tab, if any (the db-closed event names the database). */
+export function peekDb(name: string): SieveDb | undefined {
+  return singletons.get(name);
 }
 
 /** Forget the singleton so the next openDb creates a fresh handle (wipeDb, tests). */

@@ -120,7 +120,9 @@ export function App({ api }: { api: PanelApi }) {
         onStepChange={(next) => setChosen((c) => ({ ...c, [id]: next }))}
         onApprove={(approvedStep) => {
           setApprovedHere({ requestId: id, preview: selectedPreview, step: approvedStep });
-          send({ type: 'panel/decide', requestId: id, approved: true, step: approvedStep });
+          // The hash of the text on screen goes with the approval, so a text that changed meanwhile is refused.
+          const { textHash } = selectedPreview;
+          send({ type: 'panel/decide', requestId: id, approved: true, step: approvedStep, ...(textHash !== undefined ? { textHash } : {}) });
         }}
         onDeny={() => send({ type: 'panel/decide', requestId: id, approved: false })}
         onOpenApp={() => openApp(id)}

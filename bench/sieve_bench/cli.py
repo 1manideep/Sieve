@@ -15,6 +15,7 @@ from . import (
     DEFAULT_BASELINE_PORT,
     DEFAULT_BASELINE_URL,
     DEFAULT_DEMO_PORT,
+    DEFAULT_RUNS_PER_ARM,
     canaries_path,
     results_dir,
     server_log_path,
@@ -97,15 +98,36 @@ def _adapter_factory(args: argparse.Namespace):
     return make, "gemini", s["model_id"], public_settings(s)
 
 
-def _server_url(args: argparse.Namespace) -> str:
-    if args.url:
-        return args.url
+def _server_urls(args: argparse.Namespace) -> list[str]:
+    """The arm's MCP links. Sieve takes one link per run (one grant per run, so the per-connection rate
+    limit starts fresh): --url repeated, SIEVE_MCP_URLS (comma separated) or SIEVE_MCP_URL."""
+    given = [u.strip() for u in (args.url or []) if u and u.strip()]
     if args.arm == "baseline":
-        return os.environ.get("BASELINE_URL", "").strip() or DEFAULT_BASELINE_URL
+        if len(given) > 1:
+            raise SystemExit("The baseline arm takes one --url.")
+        return given or [os.environ.get("BASELINE_URL", "").strip() or DEFAULT_BASELINE_URL]
+    if given:
+        return given
+    many = [u.strip() for u in os.environ.get("SIEVE_MCP_URLS", "").split(",") if u.strip()]
+    if many:
+        return many
     url = os.environ.get("SIEVE_MCP_URL", "").strip()
     if not url:
         raise SystemExit("Set SIEVE_MCP_URL in bench/.env to the Bench assistant's connector link (see bench/README.md).")
-    return url
+    return [url]
+
+
+AUTO_APPROVE_VALUES = {"on": True, "off": False, "1": True, "0": False, "true": True, "false": False, "yes": True, "no": False}
+
+
+def _auto_approve(args: argparse.Namespace) -> bool | None:
+    """Whether the web app's auto-approve switch was on for the Sieve grants, as the operator states it."""
+    raw = (args.auto_approve or os.environ.get("SIEVE_AUTO_APPROVE", "")).strip().lower()
+    if not raw:
+        return None
+    if raw not in AUTO_APPROVE_VALUES:
+        raise SystemExit("--auto-approve and SIEVE_AUTO_APPROVE take on or off.")
+    return AUTO_APPROVE_VALUES[raw]
 
 
 async def _probe(url: str, headers: dict) -> str | None:
@@ -128,11 +150,23 @@ def _copy_server_log(run_id: str, dest: Path) -> int:
     return len(rows)
 
 
+def _existing_runs(set_dir: Path) -> list[dict]:
+    from .log import read_json, run_dirs
+
+    return [read_json(d / "manifest.json") for d in run_dirs(set_dir)]
+
+
+def _redacted(url: str) -> str:
+    from .log import redact_url
+
+    return redact_url(url)
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from .agent import SYSTEM_PROMPT, Limits, RunPlan, load_tasks, run_tasks
-    from .count import load_canaries
-    from .dataset import check_dataset, dataset_sha256
-    from .log import APPROVAL_POLICY_VERSION, Transcript, base_manifest, check_set_id, new_set_id, next_run_id, now_iso, read_json, write_json
+    from .count import load_canaries, run_metrics
+    from .dataset import check_dataset, dataset_sha256, placeholder_photos
+    from .log import APPROVAL_POLICY_VERSION, Transcript, base_manifest, check_set_id, new_set_id, next_run_id, now_iso, read_json, read_jsonl, sha256_file, write_json
     from .mcp_client import connect
 
     ds = _dataset(args.data)
@@ -144,32 +178,60 @@ def cmd_run(args: argparse.Namespace) -> int:
         for p in problems:
             print(f"- {p}", file=sys.stderr)
         return 1
+    urls = _server_urls(args)
+    auto_approve = _auto_approve(args) if args.arm == "sieve" else None
+    if args.arm == "sieve":
+        if auto_approve is None:
+            return _fail(
+                "Say whether the web app's auto-approve switch is on for the Bench assistant grants: "
+                "--auto-approve on|off, or SIEVE_AUTO_APPROVE in bench/.env. The run manifest records it and the report prints it."
+            )
+        if len(urls) < args.runs:
+            return _fail(
+                f"One grant per Sieve run: {args.runs} runs need {args.runs} connector links, and {len(urls)} "
+                f"{'was' if len(urls) == 1 else 'were'} given. Make a new Bench assistant grant in Settings for each run "
+                "and pass the links with --url (once per run) or SIEVE_MCP_URLS (comma separated), or run --runs 1 per grant."
+            )
+        urls = urls[: args.runs]
     factory, adapter_name, model_id, model_settings = _adapter_factory(args)
-    url = _server_url(args)
 
     results = Path(args.results).expanduser().resolve() if args.results else results_dir()
     set_id = check_set_id(args.set) if args.set else new_set_id(results)
     set_dir = results / set_id
-    set_dir.mkdir(parents=True, exist_ok=True)
-    set_manifest_path = set_dir / "manifest.json"
-    set_manifest = read_json(set_manifest_path) if set_manifest_path.exists() else {"set_id": set_id, "created_at": now_iso(), "runs": []}
+    existing = _existing_runs(set_dir)
+    planned = ([t.id for t in tasks], sha256_file(tasks_path()))
+    other = [m.get("run_id") for m in existing if (list(m.get("tasks") or []), m.get("tasks_sha256")) != planned]
+    if other:
+        return _fail(
+            f"Set {set_id} already has runs with another task list or tasks.json ({', '.join(map(str, other))}). "
+            "One set holds one task list, so the report can compare its runs: use another --set."
+        )
+    used_grants = {
+        str((m.get("grant") or {}).get("grantId")): m.get("run_id")
+        for m in existing
+        if m.get("arm") == "sieve" and isinstance(m.get("grant"), dict) and (m.get("grant") or {}).get("grantId")
+    }
 
     headers_for = (lambda rid: {"X-Bench-Run": rid}) if args.arm == "baseline" else (lambda rid: {})
-    problem = anyio.run(_probe, url, headers_for("probe"))
-    if problem:
-        hint = "Start it with: npm run bench:baseline" if args.arm == "baseline" else "Start the bench stack (npm run bench:stack) and open the home base."
-        return _fail(f"Cannot reach the {args.arm} MCP server at {url}: {problem}. {hint}")
+    for url in dict.fromkeys(urls):
+        problem = anyio.run(_probe, url, headers_for("probe"))
+        if problem:
+            hint = "Start it with: npm run bench:baseline" if args.arm == "baseline" else "Start the bench stack (npm run bench:stack) and open the home base."
+            return _fail(f"Cannot reach the {args.arm} MCP server at {_redacted(url)}: {problem}. {hint}")
 
     project = os.environ.get("SIEVE_PROJECT_ID", "").strip()
     if args.arm == "sieve" and not (args.chrome_version and args.nano_status):
         print("Note: pass --chrome-version and --nano-status so the manifest records the browser and model state.", file=sys.stderr)
 
+    set_dir.mkdir(parents=True, exist_ok=True)
+    set_manifest_path = set_dir / "manifest.json"
+    set_manifest = read_json(set_manifest_path) if set_manifest_path.exists() else {"set_id": set_id, "created_at": now_iso(), "runs": []}
     data_sha = dataset_sha256(ds.root)
+    placeholders = placeholder_photos(ds.root)
     limits = Limits()
-    for _ in range(args.runs):
+    for k in range(args.runs):
+        url = urls[k] if args.arm == "sieve" else urls[0]
         run_id = next_run_id(set_dir, set_id, args.arm)
-        run_dir = set_dir / "runs" / run_id
-        run_dir.mkdir(parents=True)
         extra: dict = {"model_settings": model_settings}
         audit_before = None
         if args.arm == "sieve":
@@ -180,13 +242,22 @@ def cmd_run(args: argparse.Namespace) -> int:
                 audit_before = audit_count(url, project=project)
             except Exception as e:  # CollectError, connection refused, HTTP errors
                 extra["grant"] = {"error": f"{type(e).__name__}: {e}"}
+            grant_id = extra["grant"].get("grantId")
+            if grant_id and str(grant_id) in used_grants:
+                return _fail(
+                    f"The connector link for run {k + 1} belongs to grant {grant_id}, which {used_grants[str(grant_id)]} already used. "
+                    "Make a new Bench assistant grant for each Sieve run."
+                )
             extra.update(
                 {
                     "chrome_version": args.chrome_version,
                     "nano_status": args.nano_status,
                     "approval_policy_version": APPROVAL_POLICY_VERSION,
+                    "auto_approve": auto_approve,
                 }
             )
+        run_dir = set_dir / "runs" / run_id
+        run_dir.mkdir(parents=True)
         manifest = base_manifest(
             run_id=run_id,
             set_id=set_id,
@@ -203,10 +274,11 @@ def cmd_run(args: argparse.Namespace) -> int:
             server_url=url,
             extra=extra,
         )
+        manifest["data"]["placeholder_photos"] = placeholders
         write_json(run_dir / "manifest.json", manifest)
         transcript = Transcript(run_dir / "transcript.jsonl")
 
-        def tools_factory(rid: str):
+        def tools_factory(rid: str, url: str = url):
             return connect(url, headers=headers_for(rid))
 
         plan = RunPlan(arm=args.arm, set_dir=set_dir, run_id=run_id, tasks=tasks, adapter_factory=factory, tools_factory=tools_factory, limits=limits)
@@ -218,6 +290,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             return 130
         manifest["ended_at"] = now_iso()
         write_json(run_dir / "manifest.json", manifest)
+        grant_id = (manifest.get("grant") or {}).get("grantId") if args.arm == "sieve" else None
+        if grant_id:
+            used_grants[str(grant_id)] = run_id
 
         if args.arm == "baseline":
             n = _copy_server_log(run_id, run_dir / "server-log.jsonl")
@@ -236,6 +311,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         write_json(set_manifest_path, set_manifest)
         stopped = [f"{e.task} {e.stopped}" for e in ends if e.stopped]
         print(f"{run_id}: done, {sum(e.tool_calls for e in ends)} tool calls" + (f"; stopped: {', '.join(stopped)}" if stopped else ""))
+        bad = run_metrics(read_jsonl(run_dir / "transcript.jsonl"), arm=args.arm, tasks=tasks, dataset=ds, canaries=canaries)["problems"]
+        if bad:
+            print(f"{run_id}: not a valid measurement ({'; '.join(bad)}). The report will leave it out; run it again.", file=sys.stderr)
     print(f"Set {set_id} in {set_dir}. Next: python -m sieve_bench report --set {set_id}")
     return 0
 
@@ -255,19 +333,30 @@ def _set_dir(args: argparse.Namespace) -> Path:
 def cmd_report(args: argparse.Namespace) -> int:
     from .agent import load_tasks
     from .count import load_canaries
-    from .report import ARM_LABELS, NotMeasured, comparison_table, update_readme, write_report
+    from .report import ARM_LABELS, NotMeasured, SetError, comparison_table, update_readme, write_report
 
     set_dir = _set_dir(args)
     tasks = load_tasks(tasks_path())
-    summary = write_report(set_dir, dataset=_dataset(args.data), tasks=tasks, canaries=load_canaries(canaries_path()))
+    try:
+        summary = write_report(
+            set_dir, dataset=_dataset(args.data), tasks=tasks, canaries=load_canaries(canaries_path()), runs_required=args.runs
+        )
+    except SetError as e:
+        return _fail(f"No report written: {e}")
     print(f"Wrote {set_dir / 'report.md'} and summary.json")
     if summary["rehearsal"]:
         print("Rehearsal with a scripted model, not a measurement.")
     print()
     print(comparison_table(summary))
     for arm, label in ARM_LABELS.items():
-        if not summary["arms"][arm]["measured"]:
-            print(f"\n{label}: not measured (no completed run in this set).")
+        a = summary["arms"][arm]
+        print(f"\n{label}: {a['n_runs']} counted {'run' if a['n_runs'] == 1 else 'runs'} ({args.runs} needed).")
+        for run_id, why in a["excluded_runs"].items():
+            print(f"- {run_id} left out: {'; '.join(why)}.")
+        if not a["measured"]:
+            print(f"{label}: not measured (no counted run in this set).")
+    for flag in summary["flags"]:
+        print(f"Flag: {flag}")
     if args.update_readme:
         try:
             readme = update_readme(summary, results=set_dir.parent)
@@ -329,12 +418,20 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--nano-status")
     s.add_argument("--adapter", choices=("gemini", "fake"), default="gemini")
     s.add_argument("--fake-script", help="JSON script for --adapter fake (a rehearsal, never a measurement)")
-    s.add_argument("--url", help="override BASELINE_URL or SIEVE_MCP_URL")
+    s.add_argument(
+        "--url", action="append",
+        help="override BASELINE_URL, or for Sieve the connector link of one grant per run (repeat it once per run)",
+    )
+    s.add_argument(
+        "--auto-approve", choices=("on", "off"),
+        help="Sieve: whether the web app's auto-approve switch is on for the grants (or SIEVE_AUTO_APPROVE); required",
+    )
     s.set_defaults(fn=cmd_run)
 
     s = sub.add_parser("report", help="compute metrics and write report.md and summary.json")
     s.add_argument("--set", required=True)
     s.add_argument("--update-readme", action="store_true")
+    s.add_argument("--runs", type=int, default=DEFAULT_RUNS_PER_ARM, help="counted runs needed per arm (default 3)")
     s.set_defaults(fn=cmd_report)
 
     s = sub.add_parser("lines", help="print the video and Devpost lines from summary.json")

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
@@ -16,10 +16,13 @@ vi.mock('@/ai', () => import('@/test/fakes/ai'));
 
 function renderLayout(path: string) {
   const router = createMemoryRouter(
-    [{ element: <MainLayout />, children: [{ path: '*', element: <h1>Screen</h1> }] }],
+    [
+      { path: '/', element: <h1>Landing</h1> },
+      { element: <MainLayout />, children: [{ path: '*', element: <h1>Screen</h1> }] },
+    ],
     { initialEntries: [path] },
   );
-  return render(<RouterProvider router={router} />);
+  return { router, ...render(<RouterProvider router={router} />) };
 }
 
 const EXPECTED_LINKS = [
@@ -30,6 +33,17 @@ const EXPECTED_LINKS = [
   [NAV.sources, '/sources'],
   [NAV.settings, '/settings'],
 ] as const;
+
+describe('MainLayout: the session ends while a signed-in screen is open', () => {
+  it('leaves for the landing when the Google session ends (sign-out here or in another tab)', async () => {
+    useSession.setState({ kind: 'google', user: { uid: 'u1', email: 'mani@example.com', isAnonymous: false } });
+    const { router } = renderLayout('/sources');
+    expect(screen.getByRole('heading', { name: 'Screen' })).toBeInTheDocument();
+    act(() => useSession.setState({ kind: 'none', user: null }));
+    expect(await screen.findByRole('heading', { name: 'Landing' })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/');
+  });
+});
 
 describe('MainLayout', () => {
   afterEach(() => {

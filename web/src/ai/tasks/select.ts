@@ -21,6 +21,7 @@ import { SELECT_CLOUD_SCHEMA, SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
 import { runModel } from '../runModel';
 import { cleanModelSentence, collapseWhitespace, escapeDelimiters, localDay, promptField, sentences, stems, type Range } from '../text';
 import { codeTrace } from '../trace';
+import { isYesNoQuestion } from '../../privacy/steps/answerShape';
 import type { OwnCloudPolicy, RunModelResult } from '../types';
 
 export { SELECT_CLOUD_SCHEMA, SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
@@ -53,6 +54,11 @@ export interface SelectOptions {
 type PromptOpts = { hints?: QueryHints; today?: number; latest?: boolean };
 
 const FIELD_CHARS = 140;
+/** A bare "Yes." or "No." (11 section 10.3a): its excerpt is found from the question's words instead. */
+export function excerptBasis(answer: string, question: string): string {
+  return /^\W*(?:yes|no)\W*$/i.test(answer) ? question : answer;
+}
+
 /** 70 R-MDL-08: an answer that is really "not found" counts as no item. */
 const REFUSAL_RE = /^(not (in|found)|no (information|answer|mention)|(i|sorry,? i) (can't|cannot|don't|couldn't))\b/i;
 
@@ -157,6 +163,8 @@ function hintLines(hints: QueryHints | undefined): string[] {
 export function selectPrompt(question: string, passages: Passage[], opts?: PromptOpts): string {
   const head = [`Today is ${localDay(opts?.today ?? Date.now())}.`, `Question: ${promptField(question, 600)}`, ...hintLines(opts?.hints)];
   if (opts?.latest) head.push('The person wants the newest item that answers the question. The passages are listed newest first.');
+  // 11 section 10.3a: the share-time build keeps only the first word of the answer to a yes or no question
+  if (isYesNoQuestion(question)) head.push('This is a yes or no question: "answer" is exactly "Yes." or "No.".');
   return [head.join('\n'), ...passages.map((p, i) => passageBlock(p, i + 1))].join('\n\n');
 }
 
@@ -432,7 +440,7 @@ export async function selectAndAnswer(
       trace,
     };
   }
-  const derived = deriveExcerpt(recordBody(record), passage.range, answer);
+  const derived = deriveExcerpt(recordBody(record), passage.range, excerptBasis(answer, question));
   return {
     ok: true,
     value: {

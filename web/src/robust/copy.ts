@@ -122,6 +122,8 @@ export const PLATFORM_COPY = {
   indexEmpty: "Sieve's index on this computer is empty. If Chrome cleared it to free space, connect your sources again.",   // R-PLAT-08
   updatedInAnotherTab: 'Sieve was updated in another tab. Reload this tab.',                                     // R-PLAT-09
   closeOtherTabs: 'Close other Sieve tabs to finish updating.',                                                  // R-PLAT-09
+  deleteBlocked: 'Close other Sieve tabs, then try again.',                                                      // R-PLAT-09
+  deleteIndexBlocked: 'Close other Sieve tabs to finish deleting the index on this computer.',                   // R-PLAT-09
   olderCopy: 'This tab has an older copy of Sieve. Reload to update.',                                           // R-PLAT-10
   reload: 'Reload',                                                                                              // R-PLAT-10
   cannotOpenIndex: "Sieve can't open its index on this computer. You can rebuild it: Sieve deletes the index here and reads your sources again. Your mail and files are not touched. You'll need to pick your folder again.",   // R-PLAT-10

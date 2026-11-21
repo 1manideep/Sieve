@@ -27,8 +27,8 @@ base('release build: http://localhost:5173 gets no channel', async () => {
     const after = await page.evaluate(() => (window as unknown as { __stub: { status: string } }).__stub.status);
     expect(status === 'unsupported' || after !== 'connected').toBe(true);
     const matches = await sw.evaluate(() => chrome.runtime.getManifest().externally_connectable?.matches);
-    // The hosted app only: the custom domain and Hosting's default domain (scripts/modes.mjs), never localhost.
-    expect(matches).toEqual(['https://sieve.manideep.info/*', 'https://sieve-manideep.web.app/*']);
+    // The hosted app only: the custom domain and Hosting's two default domains (scripts/modes.mjs), never localhost.
+    expect(matches).toEqual(['https://sieve.manideep.info/*', 'https://sieve-manideep.web.app/*', 'https://sieve-manideep.firebaseapp.com/*']);
   } finally {
     await context.close();
     rmSync(userDataDir, { recursive: true, force: true });

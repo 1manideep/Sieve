@@ -1,11 +1,12 @@
 // AppShell (40 section 7.1): skip link, the routed page, toasts, live announcer, dialog host, scroll restoration
-// and the route loading bar. On mount it starts useNetwork and useAvailability.
+// and the route loading bar, and the "updated in another tab" banner (70 R-PLAT-09). On mount it starts useNetwork and useAvailability.
 import { useEffect } from 'react';
 import { Outlet, ScrollRestoration } from 'react-router-dom';
 import { DialogHost } from '@/components/DialogHost/DialogHost';
 import { LiveAnnouncer } from '@/components/LiveAnnouncer/LiveAnnouncer';
 import { NarrowNotice } from '@/components/NarrowNotice/NarrowNotice';
 import { RouteLoadingBar } from '@/components/RouteLoadingBar/RouteLoadingBar';
+import { TabClosedBanner } from '@/components/TabClosedBanner/TabClosedBanner';
 import { ToastRegion } from '@/components/ToastRegion/ToastRegion';
 import { SHELL } from '@/copy/strings';
 import { loadAi, useAvailability } from '@/state/availability';
@@ -47,6 +48,7 @@ export function AppShell() {
       </a>
       <RouteLoadingBar />
       <NarrowNotice />
+      <TabClosedBanner />
       <Outlet />
       <ToastRegion />
       <LiveAnnouncer />

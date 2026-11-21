@@ -76,8 +76,10 @@ Sieve (needs the person at the side panel):
 
 1. `npm run bench:stack` (`scripts/bench-stack.mjs`): the emulators with the real project id and the web dev server in bench mode, in one terminal with prefixed logs. It needs `functions/.secret.local` and `web/.env.bench.local`.
 2. In Chrome on the demo Mac (Nano available, the multimodal flag on, the extension's `dev` build loaded), sign in with an Auth emulator account and open the tab as the home base.
-3. In Settings, connect an AI named `Bench assistant`, leaving every option at its default. Put its connector link in `bench/.env` as `SIEVE_MCP_URL`.
-4. `npm run bench:run -- --arm sieve --runs 3 --set 2026-11-24-set1 --chrome-version <x> --nano-status available`
+3. In Settings, connect an AI named `Bench assistant`, leaving every option at its default. Make one grant per Sieve run (the per-connection rate limit then starts fresh each run). bench:stack writes `functions/.env.local` with `SIEVE_PUBLIC_BASE_URL=http://localhost:5173` (removed when it stops), so the link shown ends in `/mcp/<secret>` on this stack. The runner calls the functions emulator directly: `http://127.0.0.1:5001/<project>/us-central1/mcp/<secret>`, where `<project>` is `SIEVE_PROJECT_ID`. Put that URL in `bench/.env` as `SIEVE_MCP_URL`, or one per run in `SIEVE_MCP_URLS` (comma separated).
+4. `npm run bench:run -- --arm sieve --runs 1 --set 2026-11-24-set1 --auto-approve off --chrome-version <x> --nano-status available`, once per grant (or `--runs 3` with three links). `--auto-approve on|off` (or `SIEVE_AUTO_APPROVE`) is required and goes into the manifest.
+
+A run counts only if it finished, covers all 10 tasks, and has no task stopped with an error or timeout, no offline Sieve result and no rate-limited Sieve call. `report --update-readme` needs exactly 3 counted runs per arm (`--runs N` changes it) and prints that N; report.md lists every run left out and why.
 
 The runner records the grant's `maxStep`, `allowedCategories` and `allowedSources` from the emulator in each run manifest, and after each run writes `receipts.json` (requests without payloads, receipts, the audit entry count). When a Sieve result is `pending`, the runner waits 20 seconds before the model's next `sieve_check` (at most 3 checks per task) and logs the wait.
 

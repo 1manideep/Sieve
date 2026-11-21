@@ -50,7 +50,7 @@ describe('labels', () => {
       collect(resultCopy({ outcome, decidedHere: true, step: 'full' }));
       collect(resultCopy({ outcome, decidedHere: false }));
     }
-    for (const r of ['step-unavailable', 'unknown-request', 'not-ready', 'no-owner'] as const) collect(rejectionCopy(r));
+    for (const r of ['step-unavailable', 'unknown-request', 'not-ready', 'no-owner', 'changed'] as const) collect(rejectionCopy(r));
     collect(sentHeading(1234, 'Test assistant'));
     collect(notificationMessage('Test assistant'));
     expect(strings.length).toBeGreaterThan(40);

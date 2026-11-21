@@ -2,9 +2,9 @@
 // mentioned dates, photo metadata, contentHash; one transaction; then the in-memory indexes and the queue.
 import { CATEGORIES } from '@sieve/shared';
 import type { Category, IndexRecord, ItemKind, PhotoMeta, SourceKind } from '@sieve/shared';
-import { HIDDEN_FRAGMENT_MAX_CHARS, HIDDEN_FRAGMENTS_MAX, MAX_TEXT_CHARS, SOURCE_REF_MAX_CHARS, TITLE_MAX_CHARS } from './config';
+import { HIDDEN_FRAGMENT_MAX_CHARS, HIDDEN_FRAGMENTS_MAX, MAX_TEXT_CHARS, SOURCE_REF_MAX_CHARS, STORAGE_RECHECK, TITLE_MAX_CHARS } from './config';
 import { applyRecordInMemory, emailContentHash, nextVersion, writeIfCurrentDetailed } from './consistency';
-import type { SieveDb } from './db';
+import type { SieveDb, SourceRow } from './db';
 import { mentionedDays } from './dates';
 import { aiApi, sanitizeIncoming } from './deps';
 import { IngestError } from './errors';
@@ -83,13 +83,58 @@ async function readBlobAsText(raw: RawItem): Promise<string> {
   return r.text;
 }
 
+/**
+ * Out of space: pause on the rows (pausedBy 'storage'), so every tab shows Resume and the indexer tab holds its
+ * queue; the source's row says why and leaves its phase. A person's own pause stays theirs. The space is checked again
+ * every STORAGE_RECHECK.everyMs, and indexing resumes by itself once there is room.
+ */
 async function pauseForStorage(db: SieveDb, source: SourceKind): Promise<void> {
   getRuntime(db).queue?.pause();
   try {
-    await db.sources.update(source, { error: SOURCE_COPY.storageFull, errorCode: 'storage-full' });
+    const rows = await db.sources.toArray();
+    for (const r of rows) {
+      if (!r.connected && r.kind !== source) continue;
+      const patch: Partial<SourceRow> = r.paused && r.pausedBy !== 'storage' ? {} : { paused: true, pausedBy: 'storage' };
+      if (r.kind === source) Object.assign(patch, { error: SOURCE_COPY.storageFull, errorCode: 'storage-full', phase: 'idle' });
+      if (Object.keys(patch).length > 0) await db.sources.update(r.kind, patch);
+    }
   } catch {
     // the row may not exist (Playground uploads); the error still reaches the caller
   }
+  watchStorage(db);
+}
+
+const storageWatches = new Map<SieveDb, ReturnType<typeof setInterval>>();
+
+/** Re-check the space every STORAGE_RECHECK.everyMs until there is room (idempotent; the indexer tab calls it too). */
+export function watchStorage(db: SieveDb): void {
+  if (storageWatches.has(db)) return;
+  const timer = setInterval(() => void recheckStorage(db).catch(() => undefined), STORAGE_RECHECK.everyMs);
+  storageWatches.set(db, timer);
+  getRuntime(db).stoppers.add(() => stopStorageWatch(db));
+}
+
+function stopStorageWatch(db: SieveDb): void {
+  const timer = storageWatches.get(db);
+  if (timer) clearInterval(timer);
+  storageWatches.delete(db);
+}
+
+/** There is room again: lift the pause for storage (not the person's) and its error. */
+export async function recheckStorage(db: SieveDb): Promise<boolean> {
+  if (!(await ensureSpace(0)).ok) return false;
+  stopStorageWatch(db);
+  const rows = await db.sources.toArray();
+  for (const r of rows) {
+    const patch: Partial<SourceRow> = r.pausedBy === 'storage' ? { paused: false, pausedBy: undefined } : {};
+    if (r.errorCode === 'storage-full') Object.assign(patch, { error: undefined, errorCode: undefined });
+    if (Object.keys(patch).length > 0) await db.sources.update(r.kind, patch);
+  }
+  // The indexer tab follows the rows; a database without source jobs (the Playground) resumes its queue here.
+  const after = await db.sources.toArray();
+  const live = after.filter((r) => r.connected && r.kind !== 'playground');
+  if (!(live.length > 0 && live.every((r) => r.paused))) getRuntime(db).queue?.resume?.();
+  return true;
 }
 
 /** The contract call: throws IngestError when the item is skipped. */

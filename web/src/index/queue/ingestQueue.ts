@@ -970,7 +970,7 @@ function createIngestQueue(db: SieveDb): IngestQueue {
       running = true;
       stopController = new AbortController();
       const signal = stopController.signal;
-      rt.queue = { enqueue, cancel, pause: () => queue.pause(), stop: () => queue.stop(), writeRowsNow: () => writeSourceRows() };
+      rt.queue = { enqueue, cancel, pause: () => queue.pause(), resume: () => queue.resume(), stop: () => queue.stop(), writeRowsNow: () => writeSourceRows() };
       conditionListeners.set(db, onConditions);
       unsubNano = aiApi.subscribeNano(() => {
         waiting.label = null;

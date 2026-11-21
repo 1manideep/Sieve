@@ -3,7 +3,7 @@
 // items. Fake timers, real pacing constants.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EMBED_REST_MS, NANO_REST_MS, PRIVACY_REST_MS, QUEUE_PACING } from '../config';
-import { restAfter, runSerial, type JobResult, type Lane } from './serial';
+import { restAfter, runSerial, sleep, type JobResult, type Lane } from './serial';
 
 interface Harness {
   jobs: { lane: Lane; at: number }[];
@@ -185,5 +185,24 @@ describe('the serial loop (20 section 13.1)', () => {
     await finish(h);
     expect(h.jobs).toHaveLength(1);
     expect(Date.now()).toBeLessThan(1_000);
+  });
+});
+
+describe('sleep on a long-lived signal', () => {
+  it('removes its abort listener when the time is up, so the queue signal does not collect one per rest', async () => {
+    const ctl = new AbortController();
+    const add = vi.spyOn(ctl.signal, 'addEventListener');
+    const remove = vi.spyOn(ctl.signal, 'removeEventListener');
+    for (let i = 0; i < 5; i++) {
+      const p = sleep(100, ctl.signal);
+      await vi.advanceTimersByTimeAsync(100);
+      await p;
+    }
+    expect(add).toHaveBeenCalledTimes(5);
+    expect(remove).toHaveBeenCalledTimes(5);
+    // and an abort still ends a sleep at once
+    const p = sleep(10_000, ctl.signal);
+    ctl.abort();
+    await p;
   });
 });

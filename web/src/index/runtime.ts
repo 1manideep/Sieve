@@ -27,6 +27,7 @@ export interface QueueHooks {
   enqueue(ids: string[], opts?: { priority?: 'normal' | 'high' }): void;
   cancel(ids: string[]): void;
   pause(): void;
+  resume?(): void;
   stop(): Promise<void>;
   /** Writes the source rows' progress now instead of after SOURCE_ROW_WRITE_MS (a folder walk has just listed its files). */
   writeRowsNow?(): Promise<void>;

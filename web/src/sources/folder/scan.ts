@@ -3,7 +3,7 @@
 import type { IndexRecord } from '@sieve/shared';
 import { FOLDER_FOCUS_RESCAN_MS, FOLDER_MAX_DEPTH, FOLDER_MAX_FILES, FOLDER_RESCAN_MS, SOURCE_REF_MAX_CHARS } from '../../index/config';
 import { removeRecord, removeRecords, writeIfCurrentDetailed } from '../../index/consistency';
-import type { SieveDb, SourceInventory, SourceRow } from '../../index/db';
+import type { FolderSkip, SieveDb, SourceInventory, SourceRow } from '../../index/db';
 import { blobBytes, sha256Hex } from '../../index/hash';
 import { IngestError, ingestInternal, type RawItem } from '../../index/ingest';
 import { isLeader } from '../../index/locks';
@@ -57,6 +57,20 @@ export async function reindexFolderFile(db: SieveDb, rec: IndexRecord, file: Fil
   }
   await ingestInternal(db, raw, 'own', { contentHash: hash, sizeBytes: file.size, sourceModifiedAt: file.lastModified, photo: { storeBlob: false }, priority: 'high' });
   return 'ok';
+}
+
+/**
+ * How long a file found "unreadable" stays skipped while unchanged: that reason may also come from a reader that failed
+ * to load, so it is tried again once a day. The other reasons (password, binary, HEIC, unsupported) hold until the
+ * file changes.
+ */
+export const UNREADABLE_RETRY_MS = 24 * 60 * 60 * 1000;
+
+function cachedSkip(cache: Record<string, FolderSkip>, e: FileEntry, now: number): FolderSkip | null {
+  const c = cache[e.path];
+  if (!c || c.size !== e.size || c.lastModified !== e.lastModified) return null;
+  if (c.skip === 'unreadable' && now - c.at >= UNREADABLE_RETRY_MS) return null;
+  return c;
 }
 
 const pausedDbs = new Set<SieveDb>();
@@ -155,12 +169,17 @@ async function doScan(db: SieveDb, signal?: AbortSignal): Promise<void> {
     stored.set(r.id, r);
   });
 
+  // Files an earlier scan read and could not index: skipped again without reading while they are unchanged.
+  const oldSkips = row.skipCache ?? {};
+  const skips: Record<string, FolderSkip> = {};
+  const now = Date.now();
   // The inventory, before any model work (20 section 13.5): the files this scan will read, by kind, and the row's
   // progress total. Unchanged files take the fast path in pass 2 and are not counted as left to read.
   const readable = (e: FileEntry): boolean => {
     const type = fileTypeOf(e.name);
     if (!type || e.size > maxBytesFor(type) || e.path.length > SOURCE_REF_MAX_CHARS) return false;
     const rec = stored.get('folder:' + e.path);
+    if (!rec && cachedSkip(oldSkips, e, now)) return false;
     return !(rec && rec.sizeBytes === e.size && rec.sourceModifiedAt === e.lastModified);
   };
   const toRead = new Set<string>();
@@ -230,6 +249,17 @@ async function doScan(db: SieveDb, signal?: AbortSignal): Promise<void> {
       }
       const rec = stored.get(id);
       if (rec && rec.sizeBytes === e.size && rec.sourceModifiedAt === e.lastModified) continue;   // fast path
+      const known = rec ? null : cachedSkip(oldSkips, e, now);
+      if (known) {
+        // read before and not indexable, unchanged since: counted, not read again
+        skip(known.skip);
+        skips[e.path] = known;
+        continue;
+      }
+      const remember = (reason: SkipReason) => {
+        skip(reason);
+        skips[e.path] = { size: e.size, lastModified: e.lastModified, skip: reason, at: now };
+      };
       try {
         const file = await e.handle.getFile();
         const hash = await sha256Hex(await blobBytes(file));
@@ -239,7 +269,7 @@ async function doScan(db: SieveDb, signal?: AbortSignal): Promise<void> {
         }
         const r = await rawFromFile(e.path, file, type);
         if (!r.raw) {
-          if (r.skip) skip(r.skip);
+          if (r.skip) remember(r.skip);
           continue;
         }
         if (r.noText) skip('no-text');
@@ -250,29 +280,36 @@ async function doScan(db: SieveDb, signal?: AbortSignal): Promise<void> {
         if (n === 'NotAllowedError' || n === 'SecurityError') throw new Stop('permission');
         if (err instanceof IngestError) {
           if (err.code === 'storage-full') throw err;
-          skip(err.code === 'invalid' ? 'unreadable' : err.code);
+          remember(err.code === 'invalid' ? 'unreadable' : err.code);
           continue;
         }
-        skip('unreadable');
+        skip('unreadable');   // unexpected: tried again on the next rescan
       }
     }
   } catch (e) {
     rt.syncProgress.delete('folder');
     await rt.keyword.flush();
+    // a scan that stopped part way keeps what it learned, and the old entries it did not reach
+    const skipCache = { ...oldSkips, ...skips };
     if (e instanceof Stop && e.code === 'permission') {
-      await patch({ errorCode: 'permission-needed', error: SOURCE_COPY.folderPermission(name), needsAuth: true, phase: 'idle', skipped });
+      await patch({ errorCode: 'permission-needed', error: SOURCE_COPY.folderPermission(name), needsAuth: true, phase: 'idle', skipped, skipCache });
       return;
     }
     if (e instanceof Stop) {
-      await patch({ phase: 'idle', skipped });
+      await patch({ phase: 'idle', skipped, skipCache });
       return;
     }
-    if (e instanceof IngestError && e.code === 'storage-full') return;
+    if (e instanceof IngestError && e.code === 'storage-full') {
+      await patch({ phase: 'idle', skipped, skipCache });   // ingest paused the rows and set the error
+      return;
+    }
     throw e;
   }
   rt.syncProgress.delete('folder');
   await rt.keyword.flush();
-  const done: Partial<SourceRow> = { phase: 'idle', lastSyncAt: Date.now(), skipped, needsAuth: false };
+  // a complete walk replaces the cache (files gone or changed drop out); a partial one keeps the old entries too
+  const skipCache = complete ? skips : { ...oldSkips, ...skips };
+  const done: Partial<SourceRow> = { phase: 'idle', lastSyncAt: Date.now(), skipped, needsAuth: false, skipCache };
   if (tooBig) Object.assign(done, { error: SOURCE_COPY.folderTooBig, errorCode: 'unknown' as const });
   else Object.assign(done, { error: undefined, errorCode: undefined });
   await patch(done);

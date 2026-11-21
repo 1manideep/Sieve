@@ -149,7 +149,7 @@ export function Component() {
   );
 }
 
-/** GET /health now and every 20 s while `active` (skipped while the tab is hidden). Before the first answer, and
+/** GET /health now, every 20 s while `active` (skipped while the tab is hidden) and when the tab is shown again. Before the first answer, and
  *  after `key` changes, the rows say "checking". The first check failing says "offline" at once; after a good answer
  *  it takes two failures in a row. */
 function useBrokerHealth(active: boolean, key: number): Health {
@@ -161,8 +161,12 @@ function useBrokerHealth(active: boolean, key: number): Health {
     let answered = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const ctl = new AbortController();
+    let inFlight = false;
     const tick = async () => {
+      if (stopped || inFlight) return;
+      clearTimeout(timer);
       if (document.visibilityState !== 'hidden') {
+        inFlight = true;
         try {
           const h = await checkHealth(ctl.signal);
           if (stopped) return;
@@ -174,15 +178,23 @@ function useBrokerHealth(active: boolean, key: number): Health {
           if (stopped) return;
           failures += 1;
           if (!answered || failures >= HEALTH_FAILURES_TO_HIDE) setResult({ key, health: { kind: 'down' } });
+        } finally {
+          inFlight = false;
         }
       }
       if (!stopped) timer = setTimeout(() => void tick(), HEALTH_POLL_MS);
     };
+    // Back to the tab: check now instead of waiting out the 20 s (the seats may have changed while it was hidden).
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') void tick();
+    };
     void tick();
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       stopped = true;
       clearTimeout(timer);
       ctl.abort();
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [active, key]);
   return result.key === key ? result.health : CHECKING;

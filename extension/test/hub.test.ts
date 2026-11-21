@@ -41,15 +41,15 @@ describe('union and ownership', () => {
   it('ignores pending from a connection that has not said hello', () => {
     const hub = new Hub(now);
     hub.addConn({ id: 'x', origin: 'http://localhost:5173' });
-    expect(hub.setPending('x', [DEPOSIT])).toEqual({ added: [], removed: [] });
+    expect(hub.setPending('x', [DEPOSIT])).toEqual({ added: [], removed: [], changed: [] });
     expect(hub.union()).toEqual([]);
   });
 
   it('returns added and removed ids', () => {
     const hub = hubWith({ id: 'hb', homeBase: true });
-    expect(hub.setPending('hb', [DEPOSIT, LEASE])).toEqual({ added: [DEPOSIT.requestId, LEASE.requestId], removed: [] });
-    expect(hub.setPending('hb', [LEASE, STATEMENT])).toEqual({ added: [STATEMENT.requestId], removed: [DEPOSIT.requestId] });
-    expect(hub.setPending('hb', [LEASE, STATEMENT])).toEqual({ added: [], removed: [] });
+    expect(hub.setPending('hb', [DEPOSIT, LEASE])).toEqual({ added: [DEPOSIT.requestId, LEASE.requestId], removed: [], changed: [] });
+    expect(hub.setPending('hb', [LEASE, STATEMENT])).toEqual({ added: [STATEMENT.requestId], removed: [DEPOSIT.requestId], changed: [] });
+    expect(hub.setPending('hb', [LEASE, STATEMENT])).toEqual({ added: [], removed: [], changed: [] });
   });
 
   it('homeBaseConn prefers a ready home base, else the first ready connection', () => {
@@ -129,6 +129,59 @@ describe('decide', () => {
     hub.markSlow(DEPOSIT.requestId);
     expect(hub.view().inflight[0]?.slow).toBe(true);
     expect(hub.decide(DEPOSIT.requestId, true, 'answer').ok).toBe(true);
+  });
+});
+
+describe('decide: the text the person was shown (textHash, 0.1.1)', () => {
+  const H1 = 'aaaaaaaaaaaaaaaa';
+  const H2 = 'bbbbbbbbbbbbbbbb';
+
+  it('an approval must carry the hash of the preview it approves; the decision result carries it back', () => {
+    const hub = hubWith({ id: 'hb', homeBase: true });
+    hub.setPending('hb', [{ ...DEPOSIT, textHash: H1 }]);
+    expect(hub.decide(DEPOSIT.requestId, true, 'answer', H2)).toEqual({ ok: false, reason: 'changed' });
+    expect(hub.decide(DEPOSIT.requestId, true, 'answer')).toEqual({ ok: false, reason: 'changed' });
+    expect(hub.isInflight(DEPOSIT.requestId)).toBe(false);
+    const r = hub.decide(DEPOSIT.requestId, true, 'answer', H1);
+    expect(r).toMatchObject({ ok: true, connId: 'hb', textHash: H1 });
+  });
+
+  it('a deny needs no hash, and a page that sends none is not compared', () => {
+    const hub = hubWith({ id: 'hb', homeBase: true });
+    hub.setPending('hb', [{ ...DEPOSIT, textHash: H1 }, LEASE]);
+    const deny = hub.decide(DEPOSIT.requestId, false, undefined, H2);
+    expect(deny.ok).toBe(true);
+    expect(deny.ok && 'textHash' in deny).toBe(false);
+    const old = hub.decide(LEASE.requestId, true, 'answer');
+    expect(old.ok).toBe(true);
+    expect(old.ok && 'textHash' in old).toBe(false);
+  });
+
+  it('a new list with another hash for an approval in flight ends it as changed; the same hash keeps it', () => {
+    const hub = hubWith({ id: 'hb', homeBase: true });
+    hub.setPending('hb', [{ ...DEPOSIT, textHash: H1 }, { ...LEASE, textHash: H1 }]);
+    hub.decide(DEPOSIT.requestId, true, 'answer', H1);
+    hub.decide(LEASE.requestId, true, 'answer', H1);
+    // The keepalive resends the same list: nothing changes.
+    expect(hub.setPending('hb', [{ ...DEPOSIT, textHash: H1 }, { ...LEASE, textHash: H1 }]).changed).toEqual([]);
+    expect(hub.isInflight(DEPOSIT.requestId)).toBe(true);
+    // The page re-prepared the deposit request: its text changed under the person.
+    expect(hub.setPending('hb', [{ ...DEPOSIT, textHash: H2 }, { ...LEASE, textHash: H1 }])).toEqual({ added: [], removed: [], changed: [DEPOSIT.requestId] });
+    expect(hub.isInflight(DEPOSIT.requestId)).toBe(false);
+    expect(hub.isInflight(LEASE.requestId)).toBe(true);
+    expect(hub.actionableCount()).toBe(1); // the deposit request waits again
+    // Now the new text can be approved.
+    expect(hub.decide(DEPOSIT.requestId, true, 'answer', H2).ok).toBe(true);
+  });
+
+  it('only the list of the owner page ends its approvals, and a deny in flight is never ended', () => {
+    const hub = hubWith({ id: 'hb', homeBase: true }, { id: 'pg', homeBase: false });
+    hub.setPending('hb', [{ ...DEPOSIT, textHash: H1 }, { ...LEASE, textHash: H1 }]);
+    hub.decide(DEPOSIT.requestId, true, 'answer', H1);
+    hub.decide(LEASE.requestId, false);
+    expect(hub.setPending('pg', [{ ...DEPOSIT, textHash: H2 }]).changed).toEqual([]);
+    expect(hub.setPending('hb', [{ ...DEPOSIT, textHash: H1 }, { ...LEASE, textHash: H2 }]).changed).toEqual([]);
+    expect(hub.isInflight(LEASE.requestId)).toBe(true);
   });
 });
 

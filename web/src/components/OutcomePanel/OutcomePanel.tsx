@@ -13,18 +13,20 @@ export interface OutcomePanelProps {
   category?: Category;
   /** blocked-never because the item holds a one-time code or a sign-in link (11 section 5.2), not because of its category. */
   secret?: boolean;
+  /** unsupported because it asks for several things, or the answer held several facts (10 section 12.4), not a count. */
+  oneFact?: boolean;
   variant: 'real' | 'playground';
   onRetry?(): void;
 }
 
-export function outcomeTitle(outcome: OutcomePanelOutcome, category?: Category, secret = false): string {
+export function outcomeTitle(outcome: OutcomePanelOutcome, category?: Category, secret = false, oneFact = false): string {
   switch (outcome) {
     case 'blocked-never':
       return secret ? OUTCOME_COPY.secretTitle : fill(OUTCOME_COPY.blockedTitle, { category: category ?? '' }).trim();
     case 'no-match':
       return OUTCOME_COPY.noMatchTitle;
     case 'unsupported':
-      return OUTCOME_COPY.countsTitle;
+      return oneFact ? OUTCOME_COPY.oneFactTitle : OUTCOME_COPY.countsTitle;
     case 'model-unavailable':
       return OUTCOME_COPY.modelTitle;
     case 'error':
@@ -32,7 +34,7 @@ export function outcomeTitle(outcome: OutcomePanelOutcome, category?: Category, 
   }
 }
 
-export function OutcomePanel({ outcome, category, secret = false, variant, onRetry }: OutcomePanelProps) {
+export function OutcomePanel({ outcome, category, secret = false, oneFact = false, variant, onRetry }: OutcomePanelProps) {
   const real = variant === 'real';
   let tone: NoticeTone;
   let body: string;
@@ -50,7 +52,7 @@ export function OutcomePanel({ outcome, category, secret = false, variant, onRet
       break;
     case 'unsupported':
       tone = 'info';
-      body = OUTCOME_COPY.countsBody;
+      body = oneFact ? OUTCOME_COPY.oneFactBody : OUTCOME_COPY.countsBody;
       break;
     case 'model-unavailable':
       tone = 'warning';
@@ -72,7 +74,7 @@ export function OutcomePanel({ outcome, category, secret = false, variant, onRet
   }
   return (
     <div className={styles.outcome} data-outcome={outcome}>
-      <Notice tone={tone} title={outcomeTitle(outcome, category, secret)} actions={actions}>
+      <Notice tone={tone} title={outcomeTitle(outcome, category, secret, oneFact)} actions={actions}>
         <p>{body}</p>
       </Notice>
     </div>

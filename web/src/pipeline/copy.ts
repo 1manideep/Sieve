@@ -55,6 +55,14 @@ export const LABELS = {
   ruleSecret: (n: number) =>
     `${plural(n, 'item holds', 'items hold')} a verification code or a sign-in link, never shared, stopped before any model read ${n === 1 ? 'it' : 'them'}`,
   countUnsupported: 'This asks for a count. Sieve answers from one item at a time, so nothing was searched.',
+  // Nov 21, the second tester's B-cases
+  severalUnsupported: 'This asks for several things at once. Sieve shares one fact at a time, so nothing was searched.',
+  oneFactAnswer: 'The answer held more than one fact. Sieve shares one fact at a time at this level, so nothing was offered.',
+  shapeRefused: "The model couldn't put the answer in one fact, so nothing was offered.",
+  instructionsLeftOut: (phrases: string[]) => `Left words that read as instructions to Sieve out of the search: ${phrases.map((p) => `"${cutQuote(p, 60)}"`).join(', ')}`,
+  nothingLeft: 'Nothing was left to search once those words were left out.',
+  sourceOnly: (source: 'mail' | 'files' | 'photos') => `Searched only your ${source === 'mail' ? 'email' : source}, as the question asks`,
+  sensitive: 'This touches a sensitive topic, so Sieve asks you first',
   newestFirst: 'Put the matches newest first, because the question asks for the latest',
   verifyYes: 'The item answers the question',
   verifyNo: 'The item does not answer the question',
@@ -101,6 +109,9 @@ function cutQuote(s: string, max = 120): string {
   return `${(space > max / 2 ? head.slice(0, space) : head).trimEnd()}...`;
 }
 
+/** 11 section 11.5: the line of the sensitive-topic warning (kind 'ask-first', so the extension shows it too). */
+export const SENSITIVE_LINE = 'This touches a sensitive topic. Sieve asks you first.';
+
 export const WARNINGS = {
   askFirst: (category: Category): Warning => ({ kind: 'ask-first', message: `${category} asks first. Check the exact text before you share it.` }),
   notSorted: (): Warning => ({ kind: 'ask-first', message: "Sieve hasn't finished sorting this item yet, so it asks first." }),
@@ -126,6 +137,11 @@ export const WARNINGS = {
     kind: 'source-unchecked',
     message: "Sieve couldn't check that this email still exists; it used the copy on this computer.",
   }),
+  sensitiveTopic: (): Warning => ({ kind: 'ask-first', message: SENSITIVE_LINE }),
+  questionInstruction: (phrase: string): Warning => ({
+    kind: 'injection',
+    message: `This question contained words that read as instructions to Sieve: "${cutQuote(phrase, 60)}". Sieve left them out of the search.`,
+  }),
   action: (verb: string): Warning => ({
     kind: 'injection',
     message: `This asks Sieve to ${verb}. Sieve can't do that: it only finds things and shares what you approve.`,
@@ -143,6 +159,7 @@ export const UNAVAILABLE = {
   secretCode: 'Verification codes and sign-in links are never shared.',
   noMatch: 'Nothing on this device matched.',
   unsupported: "Sieve answers from one item at a time at this level, so counts aren't available.",
+  oneFact: 'Sieve shares one fact at a time at this level.',
   needsConsent: 'This needs your OK before the cloud model can read it.',
   modelUnavailable: "The on-device model isn't available.",
   error: 'Nothing was prepared.',

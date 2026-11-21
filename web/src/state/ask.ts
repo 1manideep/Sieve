@@ -15,7 +15,7 @@ import {
 } from '@sieve/shared';
 import type { PipelineProgress } from '@/pipeline';
 import type { ModelErrorCode } from '@/ai';
-import { ASK_FLOW, DRAFT_ERRORS } from '@/copy/strings';
+import { ASK_FLOW, DECIDE_ERRORS, DRAFT_ERRORS, SEND_CHECK } from '@/copy/strings';
 import { ASK_TIMEOUT_MS } from '@/relay/constants';
 import { normalizeQuestion } from '@/robust/question';
 import { announce } from './announcer';
@@ -49,6 +49,8 @@ export interface AskState {
   outcome?: { kind: 'kept-local' } | { kind: 'shared'; receiptId: string; chars: number; step: LadderStep; itemCount: number };
   draftError?: string;
   error?: string;
+  /** Approve and draft (or Try again) is running: the follow-up question waits until it ends. */
+  approving: boolean;
   setQuestion(q: string): void;
   ask(q?: string): Promise<void>;                  // aborts a run in progress first
   stop(): void;
@@ -89,6 +91,7 @@ const initial = (): AskData => ({
   outcome: undefined,
   draftError: undefined,
   error: undefined,
+  approving: false,
 });
 
 const stepIndex = (s: LadderStep) => LADDER_STEPS.indexOf(s);
@@ -140,7 +143,7 @@ export function createAskStore(kind: DbKind) {
   let frameText: string | null = null;
   let frameScheduled = false;
   let pipelineModule: typeof import('@/pipeline') | undefined;
-  let approving = false;
+  let approvingRun: number | null = null;   // the run whose Approve (or Try again) is in progress
 
   const loadPipeline = async () => (pipelineModule ??= await import('@/pipeline'));
   const settingsNow = () => (kind === 'real' ? useSettings.getState().settings : PLAYGROUND_SETTINGS);
@@ -210,7 +213,9 @@ export function createAskStore(kind: DbKind) {
       }
     }
 
-    async function runDraft(text: string, instruction: string, shared: NonNullable<AskState['outcome']>): Promise<void> {
+    /** `mine`: the run this draft belongs to. A new question or a reset in the meantime drops its result. */
+    async function runDraft(mine: number, text: string, instruction: string, shared: NonNullable<AskState['outcome']>): Promise<void> {
+      if (mine !== runId) return;
       set({ phase: 'drafting', draftError: undefined });
       const end = useIndexing.getState().beginForeground();
       let draft: string | undefined;
@@ -218,6 +223,7 @@ export function createAskStore(kind: DbKind) {
       try {
         const ai = await loadAi();
         const result = await ai.draftReply(text, instruction);
+        if (mine !== runId) return;
         set((s) => ({ extraTrace: [...s.extraTrace, result.trace] }));   // success or not: the trace stays truthful
         if (result.ok) draft = result.value.draft;
         else draftError = draftErrorFor(result.error.code) ?? undefined;
@@ -226,6 +232,7 @@ export function createAskStore(kind: DbKind) {
       } finally {
         end();
       }
+      if (mine !== runId) return;
       set({ phase: 'done', outcome: shared, ...(draft !== undefined ? { draft, draftError: undefined } : { draftError }) });
       if (draft !== undefined) announce(ASK_FLOW.draftReady);
     }
@@ -244,7 +251,7 @@ export function createAskStore(kind: DbKind) {
         set({ draftError: ASK_FLOW.offlineDraft });
         return;
       }
-      await runDraft(again.text, again.instruction, s.outcome);
+      await runDraft(runId, again.text, again.instruction, s.outcome);
     }
 
     async function approve(): Promise<void> {
@@ -253,6 +260,9 @@ export function createAskStore(kind: DbKind) {
         await retry();
         return;
       }
+      // Every await below may outlive this question (a new question, Ask again): nothing is written for an old run.
+      const mine = runId;
+      const stale = () => mine !== runId;
       const proposal = s.proposal;
       if (!proposal || s.phase !== 'ready' || !proposal.item) return;
       if (!online()) {
@@ -261,10 +271,21 @@ export function createAskStore(kind: DbKind) {
       }
       const step = s.step;
       const p = parts(s, step);
-      if (!p || !p.every((o) => o.available)) return;
+      if (!p || !p.every((o) => o.available)) {
+        set({ draftError: DECIDE_ERRORS.invalidStep });
+        return;
+      }
       const [pipeline, index] = await Promise.all([loadPipeline(), import('@/index')]);
+      if (stale()) return;
       const composed = pipeline.composeOutgoingText(p);
-      if (composed.length > MAX_PAYLOAD_CHARS || composed.length === 0) return;
+      if (composed.length === 0) {
+        set({ draftError: SEND_CHECK.empty });
+        return;
+      }
+      if (composed.length > MAX_PAYLOAD_CHARS) {
+        set({ draftError: DECIDE_ERRORS.tooLong });
+        return;
+      }
       const itemIds = [proposal.item.recordId, ...s.relatedSelected];
       const decision: Decision = {
         requestId: s.requestId ?? proposal.requestId,
@@ -284,11 +305,12 @@ export function createAskStore(kind: DbKind) {
       try {
         result = await pipeline.finalizeDecision(proposal, decision, { relatedOptions, db });
       } catch (error) {
+        if (stale()) return;
         const message = (error as { message?: unknown } | null)?.message;
         set({ draftError: typeof message === 'string' && message ? message : ASK_FLOW.somethingWrong });
         return;
       }
-      if (get().proposal !== proposal) return;
+      if (stale() || get().proposal !== proposal) return;
       const payload = result.payload;
       if (!payload || payload.text !== composed) {
         console.error('payload mismatch', decision.requestId);
@@ -297,6 +319,7 @@ export function createAskStore(kind: DbKind) {
       }
       // 70 section 3.3: rules read fresh, items still here, the text unchanged.
       const { checkBeforeSend } = await import('@/relay/sendCheck');
+      if (stale()) return;
       const guard = await checkBeforeSend({
         step,
         approvedText: composed,
@@ -308,6 +331,7 @@ export function createAskStore(kind: DbKind) {
         now: Date.now(),
         getRecord: (id) => index.getRecord(db, id),
       });
+      if (stale()) return;
       if (!guard.ok) {
         set({ draftError: guard.message });
         return;
@@ -329,6 +353,7 @@ export function createAskStore(kind: DbKind) {
           const uid = useSession.getState().user?.uid;
           if (!uid) throw new Error('no user');
           const { saveReceipt } = await import('@/app/services/receipts');
+          if (stale()) return;
           // Only the instruction reached the cloud model; the person's own question never leaves the device.
           await saveReceipt(uid, { ...result.receipt, question: instruction, chars });
         } else {
@@ -336,12 +361,29 @@ export function createAskStore(kind: DbKind) {
         }
       } catch (error) {
         console.error('receipt not saved', (error as { code?: string }).code ?? '');
-        set({ draftError: ASK_FLOW.receiptFailed });
+        if (!stale()) set({ draftError: ASK_FLOW.receiptFailed });
         return;
       }
+      // The receipt is kept even when the question changed meanwhile: it records what was approved.
+      if (stale()) return;
       const shared = { kind: 'shared' as const, receiptId: result.receipt.id, chars, step, itemCount: itemIds.length };
       lastDraft = { text: payload.text, instruction };
-      await runDraft(payload.text, instruction, shared);
+      await runDraft(mine, payload.text, instruction, shared);
+    }
+
+    async function guarded(run: () => Promise<void>): Promise<void> {
+      const mine = runId;
+      if (approvingRun === mine) return;
+      approvingRun = mine;
+      set({ approving: true });
+      try {
+        await run();
+      } finally {
+        if (approvingRun === mine) {
+          approvingRun = null;
+          set({ approving: false });
+        }
+      }
     }
 
     return {
@@ -464,25 +506,10 @@ export function createAskStore(kind: DbKind) {
         announce(ASK_FLOW.keptLocal);
       },
 
-      async approveAndDraft() {
-        if (approving) return;   // a double click must not write two receipts
-        approving = true;
-        try {
-          await approve();
-        } finally {
-          approving = false;
-        }
-      },
-
-      async retryDraft() {
-        if (approving) return;   // shares the guard: a double click runs one draft
-        approving = true;
-        try {
-          await retry();
-        } finally {
-          approving = false;
-        }
-      },
+      // A double click must not write two receipts or run two drafts. The guard is per question: an approval still
+      // finishing for an old question does not hold up the new one.
+      approveAndDraft: () => guarded(approve),
+      retryDraft: () => guarded(retry),
 
       async allowCloudFor(recordId) {
         const db = await openDb();

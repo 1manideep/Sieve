@@ -1,13 +1,14 @@
 // Pure worker state (50 section 7.2): connections, the union of their lists, ownership, decisions in flight and
 // resolved requests. In memory only; the hub holds no Port objects and touches no chrome.* API.
 import { LADDER_STEPS } from '@sieve/shared';
-import type { Decision, LadderStep, ProposalPreview } from '@sieve/shared';
+import type { Decision, LadderStep } from '@sieve/shared';
 import { APP_URL } from '../shared/env';
 import type {
   ConnectionState,
   DecideRejection,
   InflightEntry,
   PanelState,
+  Preview,
   ResolvedEntry,
   ResolvedOutcome,
 } from '../shared/internal';
@@ -25,26 +26,28 @@ export interface ConnInfo {
   homeBase: boolean;
   appVersion: string;
   ready: boolean; // true after a valid hello
-  proposals: ProposalPreview[];
+  proposals: Preview[];
   pendingAt: number; // time of the last valid sieve/pending (0 if none)
   invalidCount: number;
 }
 
+/** On success, `textHash` is the hash of the text the person approved (approvals of a hashed preview only). */
 export type DecideResult =
-  | { ok: true; connId: string; decision: Decision }
+  | { ok: true; connId: string; decision: Decision; textHash?: string }
   | { ok: false; reason: DecideRejection };
 
 interface Inflight extends InflightEntry {
   connId: string;
   aiName: string;
   question: string;
+  textHash?: string; // what an approval was sent for; a new list with another hash means the page refused it
 }
 
-function aiNameOf(p: ProposalPreview): string {
+function aiNameOf(p: Preview): string {
   return p.requester.kind === 'outside' ? p.requester.aiName : 'Sieve';
 }
 
-export function isActionable(p: ProposalPreview): boolean {
+export function isActionable(p: Preview): boolean {
   return p.outcome === 'ready' || p.outcome === 'needs-cloud-consent';
 }
 
@@ -105,13 +108,27 @@ export class Hub {
     return c.invalidCount;
   }
 
-  setPending(connId: string, proposals: ProposalPreview[]): { added: string[]; removed: string[] } {
+  /**
+   * Replaces a connection's list. `changed`: approvals in flight to this page whose request is still listed with a
+   * different text hash. The page refuses those (the text changed under the person), so they stop being in flight
+   * and the panel can be asked to check the new text.
+   */
+  setPending(connId: string, proposals: Preview[]): { added: string[]; removed: string[]; changed: string[] } {
     const c = this.conns.get(connId);
-    if (!c || !c.ready) return { added: [], removed: [] };
+    if (!c || !c.ready) return { added: [], removed: [], changed: [] };
     const before = this.unionIds();
     c.proposals = proposals;
     c.pendingAt = this.now();
-    return this.diff(before);
+    const changed: string[] = [];
+    for (const entry of [...this.inflight.values()]) {
+      if (entry.connId !== connId || entry.textHash === undefined) continue;
+      const now = proposals.find((p) => p.requestId === entry.requestId);
+      if (now && now.textHash !== entry.textHash) {
+        this.inflight.delete(entry.requestId);
+        changed.push(entry.requestId);
+      }
+    }
+    return { ...this.diff(before), changed };
   }
 
   resolved(connId: string, requestId: string, outcome: 'approved' | 'declined' | 'expired' | 'error'): { removed: string[] } {
@@ -162,7 +179,8 @@ export class Hub {
     return { lost, removed: this.diff(before).removed };
   }
 
-  decide(requestId: string, approved: boolean, step?: LadderStep): DecideResult {
+  /** `textHash`: the hash of the preview the panel showed. An approval of a hashed preview must carry the same one. */
+  decide(requestId: string, approved: boolean, step?: LadderStep, textHash?: string): DecideResult {
     const preview = this.find(requestId);
     if (!preview) return { ok: false, reason: 'unknown-request' };
     const owner = this.owner(requestId);
@@ -171,6 +189,7 @@ export class Hub {
     if (sent && !sent.slow) return { ok: false, reason: 'already-sent' };
     if (approved) {
       if (preview.outcome !== 'ready') return { ok: false, reason: 'not-ready' };
+      if (preview.textHash !== undefined && textHash !== preview.textHash) return { ok: false, reason: 'changed' };
       if (!step) return { ok: false, reason: 'step-unavailable' };
       const option = preview.options.find((o) => o.step === step);
       if (!option || !option.available) return { ok: false, reason: 'step-unavailable' };
@@ -181,6 +200,7 @@ export class Hub {
     const decision: Decision = approved && step
       ? { requestId, approved: true, step, itemIds: [], decidedBy: 'extension', decidedAt: at }
       : { requestId, approved: false, itemIds: [], decidedBy: 'extension', decidedAt: at };
+    const sentHash = decision.approved ? preview.textHash : undefined;
     this.inflight.set(requestId, {
       requestId,
       approved: decision.approved,
@@ -190,8 +210,9 @@ export class Hub {
       connId: owner.id,
       aiName: aiNameOf(preview),
       question: preview.question,
+      ...(sentHash !== undefined ? { textHash: sentHash } : {}),
     });
-    return { ok: true, connId: owner.id, decision };
+    return { ok: true, connId: owner.id, decision, ...(sentHash !== undefined ? { textHash: sentHash } : {}) };
   }
 
   /** Called 15 s after a decision that got no sieve/resolved; the panel re-enables its buttons. */
@@ -221,9 +242,9 @@ export class Hub {
     return ready.find((c) => c.homeBase) ?? ready[0];
   }
 
-  union(): ProposalPreview[] {
+  union(): Preview[] {
     const seen = new Set<string>();
-    const out: ProposalPreview[] = [];
+    const out: Preview[] = [];
     for (const c of this.orderedReady()) {
       for (const p of c.proposals) {
         if (seen.has(p.requestId)) continue;
@@ -234,7 +255,7 @@ export class Hub {
     return out;
   }
 
-  find(requestId: string): ProposalPreview | undefined {
+  find(requestId: string): Preview | undefined {
     return this.union().find((p) => p.requestId === requestId);
   }
 

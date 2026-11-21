@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HOME_BASE_PORT_NAME, MESSAGE_VERSION, type ProposalPreview } from '@sieve/shared';
 import type { ExtensionStatus } from '@/state/homeBase';
-import { createExtensionBridge, isExtensionToPage, type BridgeHandlers, type PortLike, type RuntimeLike } from './extensionBridge';
+import { textHashOf } from './decision';
+import { createExtensionBridge, isExtensionToPage, isOldExtension, previewsFor, type BridgeHandlers, type PortLike, type RuntimeLike } from './extensionBridge';
 
 class FakePort implements PortLike {
   sent: unknown[] = [];
@@ -41,7 +42,7 @@ function fakeRuntime() {
 const ACK = { type: 'sieve/hello-ack', version: MESSAGE_VERSION, extensionVersion: '1.0.0' };
 const preview = { requestId: 'r1' } as ProposalPreview;
 
-function setup(opts: { runtime?: RuntimeLike | undefined } = {}) {
+function setup(opts: { runtime?: RuntimeLike | undefined; pending?: ProposalPreview[] } = {}) {
   const rt = fakeRuntime();
   const statuses: ExtensionStatus[] = [];
   const ticks: (() => void)[] = [];
@@ -49,7 +50,7 @@ function setup(opts: { runtime?: RuntimeLike | undefined } = {}) {
     onDecision: vi.fn(),
     onOpenApp: vi.fn(),
     onStatus: (s) => statuses.push(s),
-    getPending: vi.fn(() => [preview]),
+    getPending: vi.fn(() => opts.pending ?? [preview]),
     onHello: vi.fn(),
   };
   const runtime = 'runtime' in opts ? opts.runtime : rt.runtime;
@@ -88,7 +89,7 @@ describe('extension bridge', () => {
     ports[0].receive(ACK);
     expect(h.onHello).toHaveBeenCalledWith({ extensionVersion: '1.0.0', extensionShortcut: '' });
     expect(statuses.at(-1)).toBe('connected');
-    expect(ports[0].sent[1]).toEqual({ type: 'sieve/pending', version: 1, proposals: [preview] });
+    expect(ports[0].sent[1]).toEqual({ type: 'sieve/pending', version: 1, proposals: [{ ...preview, textHash: textHashOf(undefined) }] });
   });
 
   it('no ack within 2 s gives not-installed, and probes again later', () => {
@@ -169,6 +170,17 @@ describe('extension bridge', () => {
     expect(h.onOpenApp).toHaveBeenCalledWith('r1');
   });
 
+  it('forwards the text hash an approval carries (extension 0.1.1), and ignores a hash that is not a string', () => {
+    const { bridge, ports, h } = setup();
+    bridge.start();
+    ports[0].receive(ACK);
+    const decision = { requestId: 'r1', approved: true, step: 'answer', itemIds: [], decidedBy: 'extension', decidedAt: 5 };
+    ports[0].receive({ type: 'sieve/decision', version: 1, decision, textHash: '0a1b2c3d4e5f6789' });
+    expect(h.onDecision).toHaveBeenCalledWith({ requestId: 'r1', approved: true, step: 'answer', decidedBy: 'extension', textHash: '0a1b2c3d4e5f6789' });
+    ports[0].receive({ type: 'sieve/decision', version: 1, decision, textHash: 42 });
+    expect(h.onDecision).toHaveBeenCalledTimes(1);
+  });
+
   it('ignores decisions before the ack', () => {
     const { bridge, ports, h } = setup();
     bridge.start();
@@ -197,6 +209,64 @@ describe('extension bridge', () => {
     bridge.stop();
     expect(ports[0].disconnected).toBe(true);
     expect(statuses.at(-1)).toBe('idle');
+  });
+});
+
+describe('previews for the extension version (0.1.0 dropped a whole list over one unknown value)', () => {
+  const ready = (changes: Partial<ProposalPreview> = {}): ProposalPreview => ({
+    requestId: 'r1',
+    requester: { kind: 'outside', grantId: 'g', aiName: 'Test assistant' },
+    question: 'q',
+    requestedStep: 'answer',
+    maxStep: 'full',
+    item: { title: 't', kind: 'email', category: 'Home', date: 1 },
+    options: [
+      { step: 'answer', text: 'a', chars: 1, redactions: 0, available: true },
+      { step: 'excerpt', text: 'b', chars: 1, redactions: 0, available: true },
+      { step: 'full', text: 'c', chars: 1, redactions: 0, available: true },
+    ],
+    rule: 'approve',
+    warnings: [],
+    outcome: 'ready',
+    ...changes,
+  });
+
+  it('reads 0.1.0, and anything that is not a version, as old; 0.1.1 and later as new', () => {
+    for (const v of ['0.1.0', '0.0.9', '', 'dev', '1']) expect(isOldExtension(v)).toBe(true);
+    for (const v of ['0.1.1', '0.1.12', '0.2.0', '1.0.0', '0.1.1-beta']) expect(isOldExtension(v)).toBe(false);
+  });
+
+  it('every preview carries the hash of its option texts', () => {
+    const p = ready();
+    expect(previewsFor([p], '0.1.1')).toEqual([{ ...p, textHash: textHashOf(p.options) }]);
+  });
+
+  it('a 0.1.0 extension gets only the values every 0.1.0 build knows; 0.1.1 gets the list as it is', () => {
+    const list = [
+      ready({ requestId: 'r1', warnings: [{ kind: 'injection', message: 'm' }, { kind: 'new-kind' as never, message: 'n' }] }),
+      ready({ requestId: 'r2', outcome: 'unsupported' }),     // came after some 0.1.0 builds
+      ready({ requestId: 'r3', rule: 'sometimes' as never }),
+      ready({ requestId: 'r4', item: { title: 't', kind: 'calendar' as never, category: 'Home', date: 1 } }),
+      ready({ requestId: 'r5', item: { title: 't', kind: 'email', category: 'Pets' as never, date: 1 } }),
+      ready({ requestId: 'r6', outcome: 'no-match' }),
+    ];
+    const old = previewsFor(list, '0.1.0');
+    expect(old.map((p) => p.requestId)).toEqual(['r1', 'r6']);
+    expect(old[0]!.warnings).toEqual([{ kind: 'injection', message: 'm' }]);
+    expect(previewsFor(list, '0.1.1').map((p) => p.requestId)).toEqual(['r1', 'r2', 'r3', 'r4', 'r5', 'r6']);
+    expect(previewsFor(list, '0.1.1')[0]!.warnings).toHaveLength(2);
+  });
+
+  it('the bridge trims for the version in the hello-ack', () => {
+    const list = [ready({ requestId: 'r1' }), ready({ requestId: 'r2', outcome: 'unsupported' })];
+    for (const [version, ids] of [['0.1.0', ['r1']], ['0.1.1', ['r1', 'r2']]] as const) {
+      const { bridge, ports } = setup({ pending: list });
+      bridge.start();
+      ports[0].receive({ ...ACK, extensionVersion: version });
+      const sent = ports[0].sent[1] as { proposals: ProposalPreview[] };
+      expect(sent.proposals.map((p) => p.requestId)).toEqual(ids);
+      bridge.stop();
+    }
   });
 });
 

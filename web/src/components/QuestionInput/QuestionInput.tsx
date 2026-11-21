@@ -33,6 +33,8 @@ export interface QuestionInputProps {
   leading?: ReactNode;
   trailing?: ReactNode;
   autoFocus?: boolean;
+  /** The field waits (the follow-up while an approval or a draft runs): no typing, no submit. */
+  disabled?: boolean;
 }
 
 function isEditable(el: Element | null): boolean {
@@ -49,7 +51,7 @@ const FORM_CLASS = {
 } as const;
 
 export const QuestionInput = forwardRef<QuestionInputHandle, QuestionInputProps>(function QuestionInput(
-  { label, labelHidden = false, placeholder, value, onChange, onSubmit, button, describedBy, variant = 'ask', leading, trailing, autoFocus = false },
+  { label, labelHidden = false, placeholder, value, onChange, onSubmit, button, describedBy, variant = 'ask', leading, trailing, autoFocus = false, disabled = false },
   ref,
 ) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -81,6 +83,7 @@ export const QuestionInput = forwardRef<QuestionInputHandle, QuestionInputProps>
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (disabled) return;
     if (isBlankQuestion(value)) {
       setEmpty(true);
       inputRef.current?.focus();
@@ -111,6 +114,7 @@ export const QuestionInput = forwardRef<QuestionInputHandle, QuestionInputProps>
       placeholder={placeholder}
       value={value}
       autoComplete="off"
+      disabled={disabled || undefined}
       aria-invalid={empty || undefined}
       aria-describedby={described || undefined}
       onChange={(e) => {

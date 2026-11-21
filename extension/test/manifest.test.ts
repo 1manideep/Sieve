@@ -17,6 +17,10 @@ const source = JSON.parse(readFileSync(new URL('../manifest.json', import.meta.u
 };
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
 
+// The hosted app on every domain Firebase Hosting serves it on; the dev build also trusts the local dev server.
+const HOSTED = ['https://sieve.manideep.info/*', 'https://sieve-manideep.web.app/*', 'https://sieve-manideep.firebaseapp.com/*'];
+const DEV = [...HOSTED, 'http://localhost:5173/*'];
+
 const CSP =
   "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; connect-src 'none'; img-src 'self'; font-src 'self'; style-src 'self'";
 
@@ -37,7 +41,7 @@ describe('source manifest (50 section 4.1)', () => {
   });
 
   it('lets only the Sieve origins connect, and no other extension', () => {
-    expect(source.externally_connectable.matches).toEqual(['https://sieve.manideep.info/*', 'https://sieve-manideep.web.app/*', 'http://localhost:5173/*']);
+    expect(source.externally_connectable.matches).toEqual(DEV);
     expect(source.externally_connectable.ids).toBeUndefined();
   });
 
@@ -66,6 +70,11 @@ describe('source manifest (50 section 4.1)', () => {
     });
   });
 
+  it('is version 0.1.1, the same as package.json (the tolerant validator; the page trims lists for 0.1.0)', () => {
+    expect(source.version).toBe('0.1.1');
+    expect(pkg.version).toBe('0.1.1');
+  });
+
   it('carries a real key, not the placeholder', () => {
     expect(typeof source.key).toBe('string');
     expect(String(source.key)).not.toMatch(/^REPLACE/);
@@ -73,23 +82,23 @@ describe('source manifest (50 section 4.1)', () => {
 });
 
 describe('manifest transform (50 section 4.2)', () => {
-  it('dev keeps both origins and the key; version comes from package.json', () => {
+  it('dev keeps the hosted origins, localhost and the key; version comes from package.json', () => {
     const dev = transformManifest({ ...source, version: '9.9.9' }, 'dev', pkg.version);
     expect(dev.version).toBe(pkg.version);
-    expect(dev.externally_connectable).toEqual({ matches: ['https://sieve.manideep.info/*', 'https://sieve-manideep.web.app/*', 'http://localhost:5173/*'] });
+    expect(dev.externally_connectable).toEqual({ matches: DEV });
     expect(dev.key).toBe(source.key);
   });
 
-  it('release drops localhost and keeps the key', () => {
+  it('release trusts the three hosted domains, drops localhost and keeps the key', () => {
     const release = transformManifest(source, 'release', '1.2.3');
-    expect(release.externally_connectable).toEqual({ matches: ['https://sieve.manideep.info/*', 'https://sieve-manideep.web.app/*'] });
+    expect(release.externally_connectable).toEqual({ matches: HOSTED });
     expect(release.key).toBe(source.key);
     expect(release.version).toBe('1.2.3');
   });
 
   it('store drops localhost and the key', () => {
     const store = transformManifest(source, 'store', pkg.version);
-    expect(store.externally_connectable).toEqual({ matches: ['https://sieve.manideep.info/*', 'https://sieve-manideep.web.app/*'] });
+    expect(store.externally_connectable).toEqual({ matches: HOSTED });
     expect(store).not.toHaveProperty('key');
     expect(source).toHaveProperty('key'); // the source is never mutated
   });
@@ -138,9 +147,9 @@ describe('lint-dist patterns (50 section 12.4)', () => {
 
 // 50 section 16, item 2: checked on the built packages when they exist (npm run build:all builds all three).
 describe.each([
-  ['dist-dev', ['https://sieve.manideep.info/*', 'https://sieve-manideep.web.app/*', 'http://localhost:5173/*'], true],
-  ['dist', ['https://sieve.manideep.info/*', 'https://sieve-manideep.web.app/*'], true],
-  ['dist-store', ['https://sieve.manideep.info/*', 'https://sieve-manideep.web.app/*'], false],
+  ['dist-dev', DEV, true],
+  ['dist', HOSTED, true],
+  ['dist-store', HOSTED, false],
 ] as const)('built %s/manifest.json', (dir, matches, keyed) => {
   const url = new URL(`../${dir}/manifest.json`, import.meta.url);
   it.skipIf(!existsSync(url))('has the three permissions, the right matches and key, and passes lint-dist', () => {

@@ -33,6 +33,27 @@ export function senderEntities(record: Pick<IndexRecord, 'from'>): KnownEntity[]
   return [name, ...(words.length > 1 ? words : [])].map((text) => ({ text, type: 'name' as const, by: 'validator' as const }));
 }
 
+/**
+ * Lowercase sender words that are never an ID number (5.6 step 1): the item's own sender (display name words, the name
+ * as one word, the address local part and the domain labels) plus `known`, the sender words of the whole index.
+ */
+export function senderWordsOf(record: Pick<IndexRecord, 'from'>, known?: ReadonlySet<string>): Set<string> {
+  const out = new Set<string>(known ?? []);
+  const from = record.from ?? '';
+  const name = senderName(from);
+  const words = (s: string) => s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  if (name && !name.includes('@')) {
+    for (const w of words(name)) out.add(w);
+    out.add(words(name).join(''));
+  }
+  const addr = /<([^>]+)>/.exec(from)?.[1] ?? (from.includes('@') ? from.trim() : '');
+  const [local = '', domain = ''] = addr.toLowerCase().split('@');
+  out.add(local.replace(/[^\p{L}\p{N}]/gu, ''));
+  for (const label of domain.split('.').slice(0, -1)) out.add(label.replace(/[^\p{L}\p{N}]/gu, ''));
+  out.delete('');
+  return out;
+}
+
 /** "Good Dog sent you a booking": a company sender's own name is not a person's name, so it is not masked. */
 export function notTheCompany(text: string, spans: readonly PiiSpan[], record: Pick<IndexRecord, 'from'>): PiiSpan[] {
   const name = senderName(record.from);

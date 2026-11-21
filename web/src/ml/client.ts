@@ -211,16 +211,29 @@ export function createWorkerMlClient(makeWorker: () => WorkerLike, opts?: { now?
       const id = nextId++;
       const timeoutMs = o?.timeoutMs ?? (priority === 'foreground' ? 10_000 : 30_000);
       return new Promise<O>((resolve, reject) => {
-        const p: Pending = { task, priority, input, resolve: resolve as (v: unknown) => void, reject };
+        // The caller's signal often lives for many runs (the queue's): its listener goes when this run settles.
+        const onAbort = () => cancel(abortError());
+        const off = () => o?.signal?.removeEventListener('abort', onAbort);
+        const p: Pending = {
+          task, priority, input,
+          resolve: (v) => {
+            off();
+            resolve(v as O);
+          },
+          reject: (e) => {
+            off();
+            reject(e);
+          },
+        };
         const cancel = (err: unknown) => {
           if (!pending.has(id)) return;
           pending.delete(id);
           if (p.timer) clearTimeout(p.timer);
           worker?.postMessage({ kind: 'cancel', id });
-          reject(err);
+          p.reject(err);
         };
         p.timer = setTimeout(() => cancel(new DOMException('The on-device model took too long.', 'TimeoutError')), timeoutMs);
-        o?.signal?.addEventListener('abort', () => cancel(abortError()), { once: true });
+        o?.signal?.addEventListener('abort', onAbort, { once: true });
         pending.set(id, p);
         ensureWorker().postMessage({ kind: 'run', id, task, priority, input });
       });

@@ -18,7 +18,7 @@ import {
   EXTENSION_PROBE_MS,
   MAX_PREVIEWS,
 } from './constants';
-import type { DecisionInput } from './decision';
+import { textHashOf, type DecisionInput } from './decision';
 
 export interface BridgeHandlers {
   onDecision(input: DecisionInput): void;
@@ -58,6 +58,43 @@ export interface BridgeEnv {
 
 const EXT_TYPES = ['sieve/hello-ack', 'sieve/decision', 'sieve/open-app'] as const;
 
+// Extension 0.1.0 dropped the whole sieve/pending list over one value it did not know, and its builds differ
+// ('unsupported' came late), so a 0.1.0 extension gets only the values every 0.1.0 build knows. 0.1.1 and later
+// leave out what they do not know themselves, so they get the list as it is.
+const V010 = {
+  warnings: ['ask-first', 'injection', 'hidden-text-removed', 'pii-redacted', 'pii-check-limited', 'cloud-fallback', 'sample-data-cloud', 'unverified-answer', 'source-unchecked'],
+  outcomes: ['ready', 'blocked-never', 'no-match', 'needs-cloud-consent', 'model-unavailable', 'error'],
+  rules: ['approve', 'ask-first', 'never'],
+  kinds: ['email', 'document', 'photo', 'note'],
+  categories: ['Home', 'Work', 'Money', 'Health', 'Travel', 'Shopping', 'Personal', 'Newsletters', 'Photos'],
+} as const;
+const has = (list: readonly string[], v: unknown) => typeof v === 'string' && list.includes(v);
+
+/** True for 0.1.0 and anything that does not read as a version 0.1.1 or later. */
+export function isOldExtension(version: string): boolean {
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
+  if (!m) return true;
+  const [major, minor, patch] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  return major === 0 && (minor === 0 || (minor === 1 && patch < 1));
+}
+
+/** The previews as sent: each with the hash of its option texts (textHashOf); trimmed to 0.1.0's values for 0.1.0. */
+export function previewsFor(list: ProposalPreview[], extensionVersion: string): (ProposalPreview & { textHash: string })[] {
+  const old = isOldExtension(extensionVersion);
+  const out: (ProposalPreview & { textHash: string })[] = [];
+  for (const p of list) {
+    const preview = { ...p, textHash: textHashOf(p.options) };
+    if (!old) {
+      out.push(preview);
+      continue;
+    }
+    if (!has(V010.outcomes, p.outcome) || !has(V010.rules, p.rule)) continue;
+    if (p.item && (!has(V010.kinds, p.item.kind) || !has(V010.categories, p.item.category))) continue;
+    out.push({ ...preview, warnings: (p.warnings ?? []).filter((w) => has(V010.warnings, w.kind)) });
+  }
+  return out;
+}
+
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
@@ -82,7 +119,8 @@ export function isExtensionToPage(m: unknown): m is ExtensionToPage {
         d.itemIds.every((x) => typeof x === 'string') &&
         d.decidedBy === 'extension' &&
         typeof d.decidedAt === 'number' &&
-        Number.isFinite(d.decidedAt)
+        Number.isFinite(d.decidedAt) &&
+        (m.textHash === undefined || typeof m.textHash === 'string')
       );
     }
     default:
@@ -126,6 +164,7 @@ export function createExtensionBridge(extensionId: string, appVersion: string, h
   let status: ExtensionStatus = 'idle';
   let port: PortLike | null = null;
   let acked = false;
+  let extensionVersion = '';
   let everConnected = false;
   let attempt = 0;
   let ackTimer: ReturnType<typeof setTimeout> | undefined;
@@ -220,6 +259,7 @@ export function createExtensionBridge(extensionId: string, appVersion: string, h
       clearTimeout(ackTimer);
       ackTimer = undefined;
       acked = true;
+      extensionVersion = message.extensionVersion;
       everConnected = true;
       attempt = 0;
       setStatus('connected');
@@ -238,8 +278,15 @@ export function createExtensionBridge(extensionId: string, appVersion: string, h
     if (!acked) return;
     if (message.type === 'sieve/decision') {
       const d = message.decision;
+      const textHash = (message as { textHash?: string }).textHash;
       try {
-        h.onDecision({ requestId: d.requestId, approved: d.approved, ...(d.step ? { step: d.step } : {}), decidedBy: 'extension' });
+        h.onDecision({
+          requestId: d.requestId,
+          approved: d.approved,
+          ...(d.step ? { step: d.step } : {}),
+          decidedBy: 'extension',
+          ...(textHash !== undefined ? { textHash } : {}),
+        });
       } catch (error) {
         console.error('bridge decision handler', error);
       }
@@ -289,7 +336,7 @@ export function createExtensionBridge(extensionId: string, appVersion: string, h
     if (!acked || !port) return;
     let proposals: ProposalPreview[];
     try {
-      proposals = h.getPending().slice(0, MAX_PREVIEWS);
+      proposals = previewsFor(h.getPending().slice(0, MAX_PREVIEWS), extensionVersion);
     } catch (error) {
       console.error('bridge pending', error);
       return;

@@ -274,8 +274,13 @@ DECISION_WINDOW_MINUTES = 120     # queued/claimed/awaiting-person older than th
 COLLECT_WINDOW_MINUTES = 60       # answered and not collected this long after answeredAt -> expired
 RECLAIM_AFTER_SECONDS = 120       # another device may take over a stuck claim
 CONNECTOR_RETENTION_DAYS = 7      # connector docs kept this long after expiry/revocation, then deleted
-RATE_LIMIT_CALLS = 30             # tools/call per grant per window
+# Rate limit (section 11): a leaky bucket per connection. A counted call adds its weight, the bucket drains
+# RATE_LIMIT_CALLS per RATE_LIMIT_WINDOW_SECONDS, and a call that would overflow it is refused and adds nothing.
+RATE_LIMIT_CALLS = 80             # call units per connection per window (the budget arithmetic is in section 11)
 RATE_LIMIT_WINDOW_SECONDS = 600
+CHECK_CALL_WEIGHT = 0.5           # a sieve_check poll counts as half a call
+RATE_LIMIT_FREE_REFUSALS = 30     # refused calls given back per window; past that they count, so a loop stays bounded
+RATE_LIMIT_WAIT_STEP_SECONDS = 5  # the stated wait is rounded up to a multiple of this
 MAX_OPEN_REQUESTS_PER_GRANT = 3
 IDEMPOTENCY_WINDOW_SECONDS = 600  # a call with the same key within this window returns the existing request (9.4)
 IDEMPOTENCY_KEY_MAX_CHARS = 64
@@ -418,8 +423,9 @@ class ConnectorDoc(FsModel):           # connectors/{linkHash}; see CCR 1 for th
     revoked_at: datetime | None = None
     revoked_root_ids: list[str] = []
     revoked_token_ids: list[str] = []
-    rate_window_start: datetime | None = None
-    rate_count: int = 0
+    rate_used: float = 0.0             # call units in the rate bucket as of rate_at (section 11; CCR 9)
+    rate_refunds: float = 0.0          # refused calls given back, as of rate_at
+    rate_at: datetime | None = None
 
 class Receipt(FsModel):                # read-only here; functions only change `status`
     id: str
@@ -439,6 +445,8 @@ class ToolResult(BaseModel):           # MCP structuredContent; snake_case on pu
     step: LadderStep | None = None
     text: str | None = None
     message: str
+    image: SharedImage | None = None   # excluded from the wire; sent as an image content block
+    refused: bool = False              # excluded from the wire; turned away before any work, so not counted (11)
     def to_wire(self) -> dict:         # model_dump(exclude_none=True)
         ...
 ```
@@ -679,7 +687,7 @@ def create_grant_records(db, *, uid: str, req: GrantRequest, secret: bytes, base
 3. `secret_link = new_link_secret()`, `lh = link_hash(secret_link)`, `identity = derive_connector_identity(secret_link, grant_id)`.
 4. `token = Broker(secret=secret).issue(human_identity=uid, primary_identity=identity, caveats=grant_caveats(uid, grant_id, req.max_step), ttl_seconds=ttl_seconds)`.
 5. `expires_at = datetime.fromtimestamp(extract_expires_at(token.caveats), timezone.utc)` (the token is the source of truth for expiry).
-6. One `WriteBatch`: `create` `connectors/{lh}` = `{uid, grantId, token: serialize_token(token), identity: {agentId: identity.agent_id, fingerprint: identity.fingerprint}, createdAt: now, expiresAt, revokedRootIds: [], revokedTokenIds: [], rateCount: 0}`; `set` the grant doc = `{aiName, maxStep, allowedCategories, allowedSources, createdAt: now, expiresAt, linkHint: link_hint(secret_link)}`. Commit.
+6. One `WriteBatch`: `create` `connectors/{lh}` = `{uid, grantId, token: serialize_token(token), identity: {agentId: identity.agent_id, fingerprint: identity.fingerprint}, createdAt: now, expiresAt, revokedRootIds: [], revokedTokenIds: [], rateUsed: 0, rateRefunds: 0}`; `set` the grant doc = `{aiName, maxStep, allowedCategories, allowedSources, createdAt: now, expiresAt, linkHint: link_hint(secret_link)}`. Commit.
 7. `append_lifecycle(event="issued", token_id=token.token_id, ...)`.
 8. `logs.log_event("grant_issued", grant=grant_id, step=req.max_step, days=req.days)`.
 9. Return the output with `link = build_link(base_url, secret_link)`. The secret goes out in this response only.
@@ -871,13 +879,14 @@ def call_tool(msg: Mapping[str, Any], *, era: str, version: str, link_secret: st
 ```
 
 1. `name = params.name` must be a non-empty string of at most 128 chars, `arguments = params.get("arguments", {})` must be an object; else JSON-RPC -32602 "Invalid params" (HTTP 400 in modern, 200 in legacy).
-2. Admission (section 11): `adm = ratelimit.admit(deps.db, link_hash, deps.now())`. None (connector vanished) gives HTTP 404 as in 8.1 step 4. Grant doc missing is treated as revoked. Rate limited returns tool result `error` with the rate-limit copy (no audit entry: rate limiting is not an authorization decision, and it keeps a flood from writing thousands of audit transactions).
+2. Admission (section 11): `adm = ratelimit.admit(deps.db, link_hash, deps.now(), weight=ratelimit.call_weight(name))` (half a call for `sieve_check`, one call for anything else). None (connector vanished) gives HTTP 404 as in 8.1 step 4. Grant doc missing is treated as revoked. Rate limited returns tool result `error` with the rate-limit copy and the real wait, `tools.rate_limited_result(adm.retry_after_seconds)` (no audit entry: rate limiting is not an authorization decision, and it keeps a flood from writing thousands of audit transactions). A rate-limited call adds nothing to the bucket.
 3. `out = authz.authorize_call(..., tool_name=name, args=arguments)` (every attempt is audited).
 4. `name not in MCP_TOOLS.values()` gives JSON-RPC -32602 "Unknown tool: <name>" (HTTP 200; Ratchet has already recorded the DENY).
 5. `out.allowed` false gives a tool result from `tools.result_for_denial(out.reason_code, grant)` (8.6).
-6. Argument validation (after authorization so attempts are audited): `tools.parse_ladder_args(arguments, today=deps.now().date())` or `tools.parse_check_args(arguments)` (8.7). An `ArgError` becomes a tool result with status `error`, `isError: true` and the error's message, so the assistant can correct the call and retry (the MCP tools page classes input validation errors as tool execution errors). No request is created.
+6. Argument validation (after authorization so attempts are audited): `tools.parse_ladder_args(arguments, today=deps.now().date())` or `tools.parse_check_args(arguments)` (8.7). An `ArgError` becomes a tool result with status `error`, `isError: true` and the error's message, so the assistant can correct the call and retry (the MCP tools page classes input validation errors as tool execution errors). No request is created. The result is marked `refused` (step 8).
 7. Ladder tool: `relay.handle_ladder_tool(deps, ctx, tool=name, args=parsed, t0=t0)`; `sieve_check`: `relay.handle_check(deps, ctx, request_id, t0=t0)`.
-8. Wrap with `tools.call_tool_result(result, era=era, version=version)`; log `tool_call` (section 14).
+8. A result marked `refused` (a bad argument, an unknown request id, the open-request limit, an `idempotency_key` reused for another question) is given back to the limit: `ratelimit.refund(deps.db, link_hash, weight, deps.now())`, section 11. A failed refund is logged (`rate_refund_error`) and leaves the call counted; it never changes the reply.
+9. Wrap with `tools.call_tool_result(result, era=era, version=version)`; log `tool_call` (section 14).
 
 `ctx` is `relay.CallCtx(uid, grant_id, link_hash, grant: GrantMeta)` built from the admission read.
 
@@ -954,12 +963,14 @@ Ladder tool `inputSchema` (identical for the three; 01 section 7):
 
 | Name | Title | Description (exact) |
 |---|---|---|
-| `sieve_answer` | Ask Sieve for an answer | Ask about the person's own email, files or photos and get a one-sentence answer written on their computer. Sieve shares only that sentence, and only after the person approves. Use this first: it shares the least. Send a clear, self-contained question, and put dates, the sender and exact identifiers in the optional fields. The person usually needs a minute or more, so the result is often "pending": then tell the person a request is waiting in Sieve and ask them to approve it there, and poll with sieve_check, which waits about 20 seconds per call. At most 3 requests can wait per connection; wait for sieve_check before asking more. If a call fails or times out, call again with the same arguments within 10 minutes: Sieve returns the existing request and its result instead of making a new one. Other results: answered (text is the approved answer), declined, blocked (that kind of item is never shared), no-match, unsupported (Sieve cannot answer that kind of question, such as a count; the message says why), offline (Sieve is closed on the person's computer), expired, not-allowed, error. |
+| `sieve_answer` | Ask Sieve for an answer | Ask about the person's own email, files or photos and get a one-sentence answer written on their computer. Sieve shares only that sentence, and only after the person approves. Use this first: it shares the least. Send a clear, self-contained question, and put dates, the sender and exact identifiers in the optional fields. The person usually needs a minute or more, so the result is often "pending": then tell the person a request is waiting in Sieve and ask them to approve it there, and poll with sieve_check, which waits about 20 seconds per call. At most 3 requests can wait per connection; wait for sieve_check before asking more. A connection may make 80 calls per 10 minutes, and each sieve_check counts as half a call; past that, the result says how many seconds to wait, at most 10. If a call fails or times out, call again with the same arguments within 10 minutes: Sieve returns the existing request and its result instead of making a new one. Other results: answered (text is the approved answer), declined, blocked (that kind of item is never shared), no-match, unsupported (Sieve cannot answer that kind of question, such as a count; the message says why), offline (Sieve is closed on the person's computer), expired, not-allowed, error. |
 | `sieve_excerpt` | Ask Sieve for the exact lines | Same as sieve_answer, but shares the lines from the item that hold the answer, with personal details masked. Use only when the one-sentence answer is not enough, for example when you need the exact wording. The person approves first and may choose to share less. If the result is "pending", ask the person to approve in Sieve, then poll with sieve_check, which waits about 20 seconds per call. |
 | `sieve_full_item` | Ask Sieve for the whole item | Same as sieve_answer, but shares the whole item (an email, a document, or a photo's description) as text, with personal details masked. Use only when the task truly needs the full item; ask for less when you can. The person approves first and may choose to share less. If the result is "pending", ask the person to approve in Sieve, then poll with sieve_check, which waits about 20 seconds per call. |
 | `sieve_check` | Get a pending Sieve result | Get the result of an earlier Sieve request whose status was "pending". Pass its request_id. If the person has not decided yet, this waits about 20 seconds and returns "pending" again: remind the person to approve in Sieve and call it again. Each answer is delivered once; after "answered", that request is finished. A request_id Sieve does not know for this connection returns "unknown". |
 
 At the `answer` cap the `sieve_answer` description drops "Use this first: it shares the least. " (it implies other ladder tools); everything else is the same.
+
+The rate-limit sentence ("A connection may make 80 calls per 10 minutes, ...") is built from `RATE_LIMIT_CALLS`, `RATE_LIMIT_WINDOW_SECONDS`, `CHECK_CALL_WEIGHT` and `ratelimit.max_stated_wait()` (section 11), so it always states the limit in force and the longest wait a refused call can be told.
 
 `sieve_check` `inputSchema`:
 
@@ -1012,7 +1023,7 @@ Copy (one sentence each, final). `{id}` is the request id, `{tools}` the allowed
 | Ratchet `REVOKED` | not-allowed | no | The person turned off this connection in Sieve. |
 | Ratchet `CAVEAT_NOT_SATISFIED` | not-allowed | no | This connection only allows {tools}. Use {top} instead. |
 | Ratchet `NOT_BOUND`, `INVALID_SIGNATURE`, `MALFORMED`, `INTERNAL_ERROR`, other | error | no | Sieve could not check this connection. Ask the person to reconnect this AI in Sieve Settings. |
-| Rate limited | error | no | Too many requests from this connection. Wait a minute, then try again. |
+| Rate limited | error | no | Too many requests from this connection. Wait about {n} seconds, then try again. (`{n}` is the real wait from the bucket, rounded up to a multiple of 5 seconds, section 11; with the values in section 3 it is 5 or 10.) |
 | Open-request limit | error | no | At most 3 requests can wait per connection, and 3 are waiting now: "{id1}", "{id2}", "{id3}". Call sieve_check on those first, then ask again. (The ids are this grant's waiting requests, so an assistant that lost an id can still check it.) |
 | Bad argument | error | no | the `ArgError` message from 8.7 |
 | Internal failure in relay | error | no | Sieve had a problem with this request. Try again in a minute. |
@@ -1324,31 +1335,79 @@ It never carries the question, the assistant name or any content. No push is sen
 
 ```python
 @dataclass(frozen=True)
+class Bucket:
+    used: float = 0.0                  # rateUsed: call units counted, as of `at`
+    refunds: float = 0.0               # rateRefunds: refused calls given back, as of `at`
+    at: datetime | None = None         # rateAt; None reads as an empty bucket
+    @classmethod
+    def from_doc(cls, doc) -> "Bucket"  # bad or missing values read as 0; used is capped at RATE_LIMIT_CALLS
+    def to_doc(self) -> dict            # {"rateUsed", "rateRefunds", "rateAt"}
+    def drained(self, now) -> "Bucket"  # straight-line drain to now; a rateAt later than now drains nothing
+
+def call_weight(tool_name: str) -> float                  # CHECK_CALL_WEIGHT for sieve_check, else 1.0
+def take(bucket, weight, now) -> tuple[Bucket, float]     # (bucket after, seconds to wait); 0 means counted
+def give_back(bucket, weight, now) -> Bucket | None       # None once the free refusals are used up
+def stated_wait(seconds: float) -> int                    # rounded up to a multiple of 5, at least 5
+def max_stated_wait() -> int                              # stated_wait of one call's drain time: 10
+
+@dataclass(frozen=True)
 class Admission:
     allowed: bool
     connector: dict
     grant: GrantMeta | None
-    retry_after_seconds: int
+    retry_after_seconds: int           # 0 when allowed, else stated_wait(wait)
+    weight: float = 1.0
 
-@firestore.transactional
-def _admit_txn(txn, connector_ref, db, now: datetime) -> Admission | None
-def admit(db, link_hash: str, now: datetime) -> Admission | None
+def _admit_txn(txn, connector_ref, db, now: datetime, weight: float) -> Admission | None
+def admit(db, link_hash: str, now: datetime, weight: float = 1.0) -> Admission | None
+def refund(db, link_hash: str, weight: float, now: datetime) -> bool
 ```
 
-`_admit_txn` steps: read `connectors/{linkHash}` (missing returns None); read `users/{uid}/grants/{grantId}` (missing gives `grant=None`, treated as revoked by the caller). Fixed window: if `rateWindowStart` is missing or older than `RATE_LIMIT_WINDOW_SECONDS`, set `rateWindowStart = now`, `rateCount = 1`; else `rateCount += 1`. `allowed = rateCount <= RATE_LIMIT_CALLS`; `retry_after_seconds` is the time left in the window. Update the grant's `lastUsedAt = now` only if it is missing or older than 60 s (limits writes to the grant doc). The returned `connector` dict is the snapshot read in this transaction; it feeds `ConnectorRevocationStore`.
+**The bucket.** Each connection (one connector doc per grant) has one leaky bucket in `rateUsed`, `rateRefunds` and `rateAt`. It drains at `RATE_LIMIT_CALLS` per `RATE_LIMIT_WINDOW_SECONDS`, 80 per 10 minutes, which is one call every 7.5 seconds, and it holds at most `RATE_LIMIT_CALLS`. A counted call adds its weight: a `sieve_check` poll adds `CHECK_CALL_WEIGHT` (half a call), any other `tools/call` adds 1. A call is admitted when the drained level plus its weight is at most `RATE_LIMIT_CALLS`. A call that would overflow the bucket is refused and adds nothing, so retrying while limited never pushes the wait further out.
+
+`_admit_txn` steps: read `connectors/{linkHash}` (missing returns None); read `users/{uid}/grants/{grantId}` (missing gives `grant=None`, treated as revoked by the caller); `take(Bucket.from_doc(connector), weight, now)`. Admitted: write `rateUsed`, `rateRefunds` and `rateAt` (the drained values plus the weight). Refused: write nothing to the connector. Update the grant's `lastUsedAt = now` only if it is missing or older than 60 s (limits writes to the grant doc). The returned `connector` dict is the snapshot read in this transaction; it feeds `ConnectorRevocationStore`. `admit` and `refund` take the same process-local lock (`fb.transact(lock_key="connectors/<linkHash>")`), and the transaction guards against other instances.
+
+**The wait.** A refused call's wait is exact: `(level + weight - RATE_LIMIT_CALLS) / drain rate`, the time the bucket needs to drain enough for that call if nothing else arrives. The copy rounds it up to a multiple of `RATE_LIMIT_WAIT_STEP_SECONDS`, never below 5: "Too many requests from this connection. Wait about {n} seconds, then try again." Because the bucket never holds more than `RATE_LIMIT_CALLS`, a refused call needs at most its own weight of draining: 7.5 s for a question (stated as 10) and 3.75 s for a poll (stated as 5). The `sieve_answer` description states the limit and that longest wait in one sentence (8.5). Before Nov 20 a fixed 10-minute window said "Wait a minute" whatever was left of the window; in a real Claude session it stayed blocked for about 4 minutes after that message.
+
+**Refused calls do not count.** Calls Sieve turns away before doing any work for them are given back. Their results carry `ToolResult.refused` (never on the wire), and `call_tool` calls `refund()` for them (8.4 step 8), which takes the call's weight out of the drained level (never below 0) and adds 1 to `rateRefunds`.
+
+| Refused call | Result | How it is not counted |
+|---|---|---|
+| Rate limited | `error`, rate-limit copy with the wait | admission writes nothing |
+| Open-request limit (3 waiting) | `error`, open-request copy | given back |
+| Unknown or foreign request id | `unknown` | given back |
+| Bad arguments (`ArgError`, 8.7) | `error`, the argument copy | given back |
+| `idempotency_key` reused for another question | `error`, key-reused copy | given back |
+
+Authorization denials (revoked, expired, a tool above the cap) and unknown tool names still count: they come from a broken or misused connection, each writes an audit entry, and the copy tells the assistant to stop rather than retry. `rateRefunds` drains at `RATE_LIMIT_FREE_REFUSALS` (30) per window. Once 30 refused calls have been given back within that drain, further refused calls stay counted, so a client stuck in a loop of bad calls, each of which writes an audit entry, still meets the limit: at most 30 free and 80 counted calls per 10 minutes.
+
+**Budget arithmetic.** The budget is set so the heaviest normal use never meets it: 3 pending requests (the open-request limit), each polled every 20 seconds for 10 minutes, plus 20 new questions in the same 10 minutes.
+
+| Part of the use | Calls in 10 min | Weight | Call units |
+|---|---|---|---|
+| Polls: 3 requests x (600 s / 20 s) | 90 | 0.5 | 45 |
+| New questions | 20 | 1 | 20 |
+| Total | 110 | | 65 |
+
+- 65 units is below the 80 the bucket drains per window, with 15 units (about a fifth) to spare, so this use can go on for any number of windows.
+- Bursts fit too. The most this use adds in a short span is 20 questions sent at once plus one poll per pending request, 21.5 units; the bucket holds 80, and it drains faster (0.133 units per second) than the polls fill it (0.075).
+- Polling alone cannot reach the limit: one pending request polled every 20 seconds is 15 units per 10 minutes, and three are 45.
+- The old limit (30 calls per 10 minutes, polls at full weight) puts the same use at 110 calls, over three times the limit; one assistant polling one request already used all 30.
+
+U18 runs this use through `take` for an hour, with the questions at the worst place (all at the start of each window), and checks that nothing is refused and that the bucket never holds more than 21.5 units. It also checks that the old limit refuses the same use.
 
 Limits in force:
 
 | Limit | Value | Result |
 |---|---|---|
-| tools/call per grant | 30 per 10 min | `error`, rate-limit copy |
+| tools/call per connection | 80 call units per 10 min, leaky bucket; `sieve_check` counts half; refused calls given back, up to 30 per 10 min | `error`, rate-limit copy with the wait (5 or 10 s) |
 | Open requests per grant | 3 (stated in the `sieve_answer` description and the instructions) | `error`, open-request copy listing the waiting ids |
 | Request body | 16 KB | HTTP 413 |
 | Question | 1 to 500 chars | `error`, bad-question copy |
 | Active grants per user | 10 | callable RESOURCE_EXHAUSTED |
 | Function instances | `max_instances=10`, `concurrency=20` | Cloud Run queues beyond that |
 
-An assistant polling `sieve_check` back to back uses at most about 30 calls per 10 minutes, because each check waits up to 20 s. That is the limit itself: one assistant polling one request sequentially stays just under it, but a second parallel poller or a long wait plus new questions can reach it. Watch `tool_call` logs with `reason RATE_LIMITED`; raising `RATE_LIMIT_CALLS` to 60 restores the old headroom if it shows up.
+Watch `tool_call` logs with `reason RATE_LIMITED`. Connectors created before Nov 20 still carry the old `rateWindowStart` and `rateCount`; they are ignored, and a connector without `rateAt` starts with an empty bucket.
 
 ## 12. Expiry and cleanup (`sieve/cleanup.py`)
 
@@ -1465,7 +1524,7 @@ def log_exception(event: str, exc: BaseException) -> None
 | `grant_issued` / `grant_narrowed` / `grant_revoked` | grant, user, step, days |
 | `push_sent` | count, failed |
 | `cleanup_run` | the four counts |
-| `audit_append_failed`, `presence_error`, `listener_error`, `receipt_missing`, `account_deleted` | grant or user, reason |
+| `audit_append_failed`, `presence_error`, `listener_error`, `receipt_missing`, `rate_refund_error`, `account_deleted` | grant or user, reason |
 
 Never logged: the question, the hints (`after`, `before`, `source`, `from`, `terms`), payload text, `message` text, link secrets, link hashes, tokens, FCM tokens, raw uids, IP addresses.
 
@@ -1850,6 +1909,7 @@ All tests use pytest except the rules tests (17.5). Shared fixtures (`tests/conf
 | U9b | `handle_ladder_tool` and `handle_check` end to end with a fake clock (every read costs 1 s) | the ladder tool returns `pending` with the `request_id` by about 15 s, `sieve_check` by about 20 s, both under 25 s; `RELAY_WAIT_SECONDS` 6 shortens both |
 | U16 | `request_key` / `pick_reusable` | derived key equal across case and spaces, different per grant, tool, question and hints; a client key ignores the question and is never stored raw; reuse sets per 9.4; 10 minute window; newest match wins |
 | U17 | copy and step-aware text | `unknown` and `unsupported` results (message passed through); the open-limit text states the limit and lists the ids; the descriptions carry the 20 s poll, the limit and the retry sentence; at each cap the instructions, `tools/list` and the step-cap message name only allowed tools; `idempotency_key` rules; no em dashes or double dashes in any copy |
+| U18 | `test_ratelimit_unit.py`: `take`, `give_back`, `stated_wait`, and `call_tool` with an in-memory bucket | waits round up to multiples of 5 and the call goes through after the stated wait (10 s for a question, 5 s for a poll at a full bucket); the copy says "Wait about {n} seconds" and never "minute"; the `sieve_answer` description has the one rate sentence at every cap; 160 polls or 80 questions fit at once; one poll every 20 s for 3 hours never passes 0.5 units; a refused call adds nothing; 30 free refusals per window; bad or old connector fields read as an empty bucket; the budget arithmetic (90 polls, 65 units, under 80) and an hour of that use with nothing refused and a peak of 21.5, while the old 30 refuses it; through `call_tool`, unknown ids, bad arguments, the open-request limit and a reused key are given back, pending and step-cap results count, and a rate-limited call states its wait and is not counted |
 | U10 | `tools_for_step` | answer gives `sieve_answer`, `sieve_check`; full gives all four in fixed order; version 2025-03-26 omits `outputSchema`, `annotations`, `title` |
 | U11 | `result_for_denial` for each reason code | statuses and copy as in 8.6; `is_error` true only for `not-allowed` and `error` |
 | U12 | `logs.log_event` with a `question=` field (capsys) | key dropped, value never printed |
@@ -1869,7 +1929,8 @@ All tests use pytest except the rules tests (17.5). Shared fixtures (`tests/conf
 | E6 Step cap | grant `maxStep answer` | `sieve_excerpt` gives `CAVEAT_NOT_SATISFIED`; `sieve_check` OK |
 | E7 Narrow | full grant with one queued `sieve_excerpt` request and one queued `sieve_answer` request; narrow to answer | token attenuated (chain length 2); excerpt request `revoked`; answer request `maxStep answer`; `sieve_full_item` denied; audit has `GRANT_NARROWED` |
 | E8 No widening | narrow answer to full, or a category not in the grant, or later expiry | `InputError`; nothing written |
-| E9 Admission | 31 `admit` calls in one window | 31st `allowed False`; after moving `rateWindowStart` back 11 min, allowed again |
+| E9 Admission bucket | 81 `admit` calls at one instant | new connector has `rateUsed 0`, `rateRefunds 0`; the 81st `allowed False` with `retry_after_seconds 10` and `rateUsed` still 80; a half-weight call is refused with 5; `refund` gives one call back; 7.5 s later a call is allowed; missing connector gives None and `refund` False |
+| E9b Free refusals | 30 admit-then-refund pairs at one instant, then one more; then a doc with only the old `rateWindowStart`, `rateCount` | 30 refunds given back (`rateUsed 0`); the 31st is not (`rateUsed 1`); the old doc starts empty |
 | E10 Cleanup | requests: queued created 121 min ago; answered 61 min ago with receipt; claimed 30 min ago; connectors expired 8 days ago and 2 days ago | first two `expired` (payload gone, receipt `expired`); claimed untouched; only the 8-day connector deleted |
 | E11 Collect once | answered request; two threads call `collect_answer` | exactly one `delivered` |
 | E12 Payload above cap | answered request whose `response.step` is `full` with grant `maxStep` excerpt (written by admin) | not delivered; status `error` |
@@ -1895,13 +1956,15 @@ All tests use pytest except the rules tests (17.5). Shared fixtures (`tests/conf
 | H9 Unknown link | random valid-format secret; then `/mcp/abc` | any POST | 404 both |
 | H10 Declined | `HomeBaseSim decline("The person chose not to share this.")` | `sieve_answer` | `declined` with that message; receipt `declined` untouched by functions |
 | H11 Parallel calls | `HomeBaseSim answer(delay=1)` | 3 parallel `sieve_answer` (the open-request limit) | all `answered`; `getAuditStatus` returns `intact true` with every entry present |
-| H12 Open-request limit | `HomeBaseSim never()` | 4 sequential `sieve_answer` | first three `pending`, fourth `error` with the open-request copy listing the three ids |
+| H12 Open-request limit | `HomeBaseSim never()` | 4 sequential `sieve_answer` | first three `pending`, fourth `error` with the open-request copy listing the three ids; the fourth is given back (`rateRefunds` about 1) |
 | H13 Modern header mismatch | | modern `tools/call` with `Mcp-Name: other` | HTTP 400, -32020 |
 | H14 Unknown tool | | `tools/call delete_everything` | JSON-RPC -32602 "Unknown tool"; audit DENY `CAVEAT_NOT_SATISFIED` for that name |
 | H15 Callable guards | anonymous user (Auth emulator `signUp` with no email) | `issueGrant` | PERMISSION_DENIED; no ID token gives UNAUTHENTICATED |
 | H16 deleteAccount | user with a grant | `deleteAccount` | connector deleted; Auth user gone; a later `sieve_answer` on the link gives 404 |
 | H17 Hints | as H1 with `HomeBaseSim never()` | `sieve_answer` with the 8.3 example arguments; then `sieve_answer` with `after "2026-02-30"` | first: request doc `hints == {after: "2026-10-01", before: "2026-10-31", from: "landlord"}`, `question` as sent; second: `error`, `isError true`, message "after must be a real date written as YYYY-MM-DD, for example 2026-10-01.", no new request doc, audit still has an ALLOW entry for the call |
 | H18 Instructions | full grant, then an answer grant | legacy `initialize`; modern `server/discover` | both `instructions` equal the 8.3 text for the grant's cap with today's UTC date substituted; at `answer` neither `sieve_excerpt` nor `sieve_full_item` appears |
+| H19 Refused calls (R-MCP-08) | home base offline; bucket seeded at 78 | 6 `sieve_check` with unknown ids, 3 `sieve_answer` with a bad date, then one good `sieve_answer` | all refused calls answered (`unknown`, `error`); `rateUsed` never above 78 and `rateRefunds` about 9; the good call (`offline`) is counted |
+| H20 Rate limit wait (R-MCP-08) | home base offline; bucket seeded full (80) | `sieve_check`; reseed; `sieve_answer`; sleep the stated wait; `sieve_answer` | the check says "Wait about 5 seconds"; the answer says 5 or 10 seconds and leaves `rateUsed` at 80; after the stated wait the call goes through (`offline`), one request doc |
 
 ### 17.4 Logging checks
 
@@ -1976,3 +2039,7 @@ WP6 is done when all of these hold:
    - The Playground cloud assistant (`web/src/ai/cloudAssistant.ts`): its `STATUSES` set must accept `unknown` and `unsupported` (an unknown status is a `bad-reply` today); `ASSISTANT_MAX_CHECKS = 3` was sized for 45 s checks and now covers only about 75 s of waiting, so raise it to about 9; `MCP_CALL_TIMEOUT_MS` can drop to about 30 s.
    - `shared/src/constants.ts` `RELAY_WAIT_SECONDS = 45` stays as a mirror; its comment should say the server waits 15 s (ladder) and 20 s (check).
 
+9. **Rate limit as a leaky bucket** (Nov 20; the functions side is built and deployed). Needed outside functions:
+   - 01 section 3, row `connectors/{linkHash}`: replace `rateWindowStart?, rateCount` with `rateUsed: number, rateRefunds: number, rateAt?` (section 11). Clients never read connectors, so nothing else changes; old connectors keep the two old fields, which functions ignore.
+   - 70 R-MCP-08: "Handle" becomes "80 call units per 10 minutes per connection in a leaky bucket, `sieve_check` at half weight, refused calls given back (up to 30 per 10 minutes), 3 open requests, 16 KB bodies, 10 function instances". "Test" becomes "a full bucket refuses a question with 'Wait about 10 seconds' and a poll with 'Wait about 5 seconds', and the call goes through after the stated wait (H20); refused calls are given back (H19); a fourth open request returns the open-request copy (H12)". `docs/review/robustness-audit.md` R-MCP-08 points at `ratelimit.py:24`, which moved.
+   - The Playground cloud assistant (`web/src/ai/cloudAssistant.ts`) needs no change: a rate-limited result is still `error` with a message, and it now says how many seconds to wait.

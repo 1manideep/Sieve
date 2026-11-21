@@ -4,7 +4,7 @@
 // without the nav, as before. On wide screens "Hide menu" at the top of the rail hides it and the content takes the
 // full width; "Show menu" at the top left of the content brings it back. The choice is kept per device.
 import { useEffect, useId, useRef, useState } from 'react';
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { AccountMenu } from '@/components/AccountMenu/AccountMenu';
 import { Icon } from '@/components/icons';
 import { Logo } from '@/components/Logo/Logo';
@@ -12,6 +12,7 @@ import { MainNav } from '@/components/MainNav/MainNav';
 import { OfflineBanner } from '@/components/OfflineBanner/OfflineBanner';
 import { StatusStrip } from '@/components/StatusStrip/StatusStrip';
 import { NAV } from '@/copy/strings';
+import { useSession } from '@/state/session';
 import styles from './MainLayout.module.css';
 
 /** localStorage: 'hidden' or 'shown', the rail on wide screens for this device. */
@@ -33,7 +34,27 @@ function writeRailHidden(hidden: boolean): void {
   }
 }
 
+/**
+ * The guard runs only when a route loads: when the Google session ends while a signed-in screen is open (sign-out or
+ * Delete my account here, or in another tab), the page leaves for the landing at once.
+ */
+function useLeaveWhenSignedOut(): void {
+  const kind = useSession((s) => s.kind);
+  const navigate = useNavigate();
+  const wasGoogle = useRef(kind === 'google');
+  useEffect(() => {
+    if (kind === 'google') {
+      wasGoogle.current = true;
+      return;
+    }
+    if (!wasGoogle.current) return;
+    wasGoogle.current = false;
+    navigate('/', { replace: true });
+  }, [kind, navigate]);
+}
+
 export function MainLayout() {
+  useLeaveWhenSignedOut();
   const { pathname } = useLocation();
   const setup = pathname === '/setup';
   // The phone menu remembers the path it was opened on, so it closes by itself when the route changes.

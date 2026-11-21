@@ -440,11 +440,12 @@ describe('prepareProposal (10 section 16.10)', () => {
     expect(p.related.map((c) => c.recordId)).toEqual(['playground:pets']);
   });
 
-  it('a model error ends with error, the trace keeps the failed step', async () => {
+  it('a model that gives no usable answer after its retry ends as unsupported, one fact at a time (Nov 21, B04, B14); the trace keeps the failed step', async () => {
     idx.search.mockResolvedValue([idx.cand('playground:deposit')]);
     setHybridForTests(createFakeHybrid(() => ({ text: 'not json', source: 'on_device' })));
     const p = await run();
-    expect(p.outcome).toBe('error');
+    expect(p.outcome).toBe('unsupported');
+    expect(p.options.every((o) => !o.available && o.unavailableReason === 'Sieve shares one fact at a time at this level.')).toBe(true);
     expect(p.trace.find((s) => s.kind === 'select')?.label).toBe('Reading and answering failed: The model gave no usable answer.');
   });
 

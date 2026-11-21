@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '@/test/axe';
 import { isBlankQuestion, QuestionInput } from './QuestionInput';
 
-function Harness({ onSubmit, initial = '' }: { onSubmit(q: string): void; initial?: string }) {
+function Harness({ onSubmit, initial = '', disabled }: { onSubmit(q: string): void; initial?: string; disabled?: boolean }) {
   const [value, setValue] = useState(initial);
   return (
     <main>
@@ -15,6 +15,7 @@ function Harness({ onSubmit, initial = '' }: { onSubmit(q: string): void; initia
         value={value}
         onChange={setValue}
         onSubmit={onSubmit}
+        disabled={disabled}
         button={<button type="submit">Find on this device</button>}
       />
       <button type="button">Elsewhere</button>
@@ -23,6 +24,14 @@ function Harness({ onSubmit, initial = '' }: { onSubmit(q: string): void; initia
 }
 
 describe('QuestionInput', () => {
+  it('disabled (an approval or a draft is running): no typing and no submit', async () => {
+    const onSubmit = vi.fn();
+    render(<Harness onSubmit={onSubmit} initial="next question" disabled />);
+    expect(screen.getByLabelText('What are you looking for?')).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Find on this device' }));
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it('has a visible label, maxLength 500, and Enter submits', async () => {
     const onSubmit = vi.fn();
     render(<Harness onSubmit={onSubmit} />);

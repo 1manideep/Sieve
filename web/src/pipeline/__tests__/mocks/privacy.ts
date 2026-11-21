@@ -4,6 +4,7 @@ import { vi } from 'vitest';
 import type { DataClass, IndexRecord, KnownEntity, LadderStep, StepOption, TraceStep, Warning } from '@sieve/shared';
 
 export { holdsSecretCode } from '@/privacy/pii/validators/secretCode';
+export { itemTouchesSensitiveTopic, touchesSensitiveTopic } from '@/privacy/sensitive';
 
 type Parts = { answer?: string; excerpt?: string; full?: string };
 

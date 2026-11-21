@@ -7,7 +7,7 @@ import { getMl } from '../ml/client';
 import type { EmbedInput, EmbedOutput } from '../ml/protocol';
 import { BOOST, GMAIL_LIVE_K, MAX_PER_THREAD } from './config';
 import { repairOrphanHit } from './consistency';
-import { asksLatest, isRoleCue, senderMatches } from './cues';
+import { asksLatest, isRoleCue, knownSenderWordsOf, senderMatches } from './cues';
 import { clockFor, type SieveDb } from './db';
 import { iso } from './dates';
 import { getRecord } from './ingest';
@@ -32,7 +32,7 @@ export interface SearchReport {
 }
 
 /** Hard filters (20 section 10.2): an item that fails one never becomes a candidate. */
-export interface HardFilter { sender?: string; after?: string; before?: string }
+export interface HardFilter { sender?: string; after?: string; before?: string; source?: QueryHints['source'] }
 
 export interface SearchOptions {
   k?: number; sources?: SourceKind[]; categories?: Category[]; hints?: QueryHints;
@@ -82,21 +82,30 @@ function inRange(day: string, hints: Pick<QueryHints, 'after' | 'before'>): bool
 }
 
 /**
- * The request's `from` (unless it is a role such as "my landlord") or the sender the question names, and the dates
- * (from the request or the question). Photos have no sender, so a sender never filters a photo question.
+ * The request's `from` (unless it is a role such as "my landlord") or the sender the question names, the dates (from
+ * the request or the question), and the source (the request's `source`, or "local files only", "in my mail" in the
+ * question; a lone word such as "pdf" stays a boost). Photos have no sender, so a sender never filters a photo question.
  */
-export function hardFilterOf(p: Pick<ParsedQuestion, 'sender'>, explicit: QueryHints | undefined, merged: QueryHints): HardFilter {
+export function hardFilterOf(p: Pick<ParsedQuestion, 'sender' | 'only'>, explicit: QueryHints | undefined, merged: QueryHints): HardFilter {
   const out: HardFilter = {};
   const asked = explicit?.from?.trim();
   const sender = asked && !isRoleCue(asked) ? asked : p.sender;
   if (sender && merged.source !== 'photos') out.sender = sender;
   if (merged.after) out.after = merged.after;
   if (merged.before) out.before = merged.before;
+  const source = explicit?.source ?? p.only;
+  if (source) out.source = source;
   return out;
 }
 
+/** The kinds a source filter lets through: mail is email, photos are photos, files are documents and notes. */
+export function kindFits(source: NonNullable<QueryHints['source']>, kind: ItemKind | undefined): boolean {
+  return source === 'mail' ? kind === 'email' : source === 'photos' ? kind === 'photo' : kind === 'document' || kind === 'note';
+}
+
 /** The sender fits, and the item's own day or a day it mentions falls inside the dates ("the flight on Dec 4"). */
-export function passesFilter(f: HardFilter, r: { from?: string; date: number; mentionedDays?: string[] }): boolean {
+export function passesFilter(f: HardFilter, r: { from?: string; date: number; mentionedDays?: string[]; kind?: ItemKind }): boolean {
+  if (f.source && !kindFits(f.source, r.kind)) return false;
   if (f.sender && !senderMatches(f.sender, r.from)) return false;
   if ((f.after || f.before) && !inRange(iso(new Date(r.date)), f) && !(r.mentionedDays ?? []).some((d) => inRange(d, f))) return false;
   return true;
@@ -169,7 +178,9 @@ export async function search(db: SieveDb, question: string, opts: SearchOptions 
   if (filtered) report.filters = filter;
 
   // live Gmail search starts now and is merged at the end (20 section 10.5)
-  const gmailRow = db.sieveKind === 'real' && opts.live !== false && (!opts.sources || opts.sources.includes('gmail')) ? await db.sources.get('gmail') : undefined;
+  // a question limited to files or photos never asks Gmail (nothing it finds could pass)
+  const liveAllowed = opts.live !== false && (!filter.source || filter.source === 'mail') && (!opts.sources || opts.sources.includes('gmail'));
+  const gmailRow = db.sieveKind === 'real' && liveAllowed ? await db.sources.get('gmail') : undefined;
   let livePromise: Promise<{ ids: string[]; report: NonNullable<SearchReport['live']> }> | null = null;
   if (gmailRow?.connected) {
     const live = await import('../sources/gmail/liveSearch');
@@ -335,6 +346,11 @@ export async function search(db: SieveDb, question: string, opts: SearchOptions 
   });
   opts.onReport?.(report);
   return candidates;
+}
+
+/** The words that name a sender in this index (cues.ts), for the privacy pipeline's ID-number rule (11 section 5.6). */
+export function knownSendersOf(db: SieveDb): Set<string> {
+  return knownSenderWordsOf(getRuntime(db).meta);
 }
 
 /** Same contentHash, other ids: 40's "also in old/" line (01 invariant 3). */

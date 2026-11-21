@@ -153,6 +153,23 @@ describe('the client', () => {
   });
 });
 
+describe('the client on a long-lived signal', () => {
+  it('removes its abort listener when a run settles', async () => {
+    const w = new FakeWorker((self, msg) => {
+      if (msg.kind === 'init') self.reply({ kind: 'ready', task: msg.task, device: 'wasm', loadMs: 1 });
+      if (msg.kind === 'run') self.reply({ kind: 'result', id: msg.id, output: { ok: true } } as FromMl);
+    });
+    const client = createWorkerMlClient(() => w);
+    await client.warmup('embed');
+    const ac = new AbortController();
+    const add = vi.spyOn(ac.signal, 'addEventListener');
+    const remove = vi.spyOn(ac.signal, 'removeEventListener');
+    for (let i = 0; i < 5; i++) await client.run('embed', { texts: [] }, { signal: ac.signal });
+    expect(add).toHaveBeenCalledTimes(5);
+    expect(remove).toHaveBeenCalledTimes(5);
+  });
+});
+
 describe('the embedder probe (20 section 6.4)', () => {
   const vec = (...xs: number[]) => {
     const v = new Float32Array(384);

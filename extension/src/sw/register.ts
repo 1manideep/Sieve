@@ -1,16 +1,16 @@
 // Wires chrome events to the hub (50 sections 7.1 to 7.4, 8.9 and 9). The only worker file that touches chrome.*;
 // it takes the API object as a parameter so unit tests pass a fake. Every listener is added synchronously.
 // The panel page opens as the toolbar popup (manifest action.default_popup); the side panel stays as a second
-// surface ("Keep open on the side"). The shortcut and a notification click open the popup with
-// chrome.action.openPopup() (Chrome 127+) and fall back to the side panel when it is missing or rejects. A new
-// request opens the popup by itself when the setting allows (arrival.ts); that path has no gesture, so it never
-// falls back to the side panel, only to the notification.
+// surface ("Keep open on the side"). The shortcut and a notification click choose, synchronously and inside the
+// gesture, between chrome.action.openPopup() (Chrome 127+, a Chrome window has focus) and sidePanel.open() (no
+// Chrome window has focus, or no openPopup). Chrome accepts sidePanel.open() only inside the gesture, so it is
+// never called from a promise callback. A new request opens the popup by itself when the setting allows
+// (arrival.ts); that path has no gesture, so it never opens the side panel, only the notification.
 import { HOME_BASE_PORT_NAME, MESSAGE_VERSION } from '@sieve/shared';
-import type { ExtensionToPage } from '@sieve/shared';
 import { ALLOWED_ORIGINS, BUILD_MODE } from '../shared/env';
 import { COMMAND_OPEN_SIEVE, PANEL_PORT_NAME } from '../shared/internal';
-import type { PanelState, Surface, WorkerToPanel } from '../shared/internal';
-import { parsePageMessage, parsePanelMessage } from '../shared/validate';
+import type { PanelState, Surface, ToPage, WorkerToPanel } from '../shared/internal';
+import { parsePanelMessage, readPageMessage } from '../shared/validate';
 import { BADGE_COLOR, BADGE_TEXT_COLOR, badgeFor } from './badge';
 import { canOpenPopup, createArrivalOpener } from './arrival';
 import { openApp } from './focus';
@@ -65,6 +65,9 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
   const panels = new Map<chrome.runtime.Port, PanelInfo>();
   const helloTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const slowTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  // The Chrome window with focus: a window id, null when none has (the person is in another app), undefined until
+  // Chrome first reports a change after this worker started. Kept so the open paths can choose without awaiting.
+  let focusedWindow: number | null | undefined;
 
   // 1 and 2 (50 section 7.1). A click on the icon opens the popup: the side panel must not take the click, and
   // Chrome keeps this setting across restarts, so installs that had it on get it turned off here.
@@ -82,7 +85,7 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
     }
   }
 
-  function postTo(connId: string, msg: ExtensionToPage): void {
+  function postTo(connId: string, msg: ToPage): void {
     const port = ports.get(connId);
     if (port) safePost(port, msg);
   }
@@ -169,13 +172,19 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
 
   function onPageMessage(connId: string, raw: unknown): void {
     if (!ports.has(connId)) return;
-    const msg = parsePageMessage(raw);
-    if (!msg) {
+    const read = readPageMessage(raw);
+    if (read.kind === 'invalid') {
       const count = hub.invalid(connId);
       debug(`invalid message ${count}/${MAX_INVALID}`);
       if (count >= MAX_INVALID) drop(connId);
       return;
     }
+    if (read.kind === 'unknown') {
+      debug('message of a newer page ignored'); // a type or value this build does not know: never counted
+      return;
+    }
+    const msg = read.msg;
+    if (read.skipped > 0) debug(`pending: ${read.skipped} proposals skipped`);
     if (!hub.isReady(connId) && msg.type !== 'sieve/hello') return;
     switch (msg.type) {
       case 'sieve/hello': {
@@ -189,8 +198,9 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
         return;
       }
       case 'sieve/pending': {
-        const { added, removed } = hub.setPending(connId, msg.proposals);
+        const { added, removed, changed } = hub.setPending(connId, msg.proposals);
         for (const id of removed) notifier.clear(id);
+        for (const id of changed) clearSlow(id);
         const fresh = added
           .map((id) => hub.find(id))
           .filter((p): p is NonNullable<typeof p> => p !== undefined && isActionable(p) && !hub.isInflight(p.requestId));
@@ -198,6 +208,10 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
         void notifier.onAdded(fresh, { panelVisible: anyPanelVisible, open: () => arrival.open(), stillWaiting });
         debug(`pending ${msg.proposals.length}, ${added.length} added, ${removed.length} removed`);
         update();
+        // An approval in flight whose text changed: the page refuses it, so ask the panel to check the new text.
+        for (const id of changed) {
+          for (const port of panels.keys()) safePost(port, { type: 'panel/decide-rejected', requestId: id, reason: 'changed' } satisfies WorkerToPanel);
+        }
         return;
       }
       case 'sieve/resolved': {
@@ -274,12 +288,18 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
       case 'panel/ping':
         return; // keeps the worker alive while the person is looking
       case 'panel/decide': {
-        const r = hub.decide(msg.requestId, msg.approved, msg.step);
+        const r = hub.decide(msg.requestId, msg.approved, msg.step, msg.textHash);
         if (!r.ok) {
           safePost(port, { type: 'panel/decide-rejected', requestId: msg.requestId, reason: r.reason } satisfies WorkerToPanel);
           return;
         }
-        postTo(r.connId, { type: 'sieve/decision', version: MESSAGE_VERSION, decision: r.decision });
+        // The hash of the text the person approved goes back with it; the page refuses it if its text changed.
+        postTo(r.connId, {
+          type: 'sieve/decision',
+          version: MESSAGE_VERSION,
+          decision: r.decision,
+          ...(r.textHash !== undefined ? { textHash: r.textHash } : {}),
+        });
         notifier.clear(msg.requestId);
         clearSlow(msg.requestId);
         const requestId = msg.requestId;
@@ -332,9 +352,30 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
     safePost(port, { type: 'panel/state', state: hub.view() } satisfies WorkerToPanel);
   });
 
-  // The shortcut toggles Sieve (50 section 8.9): it closes the popup or side panel showing in that window, or
-  // opens the popup. Without openPopup, or when it rejects, it opens the side panel as before. Chrome accepts
-  // sidePanel.open() only inside the gesture, so every lookup is synchronous and nothing is awaited before an open.
+  // Window focus (50 sections 7.7 and 8.9), read synchronously by the two open paths below. Normal windows only,
+  // like the popup on arrival; focus in any other kind of window counts as none.
+  api.windows.onFocusChanged.addListener(
+    (windowId) => {
+      focusedWindow = windowId === api.windows.WINDOW_ID_NONE ? null : windowId;
+    },
+    { windowTypes: ['normal'] },
+  );
+
+  /**
+   * Whether an open path should call openPopup (true) or sidePanel.open (false). The popup needs Chrome 127+ and a
+   * Chrome window with focus: openPopup fails for a Chrome the person is not looking at. Decided before any call,
+   * because a fallback from openPopup's promise runs after the gesture, where Chrome refuses sidePanel.open.
+   * `whenUnknown` is the answer before Chrome has reported any focus change to this worker.
+   */
+  function popupFits(whenUnknown: boolean): boolean {
+    if (!canOpenPopup(api)) return false;
+    return focusedWindow === undefined ? whenUnknown : focusedWindow !== null;
+  }
+
+  // The shortcut toggles Sieve (50 section 8.9): it closes the popup or side panel showing in that window, or opens
+  // Sieve there: the popup when a Chrome window has focus (a pressed shortcut means one has, so an unknown focus
+  // counts as focused), else the side panel. Every lookup is synchronous and nothing is awaited before an open.
+  // If Chrome refuses the popup, nothing else is tried: the gesture is gone by then.
   function handleCommand(command: string, tab?: Pick<chrome.tabs.Tab, 'windowId'>): CommandResult {
     if (command !== COMMAND_OPEN_SIEVE || tab?.windowId === undefined) return 'ignored';
     const windowId = tab.windowId;
@@ -349,21 +390,21 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
       if (typeof api.sidePanel.close === 'function') api.sidePanel.close({ windowId }).catch(() => {}); // Chrome 141+
       return 'close';
     }
-    if (canOpenPopup(api)) {
-      api.action.openPopup({ windowId }).catch(() => {
-        api.sidePanel.open({ windowId }).catch(() => {});
-      });
+    if (popupFits(true)) {
+      api.action.openPopup({ windowId }).catch(() => debug('shortcut: Chrome refused the popup'));
       return 'popup';
     }
-    api.sidePanel.open({ windowId }).catch(() => {});
+    api.sidePanel.open({ windowId }).catch(() => debug('shortcut: Chrome refused the side panel'));
     return 'open';
   }
   api.commands.onCommand.addListener((command, tab) => {
     handleCommand(command, tab);
   });
 
-  // Notifications (50 section 7.7). A click opens the popup in the Sieve tab's window; if that fails, the side
-  // panel there; if that fails too, it focuses the Sieve tab. The first open call is synchronous, inside the click.
+  // Notifications (50 section 7.7). A click opens Sieve, choosing synchronously inside the click: with a Chrome
+  // window in focus, the popup in that window (where the person is looking); with none, or before Chrome has
+  // reported focus, the side panel in the Sieve tab's window, which is then brought to the front. If the chosen
+  // open fails, it focuses the Sieve tab instead (that needs no gesture).
   api.notifications.onClicked.addListener((notificationId) => {
     const requestId = requestIdOfNotification(notificationId);
     if (!requestId) return;
@@ -371,12 +412,17 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
     const openTab = () => {
       openApp(api, hub, postTo, requestId).catch(() => {});
     };
-    const openSide = () => {
-      if (windowId !== undefined) api.sidePanel.open({ windowId }).catch(openTab);
-      else openTab();
-    };
-    if (canOpenPopup(api)) api.action.openPopup(windowId !== undefined ? { windowId } : {}).catch(openSide);
-    else openSide();
+    const focused = focusedWindow;
+    if (popupFits(false) && typeof focused === 'number') {
+      api.action.openPopup({ windowId: focused }).catch(openTab);
+    } else if (windowId !== undefined) {
+      api.sidePanel.open({ windowId }).then(
+        () => api.windows.update(windowId, { focused: true }).then(() => {}, () => {}),
+        openTab,
+      );
+    } else {
+      openTab();
+    }
     notifier.clear(requestId);
   });
   api.notifications.onClosed.addListener((notificationId, byUser) => {

@@ -12,6 +12,9 @@ export { checkInjection } from './injection/check';
 export { buildStepOption } from './steps/build';
 export { findSecretCodes, holdsSecretCode } from './pii/validators/secretCode';
 export { keepAskerWords, personSender, senderEntities } from './steps/asker';
+export { isYesNoQuestion, packsSeveralFacts, shapeAnswer } from './steps/answerShape';
+export { itemTouchesSensitiveTopic, sensitiveTopicOf, touchesSensitiveTopic } from './sensitive';
+export type { SensitiveTopic } from './sensitive';
 
 // Ingest-time scan and cache (11 section 6; 01 section 11.1: scanRecord is a task handler for 20's queue)
 export { scanRecord, scanNow, isScanCurrent, expectedStages, knownEntities, scanText } from './scan/scan';

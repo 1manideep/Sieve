@@ -863,7 +863,7 @@ function benchReadmeBlock(summary) {
   return `${BENCH_START}
 ### The measured number
 
-Same assistant (${summary.model_id} through the Gemini API, temperature 0), same 10 tasks, same sample data. "Direct access" is a typical mail and files connector: search, then read whole items. Sieve ran at its defaults, with every request approved as proposed. Median of 3 runs each, range in brackets. Measured ${benchDate(summary.date)}.
+Same assistant (${summary.model_id} through the Gemini API, temperature 0), same 10 tasks, same sample data. "Direct access" is a typical mail and files connector: search, then read whole items. ${summary.approval_line} Median of ${summary.n_runs} runs each, range in brackets. Measured ${benchDate(summary.date)}.
 
 | What crossed into the outside model | Direct access | Sieve |
 |---|---|---|
@@ -872,8 +872,9 @@ Same assistant (${summary.model_id} through the Gemini API, temperature 0), same
 | Excerpts received | ${b.excerpts} | ${s.excerpts} |
 | Answer-only replies | ${b.answers} | ${s.answers} |
 | Item summaries received | ${b.summaries} | ${s.summaries} |
-| Items whose text reached the model | ${b.items} | ${s.items} |
-| Health or Money items whose text reached the model | ${b.private} | ${s.private} |
+| Items whose verbatim text reached the model | ${b.items} | ${s.items} |
+| Health or Money items whose content reached the model (verbatim or as an approved answer) | ${b.private} | ${s.private} |
+| Health or Money items listed in search results | ${b.private_listed} | ${s.private_listed} |
 | Photos received | ${b.photos} | ${s.photos} |
 | Tasks where the hidden instruction reached the model | ${b.inj} of 10 | ${s.inj} of 10 |
 | Tasks answered correctly | ${b.correct} of 10 | ${s.correct} of 10 |
@@ -889,7 +890,7 @@ function benchLines(summary) {
   return [
     `Across the 10 tasks, the outside model received ${b.chars} characters through direct access and ${s.chars} through Sieve.`,
     `Through direct access the model received ${b.whole} whole items and summaries of ${b.summaries} items; through Sieve it received ${s.whole} whole items, ${s.excerpts} excerpts and ${s.answers} answer-only replies.`,
-    `Health or Money items whose text reached the model: ${b.private} through direct access and ${s.private} through Sieve.`,
+    `Health or Money items whose content reached the model (verbatim or as an approved answer): ${b.private} through direct access and ${s.private} through Sieve.`,
     `The hidden instruction reached the model in ${b.inj} of 10 tasks through direct access and in ${s.inj} of 10 through Sieve.`,
     `Tasks answered correctly: ${b.correct} of 10 through direct access and ${s.correct} of 10 through Sieve.`,
   ].map((t) => `${t} ${LINE_MARKER}`);

@@ -18,7 +18,8 @@ import { expectedStages, isScanCurrent, knownEntities, memoScan, scanText } from
 import { collapseSpaces, ensureWellFormed, isAbortError, plural, type Range } from '../text';
 import type { BuildStepOptions } from '../types';
 import { answerKeepTypes, cleanAnswer } from './answer';
-import { keepAskerWords, notTheCompany, senderEntities } from './asker';
+import { dropSubject, shapeAnswer } from './answerShape';
+import { keepAskerWords, notTheCompany, personSender, senderEntities, senderWordsOf } from './asker';
 import { excerptHeader, locateExcerpt } from './excerpt';
 import { capFull, fullHeader, lastCutBefore } from './full';
 import { copiesTooMuch, hiddenLeak } from './invariants';
@@ -38,6 +39,10 @@ export const UNAVAILABLE = {
   stillInstruction: 'This text still looked like an instruction to an AI, so it is not offered.',
   empty: 'Nothing is left to share after hiding personal details.',
   failed: 'Could not check this text for personal details.',
+  // 10.3a (Nov 21): the answer-step output checks
+  oneFact: 'Sieve shares one fact at a time at this level.',
+  notYesNo: "The answer wasn't a plain yes or no.",
+  metadataOnly: 'Nothing is left once the subject line and the address are left out.',
 } as const;
 
 function unavailable(step: LadderStep, reason: string): StepOption {
@@ -138,6 +143,12 @@ export async function buildStepOption(
     // 3. invisible characters (a model output may carry some)
     let text = cleanChars(raw).text;
     if (step === 'answer' && copiesTooMuch(text, scanText(rec))) return unavailable(step, UNAVAILABLE.verbatim);   // S3
+    if (step === 'answer') {
+      // 10.3a: yes or no, one fact, no sender address (the subject line is dropped after redaction, step 8a)
+      const shaped = shapeAnswer(text, rec, opts.question, (f) => personSender(f) !== null);
+      if (!shaped.ok) return unavailable(step, shaped.reason === 'one-fact' ? UNAVAILABLE.oneFact : shaped.reason === 'not-yes-no' ? UNAVAILABLE.notYesNo : UNAVAILABLE.metadataOnly);
+      text = shaped.text;
+    }
 
     // 4. links
     const links = shortenLinks(text);
@@ -159,15 +170,26 @@ export async function buildStepOption(
     // 6. spans (plain code only): validators, one-time codes and sign-in links, names in "X sent you an email", plus
     // everything already known about this record and its sender (and, at share time, what Gemini Nano found in the
     // outgoing text). What the asker typed in the question is never masked; one-time codes always are.
+    // An ID number must read as one, and a sender of the index is never one ("Z1llow", "1Password", 5.6 step 1).
+    // The company sender's own name is never masked as a person's: in "Good Dog sent you" (every step), and in the
+    // answer whatever found it (10.3a: organisation names stay, they are often the answer).
     const known = [...knownEntities(rec), ...senderEntities(rec), ...(opts.extraEntities ?? [])];
-    const actors = notTheCompany(text, findActorNames(text), rec);
-    const found = finalizeSpans(text, [...runValidators(text), ...findSecretCodes(text), ...actors, ...locateEntities(text, known)]);
+    const actors = step === 'answer' ? findActorNames(text) : notTheCompany(text, findActorNames(text), rec);
+    const senders = senderWordsOf(rec, opts.knownSenders);
+    const finalized = finalizeSpans(text, [...runValidators(text), ...findSecretCodes(text), ...actors, ...locateEntities(text, known)], { senders });
+    const found = step === 'answer' ? notTheCompany(text, finalized, rec) : finalized;
     const spans = keepAskerWords(text, found, opts.question);
 
     // 7, 8. answer exemptions, then redaction
     const keepTypes = step === 'answer' && opts.question ? answerKeepTypes(opts.question) : [];
     const red = redact(text, spans, { keepTypes });
     text = red.text;
+    if (step === 'answer') {
+      // 8a (10.3a): never the subject line, after redaction so the code check above still saw its words
+      const dropped = dropSubject(text, rec, opts.question);
+      if (!dropped.ok) return unavailable(step, UNAVAILABLE.metadataOnly);
+      text = dropped.text;
+    }
 
     // 9. caps, hidden leaks, the final pattern check
     if (step === 'full') text = capFull(text);

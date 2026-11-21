@@ -151,11 +151,12 @@ describe('the tester cases (Nov 20)', () => {
     expect(p.trace.find((s) => s.kind === 'answer')?.label).toBe("Couldn't check the answer against the item on this device");
   });
 
-  it('the in-app parsed `from` is not passed to search as a filter', async () => {
-    idx.parseQuestion.mockImplementation((q) => ({ normalized: q, corrected: q, hints: { from: 'work', source: 'mail' } }));
+  it('the in-app parsed `from` and `source` are not passed to search as filters (search finds the cues itself)', async () => {
+    idx.parseQuestion.mockImplementation((q) => ({ normalized: q, corrected: q, hints: { from: 'work', source: 'mail', after: '2026-11-01' } }));
     idx.search.mockResolvedValue([]);
     await prepareProposal(input({ question: 'emails from work', requester: { kind: 'in-app', aiName: 'Gemini (in Sieve)' }, maxStep: 'full' }));
-    expect(idx.search.mock.calls[0][2]).toMatchObject({ hints: { source: 'mail' } });
+    expect(idx.search.mock.calls[0][2]).toMatchObject({ hints: { after: '2026-11-01' } });
     expect((idx.search.mock.calls[0][2] as { hints: object }).hints).not.toHaveProperty('from');
+    expect((idx.search.mock.calls[0][2] as { hints: object }).hints).not.toHaveProperty('source');
   });
 });

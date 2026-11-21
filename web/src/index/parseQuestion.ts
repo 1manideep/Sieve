@@ -2,7 +2,7 @@
 import { MAX_QUESTION_CHARS } from '@sieve/shared';
 import type { QueryHints } from '@sieve/shared';
 import type { SieveDb } from './db';
-import { knownSenderWordsOf, senderCue } from './cues';
+import { knownSenderWordsOf, senderCue, sourceCue } from './cues';
 import { parseDates } from './dates';
 import { isEnglishWord } from './dictionary';
 import { lastReadyDb, peekRuntime } from './runtime';
@@ -10,8 +10,13 @@ import { cutGraphemes, emojiNames, withEmojiNames } from './text';
 import { STOP_WORDS } from './tokenize';
 import { correctQuery } from './typos';
 
-/** `sender`: the sender the question names (20 section 9.4), a filter in search; `hints.from` stays the boost. */
-export interface ParsedQuestion { normalized: string; corrected: string; hints: QueryHints; searchText?: string; sender?: string }
+/**
+ * `sender`: the sender the question names (20 section 9.4), a filter in search; `hints.from` stays the boost. `only`:
+ * the source the question limits itself to ("local files only", 10.2), a filter too; `hints.source` alone boosts.
+ */
+export interface ParsedQuestion {
+  normalized: string; corrected: string; hints: QueryHints; searchText?: string; sender?: string; only?: QueryHints['source'];
+}
 
 const SOURCE_WORDS: [NonNullable<QueryHints['source']>, string[]][] = [
   ['mail', ['email', 'emails', 'mail', 'inbox']],
@@ -101,7 +106,8 @@ export function parseQuestion(question: string, now: Date, locale: string, opts?
   const hints: QueryHints = {};
   if (dates.after) hints.after = dates.after;
   if (dates.before) hints.before = dates.before;
-  const source = sourceHint(corrected);
+  const only = sourceCue(corrected);
+  const source = only ?? sourceHint(corrected);
   if (source) hints.source = source;
   const from = fromHint(corrected);
   if (from) hints.from = from;
@@ -109,6 +115,7 @@ export function parseQuestion(question: string, now: Date, locale: string, opts?
   if (terms.length > 0) hints.terms = terms;
   if (dates.interpreted.length > 0) hints.interpreted = dates.interpreted;
   const out: ParsedQuestion = { normalized, corrected, hints };
+  if (only) out.only = only;
   // photos have no sender: "photos from Hawaii" names a place
   const sender = source === 'photos' ? undefined : senderCue(corrected, rt ? knownSenderWordsOf(rt.meta) : undefined);
   if (sender) out.sender = sender;

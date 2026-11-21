@@ -60,6 +60,8 @@ export const SOURCE_ROW_WRITE_MS = 500;
 // Photos
 export const THUMB_MAX_EDGE = 320;
 export const STORAGE_PAUSE_RATIO = 0.9;
+/** After a pause for storage, the space is checked again this often; indexing resumes once it is under the ratio. */
+export const STORAGE_RECHECK = { everyMs: 60_000 };
 export const MAX_IMAGE_PIXELS = 100_000_000;      // 70 R-FILE-08
 export const IMAGE_UNKNOWN_DIMS_MAX_BYTES = 10 * MB;
 

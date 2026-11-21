@@ -88,6 +88,7 @@ class Task:
     category: str
     expect_kind: str                     # 'answer' | 'not-found' | 'refusal'
     expect: list[list[str]]
+    forbid: tuple[str, ...] = ()         # refusal: words from the item that must not appear in the final answer
 
 
 def load_tasks(path: Path, only: list[str] | None = None) -> list[Task]:
@@ -101,6 +102,7 @@ def load_tasks(path: Path, only: list[str] | None = None) -> list[Task]:
             category=t.get("category", ""),
             expect_kind=t.get("expect_kind", "answer"),
             expect=[list(g) for g in t.get("expect", [])],
+            forbid=tuple(t.get("forbid", [])),
         )
         for t in data["tasks"]
     ]
@@ -153,6 +155,12 @@ def sieve_status(outcome: ToolOutcome) -> tuple[str | None, str | None]:
     status = fields.get("status")
     step = fields.get("step")
     return (status if isinstance(status, str) else None, step if isinstance(step, str) else None)
+
+
+def sieve_rate_limited(outcome: ToolOutcome) -> bool:
+    from .mcp_client import is_rate_limited, sieve_fields
+
+    return is_rate_limited(sieve_fields(outcome))
 
 
 async def run_task(
@@ -248,8 +256,11 @@ async def run_task(
                         "ms": outcome.ms,
                         "is_error": outcome.is_error,
                     }
-                    if arm == "sieve" and outcome.structured is not None:
-                        event["structured"] = outcome.structured
+                    if arm == "sieve":
+                        # Recorded per call: a rate-limited call makes the run invalid (count.run_problems).
+                        event["rate_limited"] = sieve_rate_limited(outcome)
+                        if outcome.structured is not None:
+                            event["structured"] = outcome.structured
                     log.event(event)
                     returns.append(ToolReturn(call.id, call.name, outcome.text, list(outcome.images)))
                 turn = await model_call(model.send, returns)

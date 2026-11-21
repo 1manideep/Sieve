@@ -58,11 +58,15 @@ export function resetGmailBucket(b?: UnitBucket): void {
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new DOMException('Aborted', 'AbortError'));
-    const t = setTimeout(resolve, ms);
-    signal?.addEventListener('abort', () => {
+    const onAbort = () => {
       clearTimeout(t);
       reject(new DOMException('Aborted', 'AbortError'));
-    }, { once: true });
+    };
+    const t = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -122,7 +126,8 @@ export async function gmailFetch<T>(path: string, opts: { units: number; priorit
       throw new GmailRateError();
     }
     const retryAfter = Number(res.headers.get('Retry-After'));
-    const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : Math.min(BACKOFF.maxMs, BACKOFF.baseMs * 2 ** attempt) + Math.random() * BACKOFF.jitterMs;
+    // Retry-After is Google's to set, but a job never sleeps longer than the longest backoff on its word.
+    const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(BACKOFF.maxMs, retryAfter * 1000) : Math.min(BACKOFF.maxMs, BACKOFF.baseMs * 2 ** attempt) + Math.random() * BACKOFF.jitterMs;
     await sleep(wait, opts.signal);
   }
 }

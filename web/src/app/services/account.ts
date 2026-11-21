@@ -5,7 +5,8 @@
 import { GoogleAuthProvider, reauthenticateWithPopup, signOut } from 'firebase/auth';
 import { getAuthInstance } from '@/app/firebase';
 import { getDeviceId } from '@/app/deviceId';
-import { ACCOUNT_DELETE } from '@/copy/strings';
+import { ACCOUNT_DELETE, SHELL } from '@/copy/strings';
+import { AUTO_APPROVE_KEY, AUTO_APPROVED_KEY } from '@/state/autoApprove';
 import { useSettings } from '@/state/settings';
 import { useToasts } from '@/state/toasts';
 import type { SessionUser } from '@/state/session';
@@ -21,7 +22,7 @@ function navigate(to: string): void {
 }
 
 function removeLocalKeys(uid: string): void {
-  for (const key of ['sieve.realDbOwner', `sieve.setupDone.${uid}`]) {
+  for (const key of ['sieve.realDbOwner', `sieve.setupDone.${uid}`, AUTO_APPROVE_KEY(uid), AUTO_APPROVED_KEY(uid)]) {
     try {
       window.localStorage.removeItem(key);
     } catch {
@@ -34,6 +35,16 @@ async function deleteRealIndex(): Promise<void> {
   const index = (await import('@/index')) as typeof import('@/index') & { wipeDb?: (kind: 'real' | 'playground') => Promise<void> };
   if (typeof index.wipeDb === 'function') await index.wipeDb('real');
   else await (index.openDb('real') as unknown as { delete(): Promise<void> }).delete();
+}
+
+/** Google is told to revoke the Gmail token (bounded offline), before the index that holds it is deleted. */
+async function revokeGmail(): Promise<void> {
+  try {
+    const [sources, index] = await Promise.all([import('@/sources'), import('@/index')]);
+    await sources.revokeGmailAccess(index.openDb('real'));
+  } catch {
+    // the token still runs out within the hour, and the index that held it is deleted next
+  }
 }
 
 export async function deleteAccount(onStep: (s: DeleteStep) => void): Promise<'ok' | 'cancelled' | 'error'> {
@@ -99,10 +110,13 @@ export async function deleteAccount(onStep: (s: DeleteStep) => void): Promise<'o
 
   // 4. This device: the real index, its owner and setup keys, and the local salt for item refs.
   onStep('device');
+  await revokeGmail();
   try {
     await deleteRealIndex();
   } catch (error) {
-    console.error('delete index', error);
+    // Another tab keeps the index open: the delete finishes once it is closed.
+    if ((error as { name?: unknown } | null)?.name === 'DbBlockedError') useToasts.getState().push({ tone: 'error', title: SHELL.deleteIndexBlocked });
+    else console.error('delete index', error);
   }
   removeLocalKeys(uid);
   await forgetLocalSalt(uid).catch(() => undefined);

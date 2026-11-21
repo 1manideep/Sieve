@@ -18,10 +18,12 @@ export interface FollowUpProps {
   step: LadderStep;
   describedBy?: string;
   children?: ReactNode;
+  /** True while an approval or its draft runs: a new question would replace the one being approved. */
+  disabled?: boolean;
 }
 
 export const FollowUp = forwardRef<QuestionInputHandle, FollowUpProps>(function FollowUp(
-  { label, placeholder, value, onChange, onSubmit, button, step, describedBy, children },
+  { label, placeholder, value, onChange, onSubmit, button, step, describedBy, children, disabled = false },
   ref,
 ) {
   return (
@@ -35,6 +37,7 @@ export const FollowUp = forwardRef<QuestionInputHandle, FollowUpProps>(function 
         onChange={onChange}
         onSubmit={onSubmit}
         describedBy={describedBy}
+        disabled={disabled}
         button={button}
         leading={<Glyph name="plus" size={20} className={styles.plus} />}
         trailing={

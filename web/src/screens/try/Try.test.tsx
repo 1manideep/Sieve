@@ -212,6 +212,28 @@ describe('/try', () => {
     expect(screen.getByRole('button', { name: TRY.takeSeat })).toBeInTheDocument();
   });
 
+  it('checks the seats again at once when the tab is shown again, not 20 s later', async () => {
+    serve(health(0, 2), health(1, 2));
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    try {
+      renderTry();
+      await flush();
+      expect(fetchMock).not.toHaveBeenCalled();   // hidden: no check
+      visibility.mockReturnValue('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+      await flush();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(seatTexts()[0]).toBe(`${fillText(TRY.seatName, { n: 1 })}${TRY.seatInUse}`);
+      // the next check is 20 s after that one
+      await flush(HEALTH_POLL_MS - 1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await flush(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
   it('goes full screen on the frame and shows the seat pill until it exits', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     serve(health(), route('POST', '/seat', () => granted(5 * 60_000)));

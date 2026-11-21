@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Sieve",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Approve what your AI assistant may see. Requests from your open Sieve tab appear in a toolbar popup with the exact text to be sent.",
   "homepage_url": "https://sieve.manideep.info",
   "minimum_chrome_version": "127",
@@ -44,6 +44,7 @@
     "matches": [
       "https://sieve.manideep.info/*",
       "https://sieve-manideep.web.app/*",
+      "https://sieve-manideep.firebaseapp.com/*",
       "http://localhost:5173/*"
     ]
   },

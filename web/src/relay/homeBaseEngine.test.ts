@@ -403,13 +403,16 @@ describe('home base engine: requests', () => {
     expect(h.state.entries!.req1.phase).toBe('awaiting-person');
   });
 
-  it('a malformed queued request is claimed and ended with error (70 R-RLY-11)', async () => {
-    const h = await activeHarness();
+  it('a malformed queued request is claimed and ended with error (70 R-RLY-11), after the automatic-outcome floor', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const h = await activeHarness({ random: () => 0 });
     const listen = h.deps.requests.listenRequests as ReturnType<typeof vi.fn>;
     const onInvalid = listen.mock.calls[0][3] as (bad: { id: string; status: unknown }[]) => void;
     onInvalid([{ id: 'bad1', status: 'queued' }, { id: 'bad2', status: 'answered' }]);
     await flush();
     expect(h.claim).toHaveBeenCalledWith('u1', 'bad1', 'dev1');
+    expect(h.finish).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(3_000);
     expect(h.finish).toHaveBeenCalledWith('u1', 'bad1', 'dev1', { status: 'error', message: MSG.badRequest });
     expect(h.claim).toHaveBeenCalledTimes(1);
   });
@@ -864,5 +867,95 @@ describe('home base engine: auto-approve, testing mode (40 section 13.8.9)', () 
     await flush();
     expect(h.finish).not.toHaveBeenCalled();
     expect(h.state.entries!.req1.phase).toBe('awaiting-person');
+  });
+});
+
+describe('home base engine: the automatic-outcome floor (40 section 11.6, Nov 21)', () => {
+  /** A request that arrived just now (createdAt is the harness clock), with the jitter fixed at `jitter` of a second. */
+  async function fresh(jitter: number): Promise<Harness> {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const h = await activeHarness({ random: () => jitter });
+    h.now.t = T0;
+    return h;
+  }
+  const outcome = (o: Partial<Proposal>) => async (i: PrepareInput) => proposal({ requestId: i.requestId, ...o });
+
+  it('"timing gives blocked items away": no-match, blocked-never, unsupported and the no-option rule all leave at the same moment', async () => {
+    const none = LADDER_STEPS.map((st) => option(st, '', { available: false, unavailableReason: 'Nothing to share at this step.' }));
+    const cases: [string, Partial<Proposal>][] = [
+      ['no-match', { outcome: 'no-match', item: undefined }],
+      ['blocked', { outcome: 'blocked-never', rule: 'never' }],
+      ['unsupported', { outcome: 'unsupported', item: undefined }],
+      ['no-match', { options: none }],
+    ];
+    for (const [status, o] of cases) {
+      const h = await fresh(0.5);
+      h.prepare.mockImplementationOnce(outcome(o));
+      h.push([request()]);
+      await flush();
+      expect(h.prepare).toHaveBeenCalledTimes(1);
+      expect(h.finish).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(3_499);
+      expect(h.finish, status).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(h.finish, status).toHaveBeenCalledTimes(1);
+      expect((h.finish.mock.calls[0][3] as FinishInput).status).toBe(status);
+      vi.useRealTimers();
+    }
+  });
+
+  it('the floor counts from the arrival, with up to one second of jitter', async () => {
+    const early = await fresh(0);
+    early.now.t = T0 + 2_000;   // the preparation ends 2 s after the request arrived: 1 s of the floor is left
+    early.prepare.mockImplementationOnce(outcome({ outcome: 'no-match', item: undefined }));
+    early.push([request()]);
+    await flush();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(early.finish).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(early.finish).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+    const late = await fresh(0.999);
+    late.prepare.mockImplementationOnce(outcome({ outcome: 'no-match', item: undefined }));
+    late.push([request()]);
+    await flush();
+    await vi.advanceTimersByTimeAsync(3_990);
+    expect(late.finish).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(late.finish).toHaveBeenCalledTimes(1);
+  });
+
+  it('a request that waited longer than the floor is answered at once; a card for the person is never delayed', async () => {
+    const old = await activeHarness();   // the clock is 10 s past the request's arrival
+    old.prepare.mockImplementationOnce(outcome({ outcome: 'no-match', item: undefined }));
+    old.push([request()]);
+    await flush();
+    expect(old.finish).toHaveBeenCalledTimes(1);
+    const card = await fresh(0.5);
+    card.push([request()]);
+    await flush();
+    expect(card.markAwaiting).toHaveBeenCalledTimes(1);
+    expect(card.state.entries!.req1.phase).toBe('awaiting-person');
+  });
+
+  it('one fact at a time: the asker gets its own line, never the count line', async () => {
+    const h = await activeHarness();
+    const oneFact = LADDER_STEPS.map((st) => option(st, '', { available: false, unavailableReason: MSG.oneFact }));
+    h.prepare.mockImplementationOnce(outcome({ outcome: 'unsupported', item: undefined, options: oneFact }));
+    h.push([request({ question: 'What are my last five emails?' })]);
+    await flush();
+    expect(h.finish.mock.calls[0][3]).toEqual({ status: 'unsupported', message: 'Sieve shares one fact at a time at this level.' });
+  });
+
+  it('a proposal with the sensitive-topic warning is never approved automatically', async () => {
+    window.localStorage.setItem(AUTO_APPROVE_KEY('u1'), JSON.stringify({ g1: Date.now() + AUTO_APPROVE_MS }));
+    const h = await activeHarness({ autoApprove: (grantId) => autoApproveOn('u1', grantId), markAutoApproved: vi.fn() });
+    const warnings = [{ kind: 'ask-first' as const, message: 'This touches a sensitive topic. Sieve asks you first.' }];
+    h.prepare.mockImplementationOnce(outcome({ maxStep: 'answer', warnings }));
+    h.push([request({ maxStep: 'answer' })]);
+    await flush();
+    expect(h.finish).not.toHaveBeenCalled();
+    expect(h.state.entries!.req1.phase).toBe('awaiting-person');
+    window.localStorage.clear();
   });
 });

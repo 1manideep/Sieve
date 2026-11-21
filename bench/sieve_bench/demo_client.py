@@ -3,11 +3,17 @@
 A plain page on 127.0.0.1 that runs the same loop as the bench against the Sieve connector
 and shows the user message, a "Using the Sieve connector" line, and the reply. It shows no
 other product's interface. Nothing is stored: each question runs with an in-memory log.
+
+`/ask` spends the model quota and reaches the connector, so it takes only same-origin requests from this
+page: `Content-Type: application/json` (a cross-site form or a "simple" fetch cannot send it without a
+preflight, which this server never answers), a Host header naming 127.0.0.1 or localhost on this port
+(no DNS rebinding), and an Origin, when there is one, on the same host and port.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import anyio
@@ -21,6 +27,28 @@ from .log import MemoryTranscript
 from .mcp_client import connect
 
 MAX_QUESTION_CHARS = 500
+_LOCAL_HOST = re.compile(r"(127\.0\.0\.1|localhost)(?::(\d{1,5}))?")
+_LOCAL_ORIGIN = re.compile(r"http://(127\.0\.0\.1|localhost)(?::(\d{1,5}))?")
+
+
+def _is_local(pattern: re.Pattern[str], value: str | None, port: int | None) -> bool:
+    """value names 127.0.0.1 or localhost, on `port` when one is given."""
+    m = pattern.fullmatch((value or "").strip().lower())
+    if not m:
+        return False
+    return port is None or (m.group(2) is not None and int(m.group(2)) == port)
+
+
+def ask_refusal(headers: Any, port: int | None) -> tuple[int, str] | None:
+    """Why /ask turns a request away (status, message), or None when it may run."""
+    if not _is_local(_LOCAL_HOST, headers.get("host"), port):
+        return 403, "This test page answers only on 127.0.0.1 or localhost."
+    origin = headers.get("origin")
+    if origin is not None and not _is_local(_LOCAL_ORIGIN, origin, port):
+        return 403, "Requests from other sites are not accepted."
+    if (headers.get("content-type") or "").split(";")[0].strip().lower() != "application/json":
+        return 415, "Send JSON with a question (Content-Type: application/json)."
+    return None
 SECURITY_HEADERS = {
     "Content-Security-Policy": "default-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
     "Referrer-Policy": "no-referrer",
@@ -100,7 +128,10 @@ form.addEventListener('submit', async (e) => {
 """
 
 
-def build_app(*, url: str, adapter_factory: AdapterFactory, limits: Limits | None = None, connect_fn: Any = connect) -> Starlette:
+def build_app(
+    *, url: str, adapter_factory: AdapterFactory, limits: Limits | None = None, connect_fn: Any = connect, port: int | None = None
+) -> Starlette:
+    """`port`: the port the page is served on; Host and Origin must name it (None accepts any port, for tests)."""
     limits = limits or Limits()
     counter = {"n": 0}
 
@@ -111,6 +142,9 @@ def build_app(*, url: str, adapter_factory: AdapterFactory, limits: Limits | Non
         return Response(APP_JS, media_type="text/javascript", headers=SECURITY_HEADERS)
 
     async def ask(request: Request) -> Response:
+        refused = ask_refusal(request.headers, port)
+        if refused:
+            return JSONResponse({"error": refused[1]}, status_code=refused[0], headers=SECURITY_HEADERS)
         try:
             body = json.loads(await request.body())
         except (json.JSONDecodeError, UnicodeDecodeError):
@@ -138,6 +172,6 @@ def build_app(*, url: str, adapter_factory: AdapterFactory, limits: Limits | Non
 def serve(*, url: str, adapter_factory: AdapterFactory, port: int, model_id: str) -> None:
     import uvicorn
 
-    app = build_app(url=url, adapter_factory=adapter_factory)
+    app = build_app(url=url, adapter_factory=adapter_factory, port=port)
     print(f"Test assistant on http://127.0.0.1:{port} ({model_id}, Sieve connector from SIEVE_MCP_URL)")
     anyio.run(uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")).serve)

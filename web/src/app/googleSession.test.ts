@@ -30,7 +30,8 @@ vi.mock('@/relay/requests', () => ({}));
 vi.mock('@/relay/push', () => ({ stopPushSession: vi.fn(), resumePush: vi.fn() }));
 vi.mock('@/pipeline', () => ({ prepareProposal: vi.fn(), finalizeDecision: vi.fn(), buildRelatedOptions: vi.fn(), composeOutgoingText: vi.fn() }));
 const startSources = vi.fn(async () => undefined);
-vi.mock('@/sources', () => ({ startSources }));
+const stopSources = vi.fn(async () => undefined);
+vi.mock('@/sources', () => ({ startSources, stopSources }));
 vi.mock('@/index', () => ({ openDb: () => ({ name: 'sieve' }), getRecord: vi.fn() }));
 const navigate = vi.fn();
 vi.mock('@/app/router', () => ({ router: { navigate } }));
@@ -78,8 +79,9 @@ describe('Google session', () => {
     await vi.waitFor(() => expect(startSources).toHaveBeenCalled());
   });
 
-  it('stop reverses start', async () => {
+  it('stop reverses start, and stops the source jobs of the real index (sign-out here or in another tab)', async () => {
     await stopGoogleSession();
+    expect(stopSources).toHaveBeenCalledWith({ name: 'sieve' });
     expect(engine.stop).toHaveBeenCalled();
     expect(getHomeBaseEngine()).toBeNull();
     expect(userDocUnsub).toHaveBeenCalled();

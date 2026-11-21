@@ -6,6 +6,7 @@ export const MSG = {
   blocked: 'Nothing to share for that.',
   noMatch: 'Nothing to share for that.',
   unsupported: "Sieve answers from one item at a time at this level, so counts aren't available.",
+  oneFact: 'Sieve shares one fact at a time at this level.',
   modelUnavailable: "Sieve can't read the person's data on this device right now. Try again later.",
   error: "Sieve couldn't prepare an answer on the person's device. Try again later.",
   badRequest: "Sieve couldn't read this request. Ask again.",

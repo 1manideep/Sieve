@@ -1149,11 +1149,14 @@ Outcome handling:
 | `blocked-never` | `finishRequest` `blocked`, message `MSG.blocked` | `finalizeDecision` with `approved: false`; CR-3 makes it `status: 'blocked'`, `decidedBy: 'rule'`, `chars: 0` | toast info "{aiName} asked for something your rules never share. Sieve told it no." |
 | `no-match` | `finishRequest` `no-match`, `MSG.noMatch` | none | history row only |
 | `unsupported` (a count, Nov 20) | `finishRequest` `unsupported`, `MSG.unsupported` ("Sieve answers from one item at a time at this level, so counts aren't available."), which the relay passes to the assistant | none | history row only ("Counts aren't available") |
+| `unsupported` (several things at once, or an answer with more than one fact, or the model refusing the shape; Nov 21) | `finishRequest` `unsupported`, `MSG.oneFact` ("Sieve shares one fact at a time at this level."), chosen when the proposal's options carry that line | none | history row only; in the app the card says "Sieve shares one fact at a time at this level" |
 | `model-unavailable` | `finishRequest` `error`, `MSG.modelUnavailable` | none | toast warning "{aiName} asked, but this Chrome has no on-device model. Sieve told it to try later." |
 | `error`, a thrown error, or the timeout | `finishRequest` `error`, `MSG.error` | none | toast error "Sieve couldn't prepare an answer for {aiName}. It was told to try again later." |
 | aborted by expiry | nothing (functions mark it expired) | none | entry removed |
 
 Every row but `ready` and `needs-cloud-consent` ends without a card. "Declined" is only ever the person's own choice. A `blocked-never` for a one-time code or a sign-in link (11 section 5.2) is handled like any other: `MSG.blocked` to the assistant, the real reason in the app.
+
+**The timing floor (Nov 21).** A second real test found that timing gave blocked items away: no match came back at once, a block later. Every automatic outcome that reaches the assistant without the person (no match, `blocked-never`, `unsupported`, the error rows, a ready proposal with no option to approve, and a malformed request) is written by `finishAuto` no sooner than `AUTO_FLOOR_MS` (3 s) after the request's `createdAt`, plus a random 0 to `AUTO_JITTER_MS` (1 s) drawn per request (`deps.random`, tests pass a fixed value). A malformed request has no trusted `createdAt`, so its floor counts from when this tab saw it. The entry shows `deciding` meanwhile; a request that already waited longer is written at once. A card for the person, auto-approve (13.8.9) and the in-app Ask are not delayed. Both engines (real and Playground) apply it.
 
 Auto-approve (13.8.9): for `ready`, after `markAwaiting` really returned `'ok'` (not the offline fallback), the engine checks `autoApprove(grantId)` and the clean-answer conditions. When all hold, it does not announce, toast or send a preview to the extension. It calls `decide({ requestId, approved: true, step: 'answer', decidedBy: 'app' })`, so every check in 11.8 and the send check run as for a click. `markAutoApproved(id, true)` runs just before `finishRequest` writes the receipt. If `decide` fails, the mark is removed. If the entry is still `awaiting-person`, it then waits for the person as in the row above, with the reason on the card.
 
@@ -1165,6 +1168,7 @@ Messages to the AI (`relay/messagesToAi.ts`, written into `RelayRequest.message`
 | `blocked` | "The person's rules don't allow sharing this." |
 | `noMatch` | "Nothing on the person's device matched this request." |
 | `unsupported` | "Sieve answers from one item at a time at this level, so counts aren't available." |
+| `oneFact` | "Sieve shares one fact at a time at this level." |
 | `modelUnavailable` | "Sieve can't read the person's data on this device right now. Try again later." |
 | `error` | "Sieve couldn't prepare an answer on the person's device. Try again later." |
 
@@ -1213,6 +1217,8 @@ Done entries stay on the Requests screen until dismissed ("Done" button) or 10 m
 | `PREPARE_TIMEOUT_MS` | 120000 | abort `prepareProposal` for a relay request |
 | `ASK_TIMEOUT_MS` | 120000 | abort `prepareProposal` for an in-app question |
 | `CLAIM_RETRY_MS` | [2000, 5000, 10000] | offline claim retries |
+| `AUTO_FLOOR_MS` | 3000 | an automatic outcome leaves no sooner than this after the request arrived (11.6) |
+| `AUTO_JITTER_MS` | 1000 | plus up to this much random jitter |
 | `EXTENSION_ACK_MS` | 2000 | wait for `sieve/hello-ack` |
 | `EXTENSION_KEEPALIVE_MS` | 25000 | resend `sieve/pending` while connected |
 | `EXTENSION_BACKOFF_MS` | [1000, 2000, 5000, 10000, 30000] | reconnect after a drop (then every 30 s) |

@@ -54,6 +54,7 @@ export interface BuildStepOptions {
   allowNano?: boolean;               // kept for callers; scans never run Gemini Nano now (6.1)
   extraEntities?: KnownEntity[];     // share time: personal details Gemini Nano found in the outgoing text (10.7)
   extraQuotes?: string[];            // share time: sentences Gemini Nano flagged as aimed at an AI (10.7)
+  knownSenders?: ReadonlySet<string>; // lowercase sender words of the index, never masked as an ID number (5.6 step 1)
 }
 
 /** Options of a scan. Background scans wait for the browser model; share-time scans never do (5.4.5). */

@@ -4,12 +4,15 @@ import type { SieveDb } from './db';
 export type IndexBroadcast =
   | { type: 'keyword-saved'; updatedAt: number }
   | { type: 'records-changed'; ids: string[] }
-  | { type: 'records-removed'; ids: string[] };
+  | { type: 'records-removed'; ids: string[] }
+  | { type: 'rebuild-requested' };   // Rebuild pressed in a follower tab: the indexer tab runs it
 
 const channels = new Map<string, BroadcastChannel>();
 const handlers = new Map<string, Set<(msg: IndexBroadcast) => void>>();
 const leaders = new Map<string, boolean>();
 const releases = new Map<string, () => void>();
+/** A follower's place in line, one per database name: the onLeader to run when the lock comes (the latest one). */
+const waiting = new Map<string, () => void>();
 
 function channelFor(db: SieveDb): BroadcastChannel | null {
   if (typeof BroadcastChannel === 'undefined') return null;
@@ -67,6 +70,12 @@ export async function becomeIndexer(db: SieveDb, onLeader: () => void, onFollowe
     onLeader();
     return;
   }
+  // Already in line (startSources runs again on every connect): keep one waiter, with the newest onLeader.
+  if (waiting.has(db.name)) {
+    waiting.set(db.name, onLeader);
+    onFollower();
+    return;
+  }
   const locks = lockManager();
   if (!locks) {
     leaders.set(db.name, true);
@@ -94,11 +103,21 @@ export async function becomeIndexer(db: SieveDb, onLeader: () => void, onFollowe
   });
   if (gotIt) return;
   leaders.set(db.name, false);
+  if (waiting.has(db.name)) {
+    // another call got in line while this one asked
+    waiting.set(db.name, onLeader);
+    onFollower();
+    return;
+  }
+  waiting.set(db.name, onLeader);
   onFollower();
   // Wait in line to take over when the leader goes away.
   void locks.request(name, {}, async () => {
+    const run = waiting.get(db.name);
+    waiting.delete(db.name);
+    if (!run) return;   // this tab closed the database meanwhile
     leaders.set(db.name, true);
-    onLeader();
+    run();
     await hold();
     leaders.set(db.name, false);
   });
@@ -109,6 +128,7 @@ export function releaseIndexer(db: SieveDb): void {
   releases.get(db.name)?.();
   releases.delete(db.name);
   leaders.delete(db.name);
+  waiting.delete(db.name);
   const ch = channels.get(db.name);
   if (ch) {
     ch.close();

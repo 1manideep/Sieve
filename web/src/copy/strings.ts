@@ -33,6 +33,11 @@ export const SHELL = {
     "You're offline. Sieve still searches this device. Requests from other AIs and drafting with the cloud model wait until you're back.",
   notifications: 'Notifications',
   working: 'Working',
+  // 70 R-PLAT-09: another tab deleted or upgraded the index this tab had open (robust/copy.ts has the same words)
+  updatedInAnotherTab: 'Sieve was updated in another tab. Reload this tab.',
+  reload: 'Reload',
+  deleteBlocked: 'Close other Sieve tabs, then try again.',
+  deleteIndexBlocked: 'Close other Sieve tabs to finish deleting the index on this computer.',
 } as const;
 
 /** Main navigation (40 section 7.2). */

@@ -1,7 +1,7 @@
 // The copy of 70: final strings, no em or en dashes, the send-guard sentence rules, and parity with the copy the
 // screens already show (web/src/copy/strings.ts), so the two can never drift apart unnoticed.
 import { describe, expect, it } from 'vitest';
-import { HOME_BASE, SEND_CHECK, STATUS_LISTENER } from '@/copy/strings';
+import { HOME_BASE, SEND_CHECK, SHELL, STATUS_LISTENER } from '@/copy/strings';
 import { allStaticCopy, FILE_COPY, INDEX_COPY, PLATFORM_COPY, QUESTION_COPY, RELAY_COPY, SEND_GUARD, sourceName } from './copy';
 
 describe('copy of 70', () => {
@@ -68,5 +68,12 @@ describe('parity with web/src/copy/strings.ts', () => {
     expect(STATUS_LISTENER.reconnecting).toBe(PLATFORM_COPY.homeBaseReconnecting);
     expect(STATUS_LISTENER.stopped).toBe(PLATFORM_COPY.homeBaseStopped);
     expect(STATUS_LISTENER.signOut).toBe(PLATFORM_COPY.signOut);
+  });
+
+  it('the other-tab copy is the same (R-PLAT-09)', () => {
+    expect(SHELL.updatedInAnotherTab).toBe(PLATFORM_COPY.updatedInAnotherTab);
+    expect(SHELL.reload).toBe(PLATFORM_COPY.reload);
+    expect(SHELL.deleteBlocked).toBe(PLATFORM_COPY.deleteBlocked);
+    expect(SHELL.deleteIndexBlocked).toBe(PLATFORM_COPY.deleteIndexBlocked);
   });
 });

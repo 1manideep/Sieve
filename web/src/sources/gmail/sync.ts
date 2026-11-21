@@ -94,6 +94,36 @@ class RowWriter {
   }
 }
 
+/**
+ * A message that fails this many syncs for its own reasons (a request Gmail refuses for that id, content that
+ * breaks a reader) is skipped from then on, in this page, so one bad message cannot stop every backfill.
+ */
+export const GMAIL_MESSAGE_MAX_FAILURES = 3;
+const messageFailures = new Map<SieveDb, Map<string, number>>();
+
+/** Errors that are about the whole job, not one message: they stop the job and are never counted. */
+function jobWide(e: unknown): boolean {
+  return e instanceof SyncStopped || e instanceof GmailAuthError || e instanceof GmailForbiddenError || e instanceof GmailRateError
+    || e instanceof GmailNetworkError || (e as { name?: string })?.name === 'AbortError' || (e instanceof IngestError && e.code === 'storage-full');
+}
+
+/** One message's work: its own failures are counted, and after GMAIL_MESSAGE_MAX_FAILURES it is skipped. */
+async function perMessage(db: SieveDb, id: string, work: () => Promise<void>): Promise<void> {
+  const counts = messageFailures.get(db) ?? new Map<string, number>();
+  messageFailures.set(db, counts);
+  if ((counts.get(id) ?? 0) >= GMAIL_MESSAGE_MAX_FAILURES) return;
+  try {
+    await work();
+    counts.delete(id);
+  } catch (e) {
+    if (jobWide(e)) throw e;
+    const n = (counts.get(id) ?? 0) + 1;
+    counts.set(id, n);
+    if (n < GMAIL_MESSAGE_MAX_FAILURES) throw e;
+    console.warn('gmail: a message failed', n, 'times and is skipped');
+  }
+}
+
 async function runPool<T>(items: T[], n: number, fn: (item: T) => Promise<void>): Promise<void> {
   let i = 0;
   let firstError: unknown = null;
@@ -152,12 +182,14 @@ export async function backfill(db: SieveDb, ctl: Ctl): Promise<void> {
   await rt.queue?.writeRowsNow?.();
   await runPool(todo, GMAIL_MAX_CONCURRENCY, async (m) => {
     boundary(ctl);
-    try {
-      const msg = await getMessage(m.id, 'metadata', 'background', ctl.signal);
-      await ingestMessage(db, msg, 'meta', account, jobStartedAt);
-    } catch (e) {
-      if (!(e instanceof GmailNotFoundError)) throw e;
-    }
+    await perMessage(db, m.id, async () => {
+      try {
+        const msg = await getMessage(m.id, 'metadata', 'background', ctl.signal);
+        await ingestMessage(db, msg, 'meta', account, jobStartedAt);
+      } catch (e) {
+        if (!(e instanceof GmailNotFoundError)) throw e;
+      }
+    });
     remaining--;
     rt.syncProgress.set('gmail', { discovered: listed.length, remaining, etaMs: etaMs(remaining, GMAIL_COST.get) });
   });
@@ -181,17 +213,28 @@ async function bodies(db: SieveDb, ctl: Ctl, writer: RowWriter, account?: string
   const discovered = rt.syncProgress.get('gmail')?.discovered ?? todo.length;
   await runPool(todo, GMAIL_MAX_CONCURRENCY, async (id) => {
     boundary(ctl);
-    try {
-      const msg = await getMessage(id.slice('gmail:'.length), 'full', 'background', ctl.signal);
-      if (isTrashed(msg.labelIds)) await removeRecords(db, [id], 'trashed');
-      else await ingestMessage(db, msg, 'full', account);
-    } catch (e) {
-      if (e instanceof GmailNotFoundError) await removeRecords(db, [id], 'source-deleted');
-      else throw e;
-    }
+    await perMessage(db, id.slice('gmail:'.length), async () => {
+      try {
+        const msg = await getMessage(id.slice('gmail:'.length), 'full', 'background', ctl.signal);
+        if (isTrashed(msg.labelIds)) await removeRecords(db, [id], 'trashed');
+        else await ingestMessage(db, msg, 'full', account);
+      } catch (e) {
+        if (e instanceof GmailNotFoundError) await removeRecords(db, [id], 'source-deleted');
+        else throw e;
+      }
+    });
     remaining--;
     rt.syncProgress.set('gmail', { discovered, remaining, etaMs: etaMs(remaining, GMAIL_COST.getFull) });
   });
+}
+
+/**
+ * A message that became mail by a label change (20 section 15.5, Nov 21): a draft that was sent keeps its id, so its
+ * `messagesAdded` entry still said DRAFT and was skipped, and SENT (with INBOX, for mail sent to yourself) arrives as
+ * `labelsAdded`. It is indexed like any other message once it is in the inbox or sent, and not a draft, chat or trash.
+ */
+function landed(labels: string[], msg: GmailMessage): boolean {
+  return (labels.includes('INBOX') || labels.includes('SENT')) && !isSkippable(msg);
 }
 
 /** History since the cursor; 404 (expired) falls back to reconciliation (20 section 15.5). */
@@ -201,7 +244,7 @@ export async function incremental(db: SieveDb, ctl: Ctl): Promise<void> {
   const writer = new RowWriter(db);
   await writer.set({ phase: 'incremental' }, true);
   const jobStartedAt = Date.now();
-  const state = new Map<string, 'added' | 'restored' | RemoveReason>();
+  const state = new Map<string, 'added' | 'labelled' | 'restored' | RemoveReason>();
   let cursor = row.cursor;
   let pageToken: string | undefined;
   try {
@@ -211,9 +254,13 @@ export async function incremental(db: SieveDb, ctl: Ctl): Promise<void> {
       for (const h of page.history ?? []) {
         for (const a of h.messagesAdded ?? []) if (!isSkippable(a.message)) state.set(a.message.id, 'added');
         for (const d of h.messagesDeleted ?? []) state.set(d.message.id, 'source-deleted');
-        for (const l of h.labelsAdded ?? []) if (l.labelIds.includes('TRASH') || l.labelIds.includes('SPAM')) state.set(l.message.id, 'trashed');
+        for (const l of h.labelsAdded ?? []) {
+          if (l.labelIds.includes('TRASH') || l.labelIds.includes('SPAM')) state.set(l.message.id, 'trashed');
+          else if (landed(l.labelIds, l.message) && !state.has(l.message.id)) state.set(l.message.id, 'labelled');
+        }
         for (const l of h.labelsRemoved ?? []) {
           if ((l.labelIds.includes('TRASH') || l.labelIds.includes('SPAM')) && !isTrashed(l.message.labelIds)) state.set(l.message.id, 'restored');
+          else if (l.labelIds.includes('DRAFT') && landed(l.message.labelIds ?? [], l.message) && !state.has(l.message.id)) state.set(l.message.id, 'labelled');
         }
       }
       cursor = page.historyId ?? cursor;
@@ -223,21 +270,29 @@ export async function incremental(db: SieveDb, ctl: Ctl): Promise<void> {
     if (e instanceof GmailNotFoundError) return reconcile(db, ctl);
     throw e;
   }
+  // A message that only changed labels (a sent draft, mail sent to yourself) is fetched only when it is not indexed yet.
+  const labelled = [...state].filter(([, s]) => s === 'labelled').map(([id]) => id);
+  const indexed = labelled.length > 0 ? await db.records.bulkGet(labelled.map((id) => 'gmail:' + id)) : [];
+  labelled.forEach((id, i) => {
+    if (indexed[i]) state.delete(id);
+  });
   const byReason = new Map<RemoveReason, string[]>();
   const fetch: { id: string; restored: boolean }[] = [];
   for (const [id, s] of state) {
-    if (s === 'added' || s === 'restored') fetch.push({ id, restored: s === 'restored' });
+    if (s === 'added' || s === 'labelled' || s === 'restored') fetch.push({ id, restored: s === 'restored' });
     else byReason.set(s, [...(byReason.get(s) ?? []), 'gmail:' + id]);
   }
   for (const [reason, ids] of byReason) await removeRecords(db, ids, reason);
   await runPool(fetch, GMAIL_MAX_CONCURRENCY, async ({ id, restored }) => {
     boundary(ctl);
-    try {
-      const msg = await getMessage(id, 'full', 'background', ctl.signal);
-      await ingestMessage(db, msg, 'full', row.account, restored ? undefined : jobStartedAt);
-    } catch (e) {
-      if (!(e instanceof GmailNotFoundError)) throw e;
-    }
+    await perMessage(db, id, async () => {
+      try {
+        const msg = await getMessage(id, 'full', 'background', ctl.signal);
+        await ingestMessage(db, msg, 'full', row.account, restored ? undefined : jobStartedAt);
+      } catch (e) {
+        if (!(e instanceof GmailNotFoundError)) throw e;
+      }
+    });
   });
   await getRuntime(db).keyword.flush();
   await writer.set({ cursor, phase: 'idle', lastSyncAt: Date.now(), needsAuth: false, error: undefined, errorCode: undefined }, true);
@@ -260,12 +315,14 @@ export async function reconcile(db: SieveDb, ctl: Ctl): Promise<void> {
   const jobStartedAt = Date.now();
   await runPool(missing, GMAIL_MAX_CONCURRENCY, async (m) => {
     boundary(ctl);
-    try {
-      const msg = await getMessage(m.id, 'full', 'background', ctl.signal);
-      await ingestMessage(db, msg, 'full', row?.account, jobStartedAt);
-    } catch (e) {
-      if (!(e instanceof GmailNotFoundError)) throw e;
-    }
+    await perMessage(db, m.id, async () => {
+      try {
+        const msg = await getMessage(m.id, 'full', 'background', ctl.signal);
+        await ingestMessage(db, msg, 'full', row?.account, jobStartedAt);
+      } catch (e) {
+        if (!(e instanceof GmailNotFoundError)) throw e;
+      }
+    });
   });
   await getRuntime(db).keyword.flush();
   await writer.set({ cursor: profile.historyId, phase: 'idle', lastSyncAt: Date.now(), reconciledAt: Date.now(), needsAuth: false, error: undefined, errorCode: undefined }, true);
@@ -314,7 +371,7 @@ async function rowError(db: SieveDb, e: unknown): Promise<void> {
   if (e instanceof GmailForbiddenError) return void (await db.sources.update('gmail', { errorCode: 'gmail-forbidden', error: SOURCE_COPY.gmailForbidden(e.reason), phase: 'idle' }));
   if (e instanceof GmailRateError) return void (await db.sources.update('gmail', { errorCode: 'quota', error: SOURCE_COPY.gmailQuota, phase: 'idle' }));
   if (e instanceof GmailNetworkError) return void (await db.sources.update('gmail', { errorCode: 'network', error: SOURCE_COPY.network, phase: 'idle' }));
-  if (e instanceof IngestError && e.code === 'storage-full') return;
+  if (e instanceof IngestError && e.code === 'storage-full') return void (await db.sources.update('gmail', { phase: 'idle' }));   // ingest paused the rows
   if ((e as { name?: string })?.name === 'AbortError') return;
   console.warn('gmail sync failed', String((e as Error)?.message ?? e).slice(0, 80));
   await db.sources.update('gmail', { errorCode: 'unknown', error: "Gmail sync stopped. Sieve will try again soon.", phase: 'idle' });
@@ -382,6 +439,7 @@ export function startGmailTimers(db: SieveDb): void {
 }
 
 export async function stopGmailSync(db: SieveDb): Promise<void> {
+  messageFailures.delete(db);
   const c = controllers.get(db);
   if (!c) return;
   c.abort.abort();

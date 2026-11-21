@@ -38,7 +38,7 @@ export interface AskPanelProps {
 
 export function AskPanel(props: AskPanelProps) {
   const { id, labelledBy, hidden, model, suggestions, online, onAsk, onSeeReceipts, headerSlot, sampleData, nanoSettingUp, setupNotice, computer, onAttach } = props;
-  const { question, phase, step } = useAskPlayground(useShallow((s) => ({ question: s.question, phase: s.phase, step: s.step })));
+  const { question, phase, step, approving } = useAskPlayground(useShallow((s) => ({ question: s.question, phase: s.phase, step: s.step, approving: s.approving })));
   const inputRef = useRef<QuestionInputHandle>(null);
   const focusWhenIdle = useRef(false);
   const [preferred, setPreferred] = usePreferredStep(useAskPlayground, PLAYGROUND_SETTINGS.defaultStep);
@@ -140,6 +140,7 @@ export function AskPanel(props: AskPanelProps) {
             onSubmit={onAsk}
             button={submitButton(true)}
             step={step}
+            disabled={approving || phase === 'drafting'}
           />
         </div>
       )}

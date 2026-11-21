@@ -1,7 +1,7 @@
 // Unit-test fixtures: the persona previews (e2e/previews.ts), message builders and panel states.
 import { MESSAGE_VERSION } from '@sieve/shared';
 import type { ProposalPreview } from '@sieve/shared';
-import type { PanelState, ResolvedEntry } from '../src/shared/internal';
+import type { PanelState, Preview, ResolvedEntry } from '../src/shared/internal';
 import { DEPOSIT, LEASE, STATEMENT, option, variant } from '../e2e/previews';
 
 export { DEPOSIT, LEASE, STATEMENT, option, variant };
@@ -21,7 +21,8 @@ export const hello = (homeBase = true, appVersion = '0.1.0') => ({
   appVersion,
 });
 
-export const pending = (proposals: ProposalPreview[]) => ({ type: 'sieve/pending', version: MESSAGE_VERSION, proposals });
+/** A sieve/pending message; previews may carry the page's text hash (0.1.1). */
+export const pending = (proposals: Preview[]) => ({ type: 'sieve/pending', version: MESSAGE_VERSION, proposals });
 
 export const resolved = (requestId: string, outcome: 'approved' | 'declined' | 'expired' | 'error') => ({
   type: 'sieve/resolved',

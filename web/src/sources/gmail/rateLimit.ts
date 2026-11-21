@@ -1,7 +1,7 @@
 // A per-page quota bucket for Gmail (20 section 15.2): units refill continuously, interactive callers first,
 // at most maxConcurrency requests in flight.
 
-interface Waiter { units: number; priority: 'interactive' | 'background'; resolve: (release: () => void) => void; reject: (e: unknown) => void; signal?: AbortSignal }
+interface Waiter { units: number; priority: 'interactive' | 'background'; resolve: (release: () => void) => void; reject: (e: unknown) => void; signal?: AbortSignal; off?: () => void }
 
 export class UnitBucket {
   private tokens: number;
@@ -36,13 +36,18 @@ export class UnitBucket {
       } else {
         this.waiters.push(w);
       }
-      signal?.addEventListener('abort', () => {
+      // The sync's signal lives for the whole job: the listener goes as soon as the units are granted.
+      const onAbort = () => {
         const i = this.waiters.indexOf(w);
         if (i >= 0) {
           this.waiters.splice(i, 1);
           reject(new DOMException('Aborted', 'AbortError'));
         }
-      }, { once: true });
+      };
+      if (signal) {
+        signal.addEventListener('abort', onAbort, { once: true });
+        w.off = () => signal.removeEventListener('abort', onAbort);
+      }
       this.pump();
     });
   }
@@ -57,6 +62,7 @@ export class UnitBucket {
       const w = this.waiters[0] as Waiter;
       if (this.tokens < w.units) break;
       this.waiters.shift();
+      w.off?.();
       this.tokens -= w.units;
       this.inFlight++;
       let released = false;

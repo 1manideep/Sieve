@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Mapping
 
-from . import config
+from . import config, ratelimit
 from .models import GrantMeta, QueryHints, ToolResult
 
 # ---------- schemas (30 section 8.5) ----------
@@ -96,6 +96,12 @@ ANNOTATIONS = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint":
 _LIMIT = config.MAX_OPEN_REQUESTS_PER_GRANT
 _CHECK_WAIT = config.CHECK_WAIT_SECONDS
 _RETRY_MINUTES = config.IDEMPOTENCY_WINDOW_SECONDS // 60
+_CHECK_SHARE = "half a call" if config.CHECK_CALL_WEIGHT == 0.5 else f"{config.CHECK_CALL_WEIGHT:g} of a call"
+_RATE_SENTENCE = (
+    f"A connection may make {config.RATE_LIMIT_CALLS} calls per {config.RATE_LIMIT_WINDOW_SECONDS // 60} minutes, "
+    f"and each sieve_check counts as {_CHECK_SHARE}; past that, the result says how many seconds to wait, at most "
+    f"{ratelimit.max_stated_wait()}."
+)
 _POLL = f"poll with sieve_check, which waits about {_CHECK_WAIT} seconds per call"
 _ANSWER_FIRST = "Use this first: it shares the least. "      # only when a bigger step is allowed (30 section 8.5)
 _ANSWER_DESCRIPTION = (
@@ -104,8 +110,9 @@ _ANSWER_DESCRIPTION = (
     "question, and put dates, the sender and exact identifiers in the optional fields. The person usually needs a "
     f"minute or more, so the result is often \"pending\": then tell the person a request is waiting in Sieve and ask "
     f"them to approve it there, and {_POLL}. At most {_LIMIT} requests can wait per connection; wait for sieve_check "
-    f"before asking more. If a call fails or times out, call again with the same arguments within {_RETRY_MINUTES} "
-    "minutes: Sieve returns the existing request and its result instead of making a new one. Other results: answered "
+    f"before asking more. {_RATE_SENTENCE} If a call fails or times out, call again with the same arguments within "
+    f"{_RETRY_MINUTES} minutes: Sieve returns the existing request and its result instead of making a new one. "
+    "Other results: answered "
     "(text is the approved answer), declined, blocked (that kind of item is never shared), no-match, unsupported "
     "(Sieve cannot answer that kind of question, such as a count; the message says why), offline (Sieve is closed on "
     "the person's computer), expired, not-allowed, error."
@@ -220,7 +227,7 @@ MSG_GRANT_EXPIRED = "This connection to Sieve has expired. Ask the person to mak
 MSG_GRANT_REVOKED = "The person turned off this connection in Sieve."
 MSG_STEP_CAP = "This connection only allows {tools}. Use {top} instead."
 MSG_CHECK_FAILED = "Sieve could not check this connection. Ask the person to reconnect this AI in Sieve Settings."
-MSG_RATE_LIMITED = "Too many requests from this connection. Wait a minute, then try again."
+MSG_RATE_LIMITED = "Too many requests from this connection. Wait about {seconds} seconds, then try again."
 MSG_OPEN_LIMIT = (f"At most {_LIMIT} requests can wait per connection, and {_LIMIT} are waiting now{{ids}}. Call "
                   "sieve_check on those first, then ask again.")
 MSG_INTERNAL = "Sieve had a problem with this request. Try again in a minute."
@@ -245,8 +252,15 @@ def answered_result(request_id: str, step: str, text: str, image: Any = None) ->
                       message=f"The person approved sharing this {STEP_WORDS[step]}.")
 
 
-def error_result(message: str, request_id: str | None = None) -> ToolResult:
-    return ToolResult(status="error", request_id=request_id, message=message)
+def error_result(message: str, request_id: str | None = None, *, refused: bool = False) -> ToolResult:
+    """refused: the call was turned away before Sieve did any work for it, so the rate limit gives it back
+    (30 section 11)."""
+    return ToolResult(status="error", request_id=request_id, message=message, refused=refused)
+
+
+def rate_limited_result(wait_seconds: int) -> ToolResult:
+    """The rate limit with the real wait (ratelimit.stated_wait). A rate-limited call was never counted."""
+    return error_result(MSG_RATE_LIMITED.replace("{seconds}", str(wait_seconds)))
 
 
 def offline_result() -> ToolResult:
@@ -254,13 +268,17 @@ def offline_result() -> ToolResult:
 
 
 def unknown_request_result() -> ToolResult:
-    return ToolResult(status="unknown", message=MSG_UNKNOWN_ID)
+    return ToolResult(status="unknown", message=MSG_UNKNOWN_ID, refused=True)
+
+
+def key_reused_result() -> ToolResult:
+    return error_result(MSG_KEY_REUSED, refused=True)
 
 
 def open_limit_result(waiting_ids: list[str]) -> ToolResult:
     """The pending limit, with the ids that are waiting, so an assistant that lost them can check them."""
     ids = (": " + ", ".join(f"\"{rid}\"" for rid in waiting_ids)) if waiting_ids else ""
-    return error_result(MSG_OPEN_LIMIT.replace("{ids}", ids))
+    return error_result(MSG_OPEN_LIMIT.replace("{ids}", ids), refused=True)
 
 
 def nothing_result(request_id: str) -> ToolResult:

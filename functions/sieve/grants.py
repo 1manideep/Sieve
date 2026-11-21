@@ -175,7 +175,8 @@ def create_grant_records(db: Any, *, uid: str, req: GrantRequest, secret: bytes,
     batch.create(db.collection("connectors").document(lh), {
         "uid": uid, "grantId": grant_id, "token": serialize_token(token),
         "identity": {"agentId": identity.agent_id, "fingerprint": identity.fingerprint},
-        "createdAt": now, "expiresAt": expires_at, "revokedRootIds": [], "revokedTokenIds": [], "rateCount": 0,
+        "createdAt": now, "expiresAt": expires_at, "revokedRootIds": [], "revokedTokenIds": [],
+        "rateUsed": 0.0, "rateRefunds": 0.0,
     })
     batch.set(grant_ref, {
         "aiName": req.ai_name, "maxStep": req.max_step, "allowedCategories": list(req.allowed_categories),

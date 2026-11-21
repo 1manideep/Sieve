@@ -47,4 +47,14 @@ describe('OutcomePanel', () => {
     expect(onRetry).toHaveBeenCalledOnce();
     await expectNoAxeViolations();
   });
+
+  it('unsupported: a count, or one fact at a time (Nov 21)', async () => {
+    const { unmount } = renderIn(<OutcomePanel outcome="unsupported" variant="real" />);
+    expect(screen.getByText("Counts aren't available")).toBeInTheDocument();
+    unmount();
+    renderIn(<OutcomePanel outcome="unsupported" oneFact variant="real" />);
+    expect(screen.getByText('Sieve shares one fact at a time at this level')).toBeInTheDocument();
+    expect(screen.getByText('This asks for several things at once, or the answer held more than one. Ask about one thing, or ask for the excerpt.')).toBeInTheDocument();
+    await expectNoAxeViolations();
+  });
 });

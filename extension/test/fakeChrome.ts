@@ -243,6 +243,9 @@ export function createFakeChrome(opts: FakeChromeOptions = {}) {
       },
     },
     windows: {
+      WINDOW_ID_NONE: -1,
+      /** Fired by tests with focusWindow(); the worker reads focus from it synchronously. */
+      onFocusChanged: new FakeEvent<[number]>(),
       update: (windowId: number, props: unknown) => {
         log('windows.update');
         windowUpdates.push({ windowId, props });
@@ -270,6 +273,11 @@ export function createFakeChrome(opts: FakeChromeOptions = {}) {
       onCommand: new FakeEvent<[string, { windowId?: number } | undefined]>(),
     },
   };
+
+  /** Chrome reports a window as focused, or (null) that no Chrome window has focus. */
+  function focusWindow(windowId: number | null): void {
+    api.windows.onFocusChanged.emit(windowId ?? api.windows.WINDOW_ID_NONE);
+  }
 
   function connectPage(sender: FakeSender, name = 'sieve-home-base'): FakePort {
     const { near, far } = portPair(name, sender);
@@ -302,6 +310,7 @@ export function createFakeChrome(opts: FakeChromeOptions = {}) {
     created,
     connectPage,
     connectPanel,
+    focusWindow,
   };
 }
 

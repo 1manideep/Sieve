@@ -1,11 +1,18 @@
 {
   "_about": "Made-up values for the report tests. Not a measurement.",
-  "version": 1,
+  "version": 2,
   "set_id": "2026-11-24-set1",
   "complete": true,
+  "incomplete_reasons": [],
   "rehearsal": false,
   "model_id": "gemini-test-flash",
   "date": "2026-11-24T18:30:00+00:00",
+  "runs_required": 3,
+  "n_runs": 3,
+  "approval": "person",
+  "approval_line": "Sieve ran at its defaults, with a person approving every request as proposed.",
+  "placeholder_photos": [],
+  "flags": [],
   "arms": {},
   "b": {
     "chars": 41250,
@@ -19,7 +26,8 @@
     "private": 6,
     "photos": 1,
     "inj": 1,
-    "correct": 8
+    "correct": 8,
+    "private_listed": 4
   },
   "s": {
     "chars": 1630,
@@ -30,10 +38,11 @@
     "answers": 8,
     "summaries": 0,
     "items": 1,
-    "private": 0,
+    "private": 1,
     "photos": 0,
     "inj": 0,
-    "correct": 9
+    "correct": 9,
+    "private_listed": 0
   },
   "headline": "Across the 10 tasks, the outside model received 41,250 characters through direct access and 1,630 through Sieve."
 }

@@ -5,9 +5,12 @@
 // The real project id is used so the web app's config and the functions share one emulator
 // namespace; Firestore, Auth, Realtime Database and Functions are all emulated. Ctrl-C stops both.
 // SIEVE_PROJECT_ID comes from the environment or from bench/.env.
+// It writes functions/.env.local (emulator only, read last, so it wins over functions/.env) with
+// SIEVE_PUBLIC_BASE_URL=http://localhost:5173, so the connector link Settings shows points at this stack and
+// not at production, and removes the file when it stops. functions/.env itself is never written.
 
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +45,31 @@ if (!existsSync(join(root, 'web', '.env.bench.local'))) {
   fail('web/.env.bench.local is missing (VITE_USE_EMULATORS=1, VITE_RELAY_FROM_PLAYGROUND=1, the VITE_FIREBASE_* config, the local App Check debug token).');
 }
 
+// functions/.env.local for this stack only. A file this script did not write is left alone.
+const ENV_LOCAL = join(root, 'functions', '.env.local');
+const ENV_LOCAL_MARK = '# Written by scripts/bench-stack.mjs for the bench stack; removed when it stops.';
+if (existsSync(ENV_LOCAL) && !readFileSync(ENV_LOCAL, 'utf8').startsWith(ENV_LOCAL_MARK)) {
+  fail('functions/.env.local exists and was not written by bench:stack. Move it aside, then run bench:stack again.');
+}
+const envLines = [ENV_LOCAL_MARK, 'SIEVE_PUBLIC_BASE_URL=http://localhost:5173'];
+if (process.platform === 'darwin') {
+  // The macOS fork-safety values from functions/.env.demo-sieve: that file applies only to project demo-sieve.
+  const demo = envFromFile(join(root, 'functions', '.env.demo-sieve'));
+  for (const key of ['OBJC_DISABLE_INITIALIZE_FORK_SAFETY', 'NO_PROXY']) if (demo[key]) envLines.push(`${key}=${demo[key]}`);
+}
+writeFileSync(ENV_LOCAL, `${envLines.join('\n')}\n`);
+let envLocalRemoved = false;
+function removeEnvLocal() {
+  if (envLocalRemoved) return;
+  envLocalRemoved = true;
+  try {
+    if (existsSync(ENV_LOCAL) && readFileSync(ENV_LOCAL, 'utf8').startsWith(ENV_LOCAL_MARK)) rmSync(ENV_LOCAL);
+  } catch {
+    console.error('bench:stack: could not remove functions/.env.local; delete it by hand.');
+  }
+}
+process.on('exit', removeEnvLocal);
+
 const children = [];
 let stopping = false;
 
@@ -61,6 +89,7 @@ function run(name, command, args) {
 function stopAll(code) {
   if (stopping) return;
   stopping = true;
+  removeEnvLocal();
   for (const child of children) {
     if (child.exitCode === null) child.kill('SIGINT');
   }

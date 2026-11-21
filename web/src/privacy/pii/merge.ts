@@ -2,6 +2,7 @@
 import type { PiiSpan, PiiType } from '@sieve/shared';
 import { escapeRegExp } from '../text';
 import { isProtectedValue } from './protected';
+import { looksLikeIdNumber } from './validators/idNumber';
 
 export const TYPE_RANK: readonly PiiType[] = ['secret-code', 'card', 'iban', 'ssn', 'account', 'email', 'phone', 'dob', 'address', 'name', 'other'];
 export const BY_RANK: readonly PiiSpan['by'][] = ['validator', 'model', 'nano'];
@@ -21,12 +22,19 @@ export function isStopwordOrCalendarWord(s: string): boolean {
   return PII_STOPWORDS.has(t) || MONTH_NAMES.has(t) || WEEKDAYS.has(t);
 }
 
-/** Step 1: drop empty, out-of-range, protected (model and Nano), stopword, month-near-digit and very short name spans. */
-export function filterSpans(text: string, spans: readonly PiiSpan[]): PiiSpan[] {
+/** Filter options: `senders` are lowercase sender words of the index, never masked as an ID number. */
+export interface SpanFilterOptions { senders?: ReadonlySet<string> }
+
+/**
+ * Step 1: drop empty, out-of-range, protected (model and Nano), stopword, month-near-digit and very short name spans,
+ * and model or Nano ID numbers that do not read as one ("Z1llow", 5.6 step 1).
+ */
+export function filterSpans(text: string, spans: readonly PiiSpan[], opts: SpanFilterOptions = {}): PiiSpan[] {
   return spans.filter((s) => {
     if (!(s.end > s.start) || s.start < 0 || s.end > text.length) return false;
     const value = text.slice(s.start, s.end);
     if (s.by !== 'validator' && s.type !== 'dob' && isProtectedValue(value)) return false;
+    if (s.by !== 'validator' && s.type === 'other' && !looksLikeIdNumber(value, opts.senders)) return false;
     if (s.type === 'name') {
       const low = value.trim().toLowerCase();
       if (PII_STOPWORDS.has(low) || value.trim().length <= 2) return false;
@@ -98,6 +106,6 @@ export function propagateEntities(text: string, spans: readonly PiiSpan[]): PiiS
 }
 
 /** filter, merge, propagate, merge again (5.6). */
-export function finalizeSpans(text: string, spans: readonly PiiSpan[]): PiiSpan[] {
-  return mergeSpans(propagateEntities(text, mergeSpans(filterSpans(text, spans))));
+export function finalizeSpans(text: string, spans: readonly PiiSpan[], opts: SpanFilterOptions = {}): PiiSpan[] {
+  return mergeSpans(propagateEntities(text, mergeSpans(filterSpans(text, spans, opts))));
 }

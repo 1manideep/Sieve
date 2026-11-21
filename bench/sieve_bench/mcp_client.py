@@ -90,6 +90,19 @@ def sieve_fields(outcome: ToolOutcome) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+# Sieve's per-connection rate limit (30 section 11) comes back as status "error" with this message
+# (functions/sieve/tools.py MSG_RATE_LIMITED), so the status alone does not show it.
+RATE_LIMITED_PREFIX = "Too many requests from this connection"
+
+
+def is_rate_limited(fields: Mapping[str, Any]) -> bool:
+    """True for Sieve's rate-limited result: status "error" and the rate-limit message."""
+    if not isinstance(fields, Mapping):
+        return False
+    message = fields.get("message")
+    return fields.get("status") == "error" and isinstance(message, str) and message.strip().startswith(RATE_LIMITED_PREFIX)
+
+
 class McpTools:
     """The tool box the loop uses: `list_tools()` and `call(name, args)`."""
 

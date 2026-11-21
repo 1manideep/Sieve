@@ -21,14 +21,19 @@ export function restAfter(lane: Lane): number {
   return QUEUE_PACING.nanoRestMs;
 }
 
+/** Resolves after `ms`, or at once when `signal` aborts. The listener goes with the timer (the signal is long-lived). */
 export function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal.aborted || ms <= 0) return resolve();
-    const t = setTimeout(resolve, ms);
-    signal.addEventListener('abort', () => {
+    const onAbort = () => {
       clearTimeout(t);
       resolve();
-    }, { once: true });
+    };
+    const t = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }
 

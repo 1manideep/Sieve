@@ -1,23 +1,52 @@
-"""E9 to E12: admission window, cleanup, collect once, payload above the cap; receipts and stale expiry."""
+"""E9 to E12: admission bucket, cleanup, collect once, payload above the cap; receipts and stale expiry."""
 import threading
 from datetime import timedelta
 
-from sieve import cleanup, fb, links, ratelimit, relay, tools
+import pytest
+
+from sieve import cleanup, config, fb, links, ratelimit, relay, tools
 from sieve.models import GrantMeta
 from tests.emulator._grants import new_uid, put_request, short_grant
 
 
-def test_e9_admission_window(db, broker_secret):
+def test_e9_admission_bucket(db, broker_secret):
     uid = new_uid()
-    out, link_secret, _ = short_grant(db, uid, broker_secret)
+    out, link_secret, connector = short_grant(db, uid, broker_secret)
+    assert (connector["rateUsed"], connector["rateRefunds"]) == (0.0, 0.0) and "rateCount" not in connector
     lh = links.link_hash(link_secret)
-    results = [ratelimit.admit(db, lh, fb.now()) for _ in range(31)]
-    assert all(r.allowed for r in results[:30]) and not results[30].allowed
-    assert results[30].grant.ai_name == "Test AI" and 0 < results[30].retry_after_seconds <= 600
-    db.collection("connectors").document(lh).update({"rateWindowStart": fb.now() - timedelta(minutes=11)})
-    assert ratelimit.admit(db, lh, fb.now()).allowed
+    ref = db.collection("connectors").document(lh)
+    now = fb.now()                                  # one instant: no draining between the calls
+    results = [ratelimit.admit(db, lh, now) for _ in range(config.RATE_LIMIT_CALLS + 1)]
+    assert all(r.allowed for r in results[:-1]) and not results[-1].allowed
+    assert results[-1].grant.ai_name == "Test AI" and results[-1].retry_after_seconds == 10
+    assert ref.get().get("rateUsed") == config.RATE_LIMIT_CALLS      # the refused call added nothing
+    check = ratelimit.admit(db, lh, now, weight=config.CHECK_CALL_WEIGHT)
+    assert not check.allowed and check.retry_after_seconds == 5
+    assert ratelimit.refund(db, lh, 1.0, now) is True                 # a refused call given back
+    assert ref.get().get("rateUsed") == config.RATE_LIMIT_CALLS - 1 and ref.get().get("rateRefunds") == 1
+    assert ratelimit.admit(db, lh, now, weight=0.5).allowed and ratelimit.admit(db, lh, now, weight=0.5).allowed
+    assert not ratelimit.admit(db, lh, now, weight=0.5).allowed
+    later = now + timedelta(seconds=7.5)            # the stated wait was about 10 s; the real one is 7.5 s
+    assert ratelimit.admit(db, lh, later).allowed
+    assert ref.get().get("rateUsed") == pytest.approx(config.RATE_LIMIT_CALLS)
     assert db.collection(f"users/{uid}/grants").document(out["grantId"]).get().get("lastUsedAt")
-    assert ratelimit.admit(db, "0" * 64, fb.now()) is None
+    assert ratelimit.admit(db, "0" * 64, now) is None and ratelimit.refund(db, "0" * 64, 1.0, now) is False
+
+
+def test_e9b_free_refusals_and_old_fields(db, broker_secret):
+    uid = new_uid()
+    _, link_secret, _ = short_grant(db, uid, broker_secret)
+    lh = links.link_hash(link_secret)
+    ref = db.collection("connectors").document(lh)
+    now = fb.now()
+    for _ in range(config.RATE_LIMIT_FREE_REFUSALS):
+        assert ratelimit.admit(db, lh, now).allowed and ratelimit.refund(db, lh, 1.0, now)
+    assert ref.get().get("rateUsed") == 0 and ref.get().get("rateRefunds") == config.RATE_LIMIT_FREE_REFUSALS
+    assert ratelimit.admit(db, lh, now).allowed and ratelimit.refund(db, lh, 1.0, now) is False
+    assert ref.get().get("rateUsed") == 1           # past the free refusals a refused call stays counted
+    ref.update({"rateUsed": 0.0, "rateRefunds": 0.0, "rateAt": None, "rateWindowStart": now, "rateCount": 30})
+    assert ratelimit.admit(db, lh, now).allowed     # a connector from before the bucket starts empty
+    assert ref.get().get("rateUsed") == 1
 
 
 def test_e10_cleanup(db, broker_secret):

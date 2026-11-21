@@ -278,6 +278,13 @@ def _tool_reply(msg_id: Any, result: ToolResult, *, era: str, version: str) -> R
     return Reply(200, _result(msg_id, _modern(body) if era == "modern" else body))
 
 
+def _give_back(deps: Deps, link_hash: str, weight: float, grant_id: str) -> None:
+    try:
+        ratelimit.refund(deps.db, link_hash, weight, deps.now())
+    except Exception as exc:  # noqa: BLE001 - a failed refund only leaves the call counted
+        logs.log_exception("rate_refund_error", exc, grant=grant_id)
+
+
 def call_tool(msg: Mapping[str, Any], *, era: str, version: str, link_secret: str, link_hash: str,
               deps: Deps, t0: float) -> Reply:
     msg_id = msg["id"]
@@ -293,13 +300,16 @@ def call_tool(msg: Mapping[str, Any], *, era: str, version: str, link_secret: st
     log_tool = name if known else "unknown"
     reason = "none"
     waited_ms = 0
+    weight = ratelimit.call_weight(name)
 
     def done(result: ToolResult) -> Reply:
+        if result.refused and adm.allowed:      # 30 section 11: a refused call is given back to the limit
+            _give_back(deps, link_hash, weight, grant_id)
         logs.log_event("tool_call", grant=grant_id, tool=log_tool, reason=reason, status=result.status,
                        ms=int((deps.monotonic() - t0) * 1000), waited_ms=waited_ms)
         return _tool_reply(msg_id, result, era=era, version=version)
 
-    adm = ratelimit.admit(deps.db, link_hash, deps.now())
+    adm = ratelimit.admit(deps.db, link_hash, deps.now(), weight=weight)
     if adm is None:
         return Reply(404, {"error": "unknown_connector"})
     connector = adm.connector
@@ -307,7 +317,7 @@ def call_tool(msg: Mapping[str, Any], *, era: str, version: str, link_secret: st
     grant_id = str(connector.get("grantId"))
     if not adm.allowed:
         reason = "RATE_LIMITED"
-        return done(tools.error_result(tools.MSG_RATE_LIMITED))
+        return done(tools.rate_limited_result(adm.retry_after_seconds))
 
     out = authz.authorize_call(deps.db, secret=deps.secret(), uid=uid, link_hash=link_hash, connector=connector,
                                link_secret=link_secret, tool_name=name, args=dict(arguments))
@@ -328,7 +338,7 @@ def call_tool(msg: Mapping[str, Any], *, era: str, version: str, link_secret: st
         else:
             ladder = tools.parse_ladder_args(arguments, today=deps.now().date())
     except tools.ArgError as exc:
-        return done(tools.error_result(str(exc)))
+        return done(tools.error_result(str(exc), refused=True))
 
     ctx = relay.CallCtx(uid=uid, grant_id=grant_id, link_hash=link_hash, grant=grant)
     started = deps.monotonic()

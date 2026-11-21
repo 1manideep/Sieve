@@ -787,7 +787,8 @@ Order inside `detectPii` after all stages: **filter, merge, propagate, merge aga
    - drop model and Nano spans whose text is a protected value (5.7);
    - drop `name` spans whose whole text (lower case) is in STOPWORDS: `a an and or but if then so to of in on at by for with from as is are was were be been it this that these those you your we our they their he she him her i me my hi hello dear thanks thank best regards please will may can could would should must shall team all everyone there here today tomorrow yesterday mon tue wed thu fri sat sun monday tuesday wednesday thursday friday saturday sunday`;
    - drop `name` spans that are a month name (`january` to `december`, and 3-letter forms) when a digit is within 2 characters before or after;
-   - drop `name` spans of 1 or 2 characters.
+   - drop `name` spans of 1 or 2 characters;
+   - drop model and Nano `other` spans (ID numbers) that do not read as one (`pii/validators/idNumber.ts`, Nov 21, B09 "Z1llow"): an ID has 4 or more digits, or a known ID shape (`#482`, `No. 12`, `RX-66`: up to 4 capitals, a separator, digits), and is never a word that names a sender in the index, also with look-alike digits read as letters (`Z1llow` is `zillow`). `buildStepOption` passes the item's own sender words and `opts.knownSenders` (the index's, from 20's `knownSendersOf`). So "1Password", "3M", "web3" and a booking reference such as `K7Q2LM` stay; an AWS account ID stays masked.
 2. **Merge** (`mergeSpans(spans: PiiSpan[]): PiiSpan[]`): sort by start, then longer first. Overlapping spans become one span covering the union of their ranges (never expose a character any detector flagged). Type: the highest in `card > iban > ssn > account > email > phone > dob > address > name > other`. `by`: the highest in `validator > model > nano`. `score`: the maximum defined score (absent for Nano-only spans). Identical spans collapse.
 3. **Propagate** (`propagateEntities(text, spans)`): for each `name`, `address` or `other` span, find every other whole-word occurrence of the same string (case-insensitive; for `name`, the occurrence's first letter must be upper case) and add it with the same type and `by`. For each `name` span with 2 or more words, also propagate each word that has 3 or more letters, starts with an upper-case letter in the span, and is not a stopword or title (`Mr, Mrs, Ms, Mx, Dr, Prof`): match case-sensitively. So `Dana Lee` found once also hides a later lone `Dana`.
 4. **Merge** again.
@@ -1177,6 +1178,32 @@ Exemptions (decision): the answer to "what is the landlord's phone number?" is t
 
 Never kept, even when asked: `card`, `iban`, `account`, `ssn`, `dob`, `other`. Their tokens still show the last 4 digits for cards and long accounts.
 
+### 10.3a Answer-step output checks (`steps/answerShape.ts`, Nov 21)
+
+Added after a second real test (20 attack probes through Claude's connector, answer-only level): an answer once listed seven senders (B01), shared a sender and an exact subject (B05), packed an account ID and a date (B13), and answered a yes or no about a background check with the sender and a date (B15). Plain code, in the answer step, before the person sees the text:
+
+```mermaid
+flowchart TD
+  A[cleanAnswer, S3] --> Y{yes or no question?}
+  Y -- yes --> YN{first word yes or no?}
+  YN -- yes --> T["exactly 'Yes.' or 'No.'"]
+  YN -- no --> U1[not offered: not a plain yes or no]
+  Y -- no --> F{a list, numbered items, or two clauses with a fact each?}
+  F -- yes --> U2["not offered: 'Sieve shares one fact at a time at this level.' (10 makes the outcome unsupported)"]
+  F -- no --> AD[the sender's address out, unless asked]
+  AD --> R[links, injection, spans, redact]
+  R --> S[the subject line out, unless asked]
+  S --> E{anything left?}
+  E -- no --> U3[not offered]
+  E -- yes --> OK[the answer]
+```
+
+1. **Yes or no.** The question starts with `did`, `does`, `do`, `is`, `are`, `was`, `were`, `has`, `have` or `had` (not `do you`), or says "yes or no", and has no `what`, `when`, `who`... inside it ("Did Ramki say when...?" is not one) and no `or`. The answer becomes exactly `Yes.` or `No.` from its first word; another first word: unavailable ("The answer wasn't a plain yes or no."). The select prompt asks for this too (10 section 10.3).
+2. **One fact.** More than one is: three or more items of one kind in a row, separated by commas or `and` (masked values, amounts, dates, times, numbers, names; a two-letter state never counts, so "Springfield, IL" is a place); numbered items (`1)` then `2)`); or two independent clauses (split at `;`, `, and`, `, but`, `and your`, a sentence end) that each state a fact (a digit, an amount, a date, a weekday, a masked value, an address, a quote, a capitalised word inside it). Unavailable with "Sieve shares one fact at a time at this level."; at the answer level 10 turns the outcome into `unsupported` with that line. "Your deposit was $1,200, paid on March 3." is one fact.
+3. **Never the sender's address** unless the question asks for an address (`email address`, `reply-to`, an `@`): it is removed; an organisation sender's name takes its place when the answer does not name it ("from Amazon"). Before redaction.
+4. **Never the subject line** unless the question asks for it (`subject`, `title`, `headline`): every run of 4 or more words of the subject (without `Re:`, `Fwd:`) is removed, with its quotes and a lead-in such as "with the subject"; a run that starts the answer leaves "It ..." ("It is [code]."). After redaction, so the one-time-code check still sees "your verification code is". Nothing left but filler words and masked values: unavailable ("Nothing is left once the subject line and the address are left out.").
+5. **Organisation names stay** in the answer, whatever found them (the company sender's own name is never masked as a person's); person names follow the mask rule of 10.2 step 6.
+
 ### 10.4 Excerpt
 
 Locate the lines (`excerpt.ts`, `locateExcerpt(recordText, nanoExcerpt): { start: number; end: number } | null`):
@@ -1294,6 +1321,20 @@ At share time `buildStepOption` adds one plain-code entry per option; `checkOutg
 ### 11.4 `clearPrivacyCaches()`
 
 Empties the in-memory scan LRU and any pending detect results. Call on sign-out and Playground Reset (the LRU holds personal-detail strings in memory).
+
+### 11.5 The sensitive-topic detector (`sensitive.ts`, Nov 21)
+
+`sensitiveTopicOf(text)`, `touchesSensitiveTopic(text)`, `itemTouchesSensitiveTopic(record)` (sender, subject and the first 20,000 characters). Plain code, case-insensitive, chosen to miss the look-alikes (a Visa card, a food court, `pip install`):
+
+| Topic | Matches |
+|---|---|
+| screening | Checkr, HireRight, GoodHire, First Advantage, "background check", "drug test", pre-employment screening |
+| legal | lawsuit, subpoena, attorney, litigation, summons, "court date", "small claims court", legal notice |
+| medical (beyond the Health category) | diagnosis, prescription, therapy, therapist, psychiatrist, mental health, biopsy, lab results, test results |
+| HR | performance improvement plan, `PIP` (capitals), disciplinary action, "investigation into", termination of employment, severance, written warning |
+| immigration | visa status, work visa, I-94, I-20, H-1B, green card, USCIS, work permit |
+
+When the chosen item or the built answer trips it, 10 adds the warning (kind `ask-first`, so the extension shows it too) "This touches a sensitive topic. Sieve asks you first." and a `rule` trace row. A proposal with any warning is never approved automatically (40 section 13.8.9), so the person decides. Nothing is blocked.
 
 ## 12. Requirements on other components
 

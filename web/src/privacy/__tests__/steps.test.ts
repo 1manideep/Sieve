@@ -70,7 +70,8 @@ describe('buildStepOption details', () => {
   });
 
   test('the answer is capped at 300 characters at a sentence end (00 D5)', async () => {
-    const long = 'Your deposit was $1,200, paid on March 3. '.repeat(12);
+    // one fact (Nov 21): the long second sentence states none of its own
+    const long = `Your deposit was $1,200, paid on March 3. ${'The landlord wrote that it covers the cleaning of the flat at the end of the lease '.repeat(5).trim()}.`;
     const option = await buildStepOption('answer', { answer: long }, landlord(), 'own');
     expect(option.chars).toBeLessThanOrEqual(300);
     expect(option.text.endsWith('.')).toBe(true);

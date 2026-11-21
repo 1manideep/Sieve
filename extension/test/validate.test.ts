@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MAX_PAYLOAD_CHARS } from '@sieve/shared';
 import type { ProposalPreview } from '@sieve/shared';
-import { LIMITS, parsePageMessage, parsePanelMessage, parsePreview } from '../src/shared/validate';
+import { LIMITS, parsePageMessage, parsePanelMessage, parsePreview, readPageMessage } from '../src/shared/validate';
 import { DEPOSIT, LEASE, STATEMENT, hello, pending, resolved, withId } from './fixtures';
 
 type Loose = Record<string, unknown>;
@@ -64,59 +64,108 @@ describe('parsePageMessage: valid messages', () => {
 });
 
 describe('parsePageMessage: rejected messages', () => {
+  // Messages that are broken as a whole: nothing to act on, and each one counts toward MAX_INVALID.
   const bad: [string, unknown][] = [
     ['wrong version', { ...hello(), version: 2 }],
     ['missing version', { type: 'sieve/hello', homeBase: true, appVersion: '1' }],
-    ['unknown type', { type: 'sieve/everything', version: 1 }],
+    ['type not a string', { type: 7, version: 1 }],
     ['hello without appVersion', { type: 'sieve/hello', version: 1, homeBase: true }],
     ['hello with empty appVersion', { ...hello(), appVersion: '' }],
     ['hello with long appVersion', { ...hello(), appVersion: 'x'.repeat(41) }],
     ['hello with homeBase as string', { ...hello(), homeBase: 'yes' }],
     ['21 proposals', pending(Array.from({ length: 21 }, (_, i) => withId(DEPOSIT, `req-${i}`)))],
-    ['duplicate ids in one list', pending([DEPOSIT, withId(LEASE, DEPOSIT.requestId)])],
     ['proposals not an array', { type: 'sieve/pending', version: 1, proposals: { 0: DEPOSIT } }],
-    ['options of length 2', pending([mutate(DEPOSIT, (d) => void (d.options = (d.options as unknown[]).slice(0, 2))) as ProposalPreview])],
-    ['options out of order', pending([mutate(DEPOSIT, (d) => void (d.options = [...(d.options as unknown[])].reverse())) as ProposalPreview])],
-    ['option text over MAX_PAYLOAD_CHARS', pending([mutate(DEPOSIT, (d) => {
-      ((d.options as Loose[])[2] as Loose).text = 'x'.repeat(MAX_PAYLOAD_CHARS + 1);
-    }) as ProposalPreview])],
-    ["step: 'everything'", pending([mutate(DEPOSIT, (d) => void (((d.options as Loose[])[0] as Loose).step = 'everything')) as ProposalPreview])],
-    ['requestedStep everything', pending([mutate(DEPOSIT, (d) => void (d.requestedStep = 'everything')) as ProposalPreview])],
-    ['bad requestId characters', pending([withId(DEPOSIT, 'req/../1')])],
-    ['outside requester without grantId', pending([mutate(DEPOSIT, (d) => void delete (d.requester as Loose).grantId) as ProposalPreview])],
-    ['in-app requester with another name', pending([mutate(DEPOSIT, (d) => void (d.requester = { kind: 'in-app', aiName: 'Other' })) as ProposalPreview])],
-    ['aiName over 80', pending([mutate(DEPOSIT, (d) => void ((d.requester as Loose).aiName = 'a'.repeat(81))) as ProposalPreview])],
-    ['category not in CATEGORIES', pending([mutate(DEPOSIT, (d) => void ((d.item as Loose).category = 'Secrets')) as ProposalPreview])],
-    ['title over 300', pending([mutate(DEPOSIT, (d) => void ((d.item as Loose).title = 't'.repeat(301))) as ProposalPreview])],
-    ['date not positive', pending([mutate(DEPOSIT, (d) => void ((d.item as Loose).date = 0)) as ProposalPreview])],
-    ['item null', pending([mutate(DEPOSIT, (d) => void (d.item = null)) as ProposalPreview])],
-    ['warning message over 300 chars', pending([mutate(DEPOSIT, (d) => void (d.warnings = [{ kind: 'injection', message: 'w'.repeat(301) }])) as ProposalPreview])],
-    ['13 warnings', pending([mutate(DEPOSIT, (d) => void (d.warnings = Array.from({ length: 13 }, () => ({ kind: 'injection', message: 'w' })))) as ProposalPreview])],
-    ['unknown warning kind', pending([mutate(DEPOSIT, (d) => void (d.warnings = [{ kind: 'nothing', message: 'w' }])) as ProposalPreview])],
-    ['unavailableReason over 200', pending([mutate(DEPOSIT, (d) => void (((d.options as Loose[])[2] as Loose).unavailableReason = 'r'.repeat(201))) as ProposalPreview])],
-    ['chars not an integer', pending([mutate(DEPOSIT, (d) => void (((d.options as Loose[])[0] as Loose).chars = 1.5)) as ProposalPreview])],
-    ['unknown outcome', pending([mutate(DEPOSIT, (d) => void (d.outcome = 'approved')) as ProposalPreview])],
-    ['unknown rule', pending([mutate(DEPOSIT, (d) => void (d.rule = 'always')) as ProposalPreview])],
-    ['question empty', pending([mutate(DEPOSIT, (d) => void (d.question = '')) as ProposalPreview])],
-    ['question over 500', pending([mutate(DEPOSIT, (d) => void (d.question = 'q'.repeat(501))) as ProposalPreview])],
     ['message over 512 KB', { ...hello(), padding: 'p'.repeat(LIMITS.maxMessageChars) }],
-    ['resolved with unknown outcome', { ...resolved('req-1', 'approved'), outcome: 'shared' }],
     ['resolved with bad id', resolved('', 'approved')],
+    ['resolved with an outcome that is not a string', { ...resolved('req-1', 'approved'), outcome: 3 }],
     ['non-object: string', 'sieve/hello'],
     ['non-object: null', null],
     ['non-object: number', 42],
     ['array instead of object', [hello()]],
-    ['array preview entry', pending([[DEPOSIT] as unknown as ProposalPreview])],
-    ['options as object', pending([mutate(DEPOSIT, (d) => void (d.options = { 0: 1 })) as ProposalPreview])],
   ];
 
   it.each(bad)('%s', (_name, raw) => {
     expect(parsePageMessage(raw)).toBeNull();
+    expect(readPageMessage(raw)).toEqual({ kind: 'invalid' });
+  });
+});
+
+describe('a newer page: values this build does not know (0.1.1)', () => {
+  // One proposal that fails a check is left out; the rest of the list still shows, and the message is valid.
+  const badProposals: [string, unknown][] = [
+    ['options of length 2', mutate(DEPOSIT, (d) => void (d.options = (d.options as unknown[]).slice(0, 2)))],
+    ['options out of order', mutate(DEPOSIT, (d) => void (d.options = [...(d.options as unknown[])].reverse()))],
+    ['option text over MAX_PAYLOAD_CHARS', mutate(DEPOSIT, (d) => {
+      ((d.options as Loose[])[2] as Loose).text = 'x'.repeat(MAX_PAYLOAD_CHARS + 1);
+    })],
+    ["step: 'everything'", mutate(DEPOSIT, (d) => void (((d.options as Loose[])[0] as Loose).step = 'everything'))],
+    ['requestedStep everything', mutate(DEPOSIT, (d) => void (d.requestedStep = 'everything'))],
+    ['bad requestId characters', withId(DEPOSIT, 'req/../1')],
+    ['outside requester without grantId', mutate(DEPOSIT, (d) => void delete (d.requester as Loose).grantId)],
+    ['in-app requester with another name', mutate(DEPOSIT, (d) => void (d.requester = { kind: 'in-app', aiName: 'Other' }))],
+    ['aiName over 80', mutate(DEPOSIT, (d) => void ((d.requester as Loose).aiName = 'a'.repeat(81)))],
+    ['category not in CATEGORIES', mutate(DEPOSIT, (d) => void ((d.item as Loose).category = 'Secrets'))],
+    ['title over 300', mutate(DEPOSIT, (d) => void ((d.item as Loose).title = 't'.repeat(301)))],
+    ['date not positive', mutate(DEPOSIT, (d) => void ((d.item as Loose).date = 0))],
+    ['item null', mutate(DEPOSIT, (d) => void (d.item = null))],
+    ['a known warning kind with a message over 300 chars', mutate(DEPOSIT, (d) => void (d.warnings = [{ kind: 'injection', message: 'w'.repeat(301) }]))],
+    ['a warning without a kind', mutate(DEPOSIT, (d) => void (d.warnings = [{ message: 'w' }]))],
+    ['13 warnings', mutate(DEPOSIT, (d) => void (d.warnings = Array.from({ length: 13 }, () => ({ kind: 'injection', message: 'w' }))))],
+    ['unavailableReason over 200', mutate(DEPOSIT, (d) => void (((d.options as Loose[])[2] as Loose).unavailableReason = 'r'.repeat(201)))],
+    ['chars not an integer', mutate(DEPOSIT, (d) => void (((d.options as Loose[])[0] as Loose).chars = 1.5))],
+    ['unknown outcome', mutate(DEPOSIT, (d) => void (d.outcome = 'needs-a-new-screen'))],
+    ['unknown rule', mutate(DEPOSIT, (d) => void (d.rule = 'always'))],
+    ['question empty', mutate(DEPOSIT, (d) => void (d.question = ''))],
+    ['question over 500', mutate(DEPOSIT, (d) => void (d.question = 'q'.repeat(501)))],
+    ['textHash with spaces', mutate(DEPOSIT, (d) => void (d.textHash = 'not a hash'))],
+    ['textHash over 64 chars', mutate(DEPOSIT, (d) => void (d.textHash = 'a'.repeat(65)))],
+    ['array preview entry', [DEPOSIT]],
+    ['options as object', mutate(DEPOSIT, (d) => void (d.options = { 0: 1 }))],
+  ];
+
+  it.each(badProposals)('skips one proposal with %s and keeps the rest', (_name, broken) => {
+    expect(parsePreview(broken)).toBeNull();
+    const read = readPageMessage(pending([LEASE, broken as ProposalPreview, STATEMENT]));
+    expect(read).toEqual({ kind: 'message', msg: pending([LEASE, STATEMENT]), skipped: 1 });
   });
 
-  it('rejects a whole pending list when one entry is broken', () => {
-    const broken = mutate(LEASE, (d) => void (d.maxStep = 'everything')) as ProposalPreview;
-    expect(parsePageMessage(pending([DEPOSIT, broken]))).toBeNull();
+  it('drops a warning of an unknown kind and keeps the proposal and its other warnings', () => {
+    const raw = mutate(DEPOSIT, (d) => {
+      d.warnings = [
+        { kind: 'a-kind-from-next-week', message: 'Something new to know.' },
+        { kind: 'injection', message: 'This email asks the assistant to do something.' },
+        { kind: 'another-new-kind', message: '' },
+      ];
+    });
+    expect(parsePreview(raw)?.warnings).toEqual([{ kind: 'injection', message: 'This email asks the assistant to do something.' }]);
+    const read = readPageMessage(pending([raw as ProposalPreview]));
+    expect(read.kind).toBe('message');
+    expect(read.kind === 'message' && read.skipped).toBe(0);
+  });
+
+  it('keeps the first of two proposals with the same id', () => {
+    expect(readPageMessage(pending([DEPOSIT, withId(LEASE, DEPOSIT.requestId), LEASE]))).toEqual({
+      kind: 'message',
+      msg: pending([DEPOSIT, LEASE]),
+      skipped: 1,
+    });
+  });
+
+  it('a list where nothing can be read is still a valid, empty list', () => {
+    const broken = mutate(DEPOSIT, (d) => void (d.outcome = 'later')) as ProposalPreview;
+    expect(readPageMessage(pending([broken, withId(broken as ProposalPreview, 'req-2')]))).toEqual({ kind: 'message', msg: pending([]), skipped: 2 });
+  });
+
+  it('ignores a message type or a resolved outcome it does not know, without counting it as invalid', () => {
+    expect(readPageMessage({ type: 'sieve/everything', version: 1 })).toEqual({ kind: 'unknown' });
+    expect(readPageMessage({ ...resolved('req-1', 'approved'), outcome: 'revoked' })).toEqual({ kind: 'unknown' });
+    expect(parsePageMessage({ type: 'sieve/everything', version: 1 })).toBeNull();
+  });
+
+  it('keeps a well-formed text hash, and leaves it out when the page sent none', () => {
+    const hashed = { ...DEPOSIT, textHash: '0a1b2c3d4e5f6789' };
+    expect(parsePreview(hashed)).toEqual(hashed);
+    expect(parsePreview(DEPOSIT)).not.toHaveProperty('textHash');
   });
 });
 
@@ -126,6 +175,9 @@ describe('parsePanelMessage', () => {
     expect(parsePanelMessage({ type: 'panel/decide', requestId: 'req-1', approved: false })).toEqual({ type: 'panel/decide', requestId: 'req-1', approved: false });
     expect(parsePanelMessage({ type: 'panel/decide', requestId: 'req-1', approved: true, step: 'excerpt' })).toEqual({
       type: 'panel/decide', requestId: 'req-1', approved: true, step: 'excerpt',
+    });
+    expect(parsePanelMessage({ type: 'panel/decide', requestId: 'req-1', approved: true, step: 'answer', textHash: '0a1b2c3d4e5f6789' })).toEqual({
+      type: 'panel/decide', requestId: 'req-1', approved: true, step: 'answer', textHash: '0a1b2c3d4e5f6789',
     });
     expect(parsePanelMessage({ type: 'panel/open-app' })).toEqual({ type: 'panel/open-app' });
     expect(parsePanelMessage({ type: 'panel/open-side', windowId: 9 })).toEqual({ type: 'panel/open-side' });
@@ -142,6 +194,7 @@ describe('parsePanelMessage', () => {
 
   it('rejects bad panel messages', () => {
     expect(parsePanelMessage({ type: 'panel/decide', requestId: 'req-1', approved: true, step: 'everything' })).toBeNull();
+    expect(parsePanelMessage({ type: 'panel/decide', requestId: 'req-1', approved: true, step: 'answer', textHash: 'a b' })).toBeNull();
     expect(parsePanelMessage({ type: 'panel/hello' })).toBeNull();
     expect(parsePanelMessage({ type: 'panel/dismiss', requestId: 'a b' })).toBeNull();
     expect(parsePanelMessage({ type: 'panel/unknown' })).toBeNull();

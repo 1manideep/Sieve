@@ -20,6 +20,7 @@ ARMS = ("baseline", "sieve")
 DEFAULT_BASELINE_URL = "http://127.0.0.1:8765/mcp"
 DEFAULT_BASELINE_PORT = 8765
 DEFAULT_DEMO_PORT = 8766
+DEFAULT_RUNS_PER_ARM = 3            # counted runs per arm the README needs (report --runs changes it)
 
 
 def results_dir() -> Path:

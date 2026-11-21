@@ -163,6 +163,21 @@ describe('request card', () => {
     expect(t.decisions()).toEqual([{ type: 'panel/decide', requestId: DEPOSIT.requestId, approved: true, step: 'excerpt' }]);
   });
 
+  it('Approve sends the text hash of the preview on screen; a new preview sends its own (0.1.1)', () => {
+    const t = setup();
+    t.push(panelState({ proposals: [{ ...DEPOSIT, textHash: 'aaaaaaaaaaaaaaaa' }] }));
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(t.decisions()).toEqual([
+      { type: 'panel/decide', requestId: DEPOSIT.requestId, approved: true, step: 'answer', textHash: 'aaaaaaaaaaaaaaaa' },
+    ]);
+    t.push(panelState({ proposals: [{ ...DEPOSIT, options: [option('answer', 'New text.'), DEPOSIT.options[1]!, DEPOSIT.options[2]!], textHash: 'bbbbbbbbbbbbbbbb' }] }));
+    expect(outgoing().textContent).toBe('New text.');
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(t.decisions()[1]).toMatchObject({ textHash: 'bbbbbbbbbbbbbbbb' });
+    fireEvent.click(screen.getByRole('button', { name: 'Deny' }));
+    expect(t.decisions()[2]).toEqual({ type: 'panel/decide', requestId: DEPOSIT.requestId, approved: false });
+  });
+
   it('Deny sends approved: false and no step', () => {
     const t = setup();
     t.push(panelState({ proposals: [DEPOSIT] }));
@@ -342,6 +357,7 @@ describe('sending, slow and rejections', () => {
     ['unknown-request', 'This request is no longer waiting.'],
     ['not-ready', 'This request is no longer waiting.'],
     ['no-owner', 'Your Sieve tab disconnected. Open Sieve to check.'],
+    ['changed', 'The text to send changed. Check it again before you approve.'],
   ] as const)('rejection %s', (reason, text) => {
     const t = setup();
     t.push(panelState({ proposals: [DEPOSIT] }));

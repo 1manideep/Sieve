@@ -21,7 +21,7 @@ import type { ToastState } from '@/state/toasts';
 import type { DeviceView, LiveStep, RelayRequestView } from '@/state/types';
 import { DECIDE_ERRORS, HOME_BASE } from '@/copy/strings';
 import { truncateGraphemes } from '@/robust/question';
-import { CLAIM_RETRY_MS, DONE_ENTRY_TTL_MS, PREPARE_TIMEOUT_MS } from './constants';
+import { AUTO_FLOOR_MS, AUTO_JITTER_MS, CLAIM_RETRY_MS, DONE_ENTRY_TTL_MS, PREPARE_TIMEOUT_MS } from './constants';
 import { decisionDeadline, isPlaygroundRequest } from './deadline';
 import { validateDecision, type DecisionInput, type DecideResultReason } from './decision';
 import type { BridgeHandlers, ExtensionBridge } from './extensionBridge';
@@ -89,6 +89,8 @@ export interface EngineDeps {
   autoApprove?(grantId: string): boolean;
   /** Marks (or unmarks) a receipt this computer approves automatically, for "Approved automatically" on /seen. */
   markAutoApproved?(receiptId: string, on: boolean): void;
+  /** 0 to 1, for the jitter of the automatic-outcome floor (tests pass a fixed value). */
+  random?(): number;
 }
 
 export interface HomeBaseEngine {
@@ -458,6 +460,11 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
   }
 
   const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+  /** 40 section 11.6: an automatic outcome leaves AUTO_FLOOR_MS after arrival at the soonest, plus random jitter. */
+  const floor = async (from: number) => {
+    const ms = from + AUTO_FLOOR_MS + (deps.random ?? Math.random)() * AUTO_JITTER_MS - deps.now();
+    if (ms > 0) await sleep(ms);
+  };
 
   /** Offline transactions are retried on the online event, then after 2, 5 and 10 s (40 section 11.5). */
   async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
@@ -566,10 +573,13 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
     for (const b of bad) {
       if (b.status !== 'queued' || invalidHandled.has(b.id)) continue;
       invalidHandled.add(b.id);
+      const seen = deps.now();
       void (async () => {
         try {
           const c = await withRetry(() => deps.requests.claimRequest(uid, b.id, deviceId));
-          if (c === 'claimed') await withRetry(() => deps.requests.finishRequest(uid, b.id, deviceId, { status: 'error', message: b.reason === 'no-readable-words' ? MSG.noReadableWords : MSG.badRequest }));
+          if (c !== 'claimed') return;
+          await floor(seen);   // a request that fails at once waits like every other automatic outcome
+          await withRetry(() => deps.requests.finishRequest(uid, b.id, deviceId, { status: 'error', message: b.reason === 'no-readable-words' ? MSG.noReadableWords : MSG.badRequest }));
         } catch (error) {
           console.error('malformed request', b.id, (error as { code?: string }).code ?? '');
         }
@@ -822,7 +832,8 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
         await finishAuto(id, { status: 'no-match', message: MSG.noMatch }, 'no-match', proposal);
         return;
       case 'unsupported':
-        await finishAuto(id, { status: 'unsupported', message: MSG.unsupported }, 'no-match', proposal);
+        // the line of the outcome (a count, or one fact at a time), never content
+        await finishAuto(id, { status: 'unsupported', message: proposal.options[0]?.unavailableReason === MSG.oneFact ? MSG.oneFact : MSG.unsupported }, 'no-match', proposal);
         return;
       case 'model-unavailable':
         deps.toast({ tone: 'warning', title: HOME_BASE.modelUnavailableToast(aiName) });
@@ -890,6 +901,9 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
   ): Promise<void> {
     update(id, { phase: 'deciding', ...(proposal ? { proposal } : {}) });
     publish();
+    // The same floor for every automatic outcome, so timing never tells a block from a miss (Nov 21).
+    await floor(entries.get(id)?.request.createdAt ?? deps.now());
+    if (stopped || !entries.has(id)) return;
     let r: 'ok' | 'gone';
     try {
       r = await withRetry(() => deps.requests.finishRequest(uid, id, deviceId, f));

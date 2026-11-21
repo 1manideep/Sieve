@@ -1,10 +1,11 @@
 """H1, H3 to H14, H17, H18 and the R-MCP cases, through the Functions emulator over real HTTP."""
 import json
+import re
 import threading
 import time
 from datetime import datetime, timezone
 
-from sieve import tools
+from sieve import config, links, tools
 from tests.helpers import emulator as emu
 from tests.helpers.home_base import HomeBaseSim, answer, blocked, decline, never, no_match
 from tests.http._setup import QUESTION, check, ladder, owner
@@ -151,6 +152,8 @@ def test_h12_open_request_limit(db):
     assert outs[3]["status"] == "error" and "request_id" not in outs[3]
     assert outs[3]["message"].startswith("At most 3 requests can wait per connection, and 3 are waiting now: ")
     assert all(f"\"{x['request_id']}\"" in outs[3]["message"] for x in outs[:3])
+    rate = db.collection("connectors").document(links.link_hash(o.secret)).get().to_dict()
+    assert rate["rateRefunds"] > 0.9                 # the refused fourth call was given back (30 section 11)
 
 
 def test_h13_modern_header_mismatch(db):
@@ -260,12 +263,43 @@ def test_r_mcp_07_foreign_and_unknown_ids(db):
     assert offline["status"] == "offline"
 
 
-def test_r_mcp_08_rate_limit(db):
+def _seed_bucket(db, secret, used):
+    ref = db.collection("connectors").document(links.link_hash(secret))
+    ref.update({"rateUsed": float(used), "rateRefunds": 0.0, "rateAt": datetime.now(timezone.utc)})
+    return ref
+
+
+def test_r_mcp_08_refused_calls_do_not_count(db):
     o = owner(db, online=False)
     s = emu.LegacySession(o.secret)
-    outs = [check(s, f"{i:020d}")[1] for i in range(31)]
-    assert all(x["status"] == "unknown" for x in outs[:30])
-    assert outs[30] == {"status": "error", "message": tools.MSG_RATE_LIMITED}
+    ref = _seed_bucket(db, o.secret, config.RATE_LIMIT_CALLS - 2)
+    outs = [check(s, f"{i:020d}")[1] for i in range(6)]
+    outs += [ladder(s, question=f"Question {i}?", after="2026-13-01")[1] for i in range(3)]
+    assert [x["status"] for x in outs] == ["unknown"] * 6 + ["error"] * 3
+    rate = ref.get().to_dict()
+    assert rate["rateUsed"] <= config.RATE_LIMIT_CALLS - 2 and 8 < rate["rateRefunds"] <= 9
+    assert ladder(s, question="Counted?")[1]["status"] == "offline"          # a real result counts
+    assert ref.get().get("rateUsed") > rate["rateUsed"]
+
+
+def test_r_mcp_08_rate_limit_states_the_real_wait(db):
+    o = owner(db, online=False)
+    s = emu.LegacySession(o.secret)
+    _seed_bucket(db, o.secret, config.RATE_LIMIT_CALLS)
+    _, poll = check(s, "Q" * 20)
+    assert poll == {"status": "error", "message": "Too many requests from this connection. Wait about 5 seconds, "
+                                                  "then try again."}
+    ref = _seed_bucket(db, o.secret, config.RATE_LIMIT_CALLS)
+    _, out = ladder(s)
+    assert out["status"] == "error" and "request_id" not in out
+    m = re.fullmatch(r"Too many requests from this connection\. Wait about (\d+) seconds, then try again\.",
+                     out["message"])
+    wait = int(m.group(1))
+    assert wait in (5, 10)
+    assert ref.get().get("rateUsed") == config.RATE_LIMIT_CALLS          # the refused call added nothing
+    time.sleep(wait)
+    assert ladder(s)[1]["status"] == "offline"                           # through after the stated wait
+    assert len(emu.requests_of(db, o.uid)) == 1                          # only that call made a request
 
 
 def test_d6_blocked_and_no_match_look_the_same(db):

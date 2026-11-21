@@ -70,10 +70,16 @@ describe('one-time codes and sign-in links (secret-code, T10)', () => {
   });
 
   it('the share-time redaction removes a code from any outgoing text, even one the asker typed', async () => {
-    const zillow = rec({ id: 'gmail:zillow', from: 'Zillow <no-reply@zillow.com>', text: T10, title: 'Your Zillow verification code' });
+    const zillow = rec({ id: 'gmail:zillow', from: 'Zillow <no-reply@zillow.com>', text: T10, title: 'Sign in to Zillow' });
     expect(holdsSecretCode(zillow)).toBe(true);
     expect(await answer(zillow, 'Your Zillow verification code is 733211.', 'Show me my Google verification emails')).toBe('Your Zillow verification code is [code].');
-    expect(await answer(zillow, 'Your Zillow verification code is 733211.', 'Is 733211 my Zillow code?')).toBe('Your Zillow verification code is [code].');
+    expect(await answer(zillow, 'Your Zillow verification code is 733211.', 'What is 733211 for?')).toBe('Your Zillow verification code is [code].');
+    expect(await answer(zillow, 'Yes, your Zillow verification code is 733211.', 'Is 733211 my Zillow code?')).toBe('Yes.');
+    // Nov 21: the subject line is dropped after redaction, so the code check still saw "verification code is"; here
+    // the subject and a masked code are all there was, so nothing is left to share
+    const subject = { ...zillow, title: 'Your Zillow verification code' };
+    const o = await buildStepOption('answer', { answer: 'Your Zillow verification code is 733211.' }, subject, 'own', { question: 'What is 733211 for?', maxStep: 'answer' });
+    expect(o).toMatchObject({ available: false, unavailableReason: 'Nothing is left once the subject line and the address are left out.' });
   });
 });
 
@@ -83,7 +89,8 @@ describe('names and the words the asker typed (T02, T04, T05)', () => {
     const found: KnownEntity[] = [{ text: '1manideep', type: 'other', by: 'nano' }, { text: 'Ramki Kumar', type: 'name', by: 'nano' }];
     const text = 'Ramki Kumar published a new release of 1manideep/Sieve.';
     expect(await answer(gh, text, 'What did my latest GitHub email say about 1manideep/Sieve?', found)).toBe('[name] published a new release of 1manideep/Sieve.');
-    expect(await answer(gh, text, 'What did my latest GitHub email say?', found)).toBe('[name] published a new release of [id number]/Sieve.');
+    // one digit is not an ID number (B09 of Nov 21): it stays even when the asker did not type it
+    expect(await answer(gh, text, 'What did my latest GitHub email say?', found)).toBe('[name] published a new release of 1manideep/Sieve.');
   });
 
   it('T05: a third person in "sent you an email" is masked, by the sender rule and by the phrasing', async () => {
@@ -102,7 +109,7 @@ describe('names and the words the asker typed (T02, T04, T05)', () => {
 
   it('a company sender in the same phrasing is not a person', async () => {
     const dog = rec({ id: 'gmail:dog2', from: 'Good Dog <hello@gooddog.example>', text: 'Your booking for Bella is confirmed.' });
-    expect(await answer(dog, 'Good Dog sent you a booking confirmation for Jun 10.', 'Did the daycare confirm the booking?')).toBe('Good Dog sent you a booking confirmation for Jun 10.');
+    expect(await answer(dog, 'Good Dog sent you a booking confirmation for Jun 10.', 'What did the daycare send about the booking?')).toBe('Good Dog sent you a booking confirmation for Jun 10.');
   });
 
   it("T02: the dog's name the asker typed is not masked", async () => {

@@ -22,7 +22,7 @@ export function sharedExtensionId(): string {
 export interface StubPage {
   page: Page;
   connect(opts?: { homeBase?: boolean; name?: string; hello?: boolean }): Promise<string>;
-  pending(list: ProposalPreview[]): Promise<void>;
+  pending(list: (ProposalPreview & { textHash?: string })[]): Promise<void>;
   resolved(requestId: string, outcome: 'approved' | 'declined' | 'expired' | 'error'): Promise<void>;
   raw(message: unknown): Promise<void>;
   disconnect(): Promise<void>;

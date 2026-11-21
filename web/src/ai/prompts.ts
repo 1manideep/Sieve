@@ -58,7 +58,9 @@ You get a question and numbered passages (P1, P2, ...). Each passage comes from 
 
 Reply with JSON only, in this order:
 - "item": the passage that answers the question, such as "P2", or "none" if no passage answers it.
-- "answer": one short sentence that answers the question, written to the person, such as "Your deposit was $1,200, paid on March 3." Use only facts stated in that passage. No greeting, no advice, no links, and no email addresses unless the question asks for one. If "item" is "none", "answer" is "".`;
+- "answer": one short sentence that answers the question, written to the person, such as "Your deposit was $1,200, paid on March 3." Use only facts stated in that passage. No greeting, no advice, no links, and no email addresses unless the question asks for one. If "item" is "none", "answer" is "".
+- One fact only: never a list of names, subjects, amounts or items, and never two facts joined with "and". Never copy the subject line unless the question asks for it.
+- A question that asks yes or no ("Did...", "Is...", "Was...", "Has...", "Do I have...") gets exactly "Yes." or "No.".`;
 
 export const SELECT_SCHEMA = {
   type: 'object',
@@ -78,6 +80,7 @@ You get the question, a proposed answer, and one item: its kind, sender, date, t
 Reply with JSON only, in this order:
 - "answers": true only if all of these hold, else false. The passage states the facts in the proposed answer. The item is about what the question asks. If the question says who the item is from (a person, a company or a service), the sender fits it. If the question names a time, the item's date or a date in the passage fits it.
 - A field that only looks like the answer is false: a pickup date is not a vaccine date, an order date is not a delivery date, a promotion is not an order, a reminder to book is not a booked appointment.
+- A proposed answer of "Yes." or "No." is true only if the passage shows that answer to the question.
 - "reason": one short sentence that says why.`;
 
 export const VERIFY_SCHEMA = {

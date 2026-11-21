@@ -13,6 +13,12 @@ Configuration comes only from the environment (bench/.env is git-ignored):
 - `GEMINI_MODEL`    required, no default (the exact id goes into every run manifest)
 - `GEMINI_IMAGE_MODE` optional, `in-result` (default) or `separate`
 - `GEMINI_THINKING_LEVEL` optional, passed through as `generation_config.thinking_level`
+
+Output budget: every turn asks for at most MAX_OUTPUT_TOKENS (512), enough for tool calls. A turn that
+stops at that cap (status `incomplete`) without a tool call is the final answer cut short, so the same
+request is sent once more with FINAL_MAX_OUTPUT_TOKENS (2048). On thinking models the thoughts count
+toward the cap, which is why the final answer needs more room. Not verified against the live API (no key
+when this was written): check on the first real run that `incomplete` is the status the API reports.
 """
 
 from __future__ import annotations
@@ -28,7 +34,9 @@ from typing import Any
 from .agent import ToolCall, ToolReturn, ToolSpec, Turn
 
 TEMPERATURE = 0.0
-MAX_OUTPUT_TOKENS = 512
+MAX_OUTPUT_TOKENS = 512             # tool-call turns
+FINAL_MAX_OUTPUT_TOKENS = 2048      # a final answer that hit the 512 cap is asked again with this
+TRUNCATED_STATUSES = ("incomplete",)
 SEED = 20261116
 MAX_RETRIES = 5
 DEFAULT_RETRY_SECONDS = 30.0
@@ -66,6 +74,7 @@ def public_settings(settings: dict) -> dict:
         "thinking_level": settings["thinking_level"],
         "temperature": TEMPERATURE,
         "max_output_tokens": MAX_OUTPUT_TOKENS,
+        "final_max_output_tokens": FINAL_MAX_OUTPUT_TOKENS,
         "seed": SEED,
         "api": "interactions",
     }
@@ -129,6 +138,12 @@ def result_steps(returns: list[ToolReturn], image_mode: str) -> list[dict]:
     return steps
 
 
+def _add(a: Any, b: Any) -> int | None:
+    """Token counts of a turn and its retry, added; None when the API reported neither."""
+    nums = [x for x in (a, b) if isinstance(x, int) and not isinstance(x, bool)]
+    return sum(nums) if nums else None
+
+
 class GeminiAdapter:
     def __init__(
         self,
@@ -165,18 +180,32 @@ class GeminiAdapter:
         self._tools = function_tools(tools)
         self._last_id = None
         self._seen_calls = set()
-        return self._turn(self._create(input=user))
+        return self._ask(input=user)
 
     def send(self, returns: list[ToolReturn]) -> Turn:
-        return self._turn(self._create(input=result_steps(returns, self._image_mode), previous_interaction_id=self._last_id))
+        return self._ask(input=result_steps(returns, self._image_mode), previous_interaction_id=self._last_id)
 
-    def _generation_config(self) -> dict:
-        config: dict[str, Any] = {"temperature": TEMPERATURE, "max_output_tokens": MAX_OUTPUT_TOKENS, "seed": SEED}
+    def _ask(self, **kwargs: Any) -> Turn:
+        """One turn at MAX_OUTPUT_TOKENS; a final answer cut off at that cap is asked again at FINAL_MAX_OUTPUT_TOKENS."""
+        interaction = self._create(max_output_tokens=MAX_OUTPUT_TOKENS, **kwargs)
+        turn = self._turn(interaction)
+        if turn.calls or str(getattr(interaction, "status", "") or "").lower() not in TRUNCATED_STATUSES:
+            return turn
+        retry = self._turn(self._create(max_output_tokens=FINAL_MAX_OUTPUT_TOKENS, **kwargs))
+        retry.usage = {
+            "input": _add(turn.usage.get("input"), retry.usage.get("input")),
+            "output": _add(turn.usage.get("output"), retry.usage.get("output")),
+            "final_retry": True,
+        }
+        return retry
+
+    def _generation_config(self, max_output_tokens: int = MAX_OUTPUT_TOKENS) -> dict:
+        config: dict[str, Any] = {"temperature": TEMPERATURE, "max_output_tokens": max_output_tokens, "seed": SEED}
         if self._thinking_level:
             config["thinking_level"] = self._thinking_level
         return config
 
-    def _create(self, **kwargs: Any) -> Any:
+    def _create(self, *, max_output_tokens: int = MAX_OUTPUT_TOKENS, **kwargs: Any) -> Any:
         kwargs = {k: v for k, v in kwargs.items() if v is not None}
         attempt = 0
         while True:
@@ -185,7 +214,7 @@ class GeminiAdapter:
                     model=self.model_id,
                     system_instruction=self._system,
                     tools=self._tools,
-                    generation_config=self._generation_config(),
+                    generation_config=self._generation_config(max_output_tokens),
                     **kwargs,
                 )
             except Exception as e:

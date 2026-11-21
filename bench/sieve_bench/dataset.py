@@ -155,6 +155,19 @@ def dataset_sha256(root: Path | str) -> str:
     return h.hexdigest()
 
 
+def placeholder_photos(root: Path | str) -> list[str]:
+    """Photos the dataset build still drew as placeholders (`manifest.json` photos.placeholders, the list
+    check:repo warns about). Empty when the manifest is absent or lists none."""
+    path = Path(root) / "manifest.json"
+    try:
+        data = _read_json(path)
+    except (OSError, ValueError):
+        return []
+    photos = data.get("photos") if isinstance(data, dict) else None
+    names = photos.get("placeholders") if isinstance(photos, dict) else None
+    return sorted(str(n) for n in names) if isinstance(names, list) else []
+
+
 def _dataset_files(root: Path) -> Iterable[Path]:
     for path in root.rglob("*"):
         if not path.is_file() or path.name in _SKIP_NAMES:
@@ -330,6 +343,10 @@ def check_dataset(dataset: Dataset, tasks: Iterable[Any], canaries: Iterable[Any
             for group in task.expect:
                 if not any(_collapsed(alt) in hay for alt in group):
                     problems.append(f"{task.id}: none of {group} is in {item.id}'s title, text, caption or date")
+        hay = item_haystack(item)
+        for word in getattr(task, "forbid", ()) or ():
+            if _collapsed(word) not in hay:
+                problems.append(f"{task.id}: forbidden word '{word}' is not in {item.id}, so it cannot show the item leaked")
     for canary in canaries:
         item = dataset.get(canary.item_id) if canary.item_id else None
         if item is None:

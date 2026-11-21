@@ -5,6 +5,8 @@ import { RELAY_DECISION_MINUTES } from '@sieve/shared';
 export const PREPARE_TIMEOUT_MS = 120_000;             // abort prepareProposal for a relay request
 export const ASK_TIMEOUT_MS = 120_000;                 // abort prepareProposal for an in-app question
 export const CLAIM_RETRY_MS = [2_000, 5_000, 10_000];  // offline claim (and other transition) retries
+export const AUTO_FLOOR_MS = 3_000;                    // 11.6: an automatic outcome leaves no sooner than this after arrival
+export const AUTO_JITTER_MS = 1_000;                   // plus up to this much random jitter
 export const EXTENSION_ACK_MS = 2_000;                 // wait for sieve/hello-ack
 export const EXTENSION_KEEPALIVE_MS = 20_000;          // resend sieve/pending while connected (01 section 6)
 export const EXTENSION_BACKOFF_MS = [0, 2_000, 5_000, 10_000, 30_000];   // reconnect after a drop (50 section 6.5)

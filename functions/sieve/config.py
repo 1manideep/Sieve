@@ -45,8 +45,13 @@ DECISION_WINDOW_MINUTES = 120     # RELAY_DECISION_MINUTES: queued/claimed/await
 COLLECT_WINDOW_MINUTES = 60       # RELAY_COLLECT_MINUTES: answered and not collected this long after answeredAt -> expired
 RECLAIM_AFTER_SECONDS = 120       # another device may take over a stuck claim
 CONNECTOR_RETENTION_DAYS = 7      # connector docs kept this long after expiry/revocation, then deleted
-RATE_LIMIT_CALLS = 30             # tools/call per grant per window
+# Rate limit (30 section 11): a leaky bucket per connection. A counted call adds its weight, the bucket drains
+# RATE_LIMIT_CALLS per RATE_LIMIT_WINDOW_SECONDS, and a call that would overflow it is refused and adds nothing.
+RATE_LIMIT_CALLS = 80             # call units per connection per window (the budget arithmetic is in 30 section 11)
 RATE_LIMIT_WINDOW_SECONDS = 600
+CHECK_CALL_WEIGHT = 0.5           # a sieve_check poll counts as half a call
+RATE_LIMIT_FREE_REFUSALS = 30     # refused calls given back per window; past that they count, so a loop stays bounded
+RATE_LIMIT_WAIT_STEP_SECONDS = 5  # the stated wait is rounded up to a multiple of this
 MAX_OPEN_REQUESTS_PER_GRANT = 3
 IDEMPOTENCY_WINDOW_SECONDS = 600  # a call with the same key within this window returns the existing request
 IDEMPOTENCY_KEY_MAX_CHARS = 64

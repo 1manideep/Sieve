@@ -53,7 +53,7 @@ export function AskScreen() {
   const focusWhenIdle = useRef(false);
   const ownerConflict = useSession((s) => s.ownerConflict);
   const online = useNetwork((s) => s.online);
-  const { question, phase, step } = useAskReal(useShallow((s) => ({ question: s.question, phase: s.phase, step: s.step })));
+  const { question, phase, step, approving } = useAskReal(useShallow((s) => ({ question: s.question, phase: s.phase, step: s.step, approving: s.approving })));
   const { text, setup } = useAvailability(useShallow((s) => ({ text: s.text, setup: s.setup })));
   const { cloudFallback, defaultStep } = useSettings(useShallow((s) => ({ cloudFallback: s.settings.cloudFallbackForOwnData, defaultStep: s.settings.defaultStep })));
   const indexing = useIndexing(useShallow((s) => ({ state: s.state, left: s.left })));
@@ -235,6 +235,7 @@ export function AskScreen() {
           onSubmit={submit}
           button={submitButton(true)}
           step={step}
+          disabled={approving || phase === 'drafting'}
         >
           {waitingRow}
         </FollowUp>

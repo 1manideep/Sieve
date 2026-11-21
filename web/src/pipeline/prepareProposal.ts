@@ -9,16 +9,18 @@ import type {
   Candidate, Category, CategoryRule, IndexRecord, KnownEntity, Proposal, ProposalOutcome, StepOption, TraceKind, TraceStep, Warning, Where,
 } from '@sieve/shared';
 import {
-  CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, codeTrace, deriveExcerpt, fitPassages, getNanoAvailability, hasFreshConsent,
+  CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, codeTrace, deriveExcerpt, excerptBasis, fitPassages, getNanoAvailability, hasFreshConsent,
   recordBody, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
 } from '@/ai';
 import {
-  asksCount, asksLatest, clockFor, flushUrgentEmbeds, getRecord, parseQuestion, relatedFor, removeRecord, search, type HardFilter, type SieveDb,
+  asksCount, asksLatest, asksSeveral, clockFor, flushUrgentEmbeds, getRecord, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
+  type HardFilter, type SieveDb,
 } from '@/index';
-import { buildStepOption, checkOutgoing, holdsSecretCode, privacyWarnings } from '@/privacy';
+import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
 import { forgetCloudConsentRequest, rememberCloudConsentRequest } from './consent';
 import { LABELS, RUNNING, UNAVAILABLE, WARNINGS, WHERE_PHRASE } from './copy';
 import { answerStillHolds, confirmFresh, type FreshResult } from './fresh';
+import { stripInstructions } from './instructions';
 import { patchRecordIfCurrent, photoBlobFor } from './optional';
 import { actionVerb, splitDraftRequest } from './split';
 import { recordDataClass, ruleFor, stepIndex, unavailableOption, unavailableOptions } from './steps';
@@ -185,8 +187,12 @@ class Run {
     return UNAVAILABLE.error;
   }
 
-  finish(outcome: ProposalOutcome, extra: { item?: IndexRecord; rule?: CategoryRule; options?: StepOption[]; related?: Candidate[] } = {}): Proposal {
-    const reason = this.reasonFor(outcome, extra.item);
+  /** `reason` replaces the outcome's usual line (an unsupported answer that packs several facts, 12.4). */
+  finish(
+    outcome: ProposalOutcome,
+    extra: { item?: IndexRecord; rule?: CategoryRule; options?: StepOption[]; related?: Candidate[]; reason?: string } = {},
+  ): Proposal {
+    const reason = extra.reason ?? this.reasonFor(outcome, extra.item);
     const i = this.input;
     return {
       requestId: i.requestId,
@@ -265,13 +271,26 @@ async function prepare(run: Run): Promise<Proposal> {
 
   // 3. The lookup (drafting words removed) and hints.
   let lookup = splitDraftRequest(q).lookup;
+  // 3.0 Words that read as instructions to Sieve ("SYSTEM:", "pre-approved") are left out of the search and of every
+  // prompt (12.2, Nov 21, B02). The proposal keeps the question as asked, with a warning, so it is never auto-approved.
+  const stripped = stripInstructions(lookup);
+  if (stripped.removed.length > 0) {
+    lookup = stripped.text;
+    run.warn(WARNINGS.questionInstruction(stripped.removed[0]!));
+    run.code('clean', LABELS.instructionsLeftOut(stripped.removed));
+    if (!/[\p{L}\p{N}]/u.test(lookup)) {
+      run.code('rule', LABELS.nothingLeft);
+      return run.finish('no-match');
+    }
+  }
   let hints = input.hints;
   if (!input.hints && input.requester.kind === 'in-app') {
     try {
       const locale = (typeof navigator !== 'undefined' && navigator.language) || 'en-US';
       const p = parseQuestion(lookup, new Date(today), locale, { db });
-      // The parsed `from` stays a boost: search finds the sender the question names itself (20 section 10.2).
-      const { from: _from, ...parsed } = p.hints;
+      // The parsed `from` and `source` stay boosts: search finds the sender and a "local files only" the question
+      // names itself, as filters (20 section 10.2); a lone word ("the pdf") never filters.
+      const { from: _from, source: _source, ...parsed } = p.hints;
       hints = parsed;
       if (p.corrected) lookup = p.corrected;
       if (p.corrected && p.corrected !== p.normalized) run.code('retrieve', LABELS.spellingFixed(p.corrected));
@@ -287,6 +306,12 @@ async function prepare(run: Run): Promise<Proposal> {
   if (asksCount(lookup)) {
     run.code('rule', LABELS.countUnsupported);
     return run.finish('unsupported');
+  }
+  // 3b. Several fields or items at once ("list", "all of", "five fields", "my last five emails"): this level shares
+  // one fact at a time, so it is unsupported before any search or model call (12.4, Nov 21, B01 and B04).
+  if (asksSeveral(lookup)) {
+    run.code('rule', LABELS.severalUnsupported);
+    return run.finish('unsupported', { reason: UNAVAILABLE.oneFact });
   }
 
   // 4. Retrieve.
@@ -326,6 +351,7 @@ async function prepare(run: Run): Promise<Proposal> {
   }
   const retrieveMs = Math.round(performance.now() - t0);
   run.end(retrieveId, codeTrace('retrieve', LABELS.retrieveFound(cands, retrieveMs), retrieveMs));
+  if (filters?.source) run.code('retrieve', LABELS.sourceOnly(filters.source));
   if (cands.some((c) => c.matchedBy === 'gmail-search')) {
     run.push({ kind: 'retrieve', label: LABELS.gmailSearch, where: 'cloud', ms: 0, charsSent: lookup.length, at: Date.now() });
   }
@@ -433,6 +459,12 @@ async function prepare(run: Run): Promise<Proposal> {
         return askConsent(list, missing.length ? missing : records.filter((r) => recordDataClass(r) === 'own'));
       }
       if (res.error.code === 'unavailable' || res.error.code === 'downloading') return run.finish('model-unavailable');
+      // 12.4 (Nov 21, B04, B14): the model refused the shape (no usable output after its retry). That is a question
+      // this level can't answer in one fact, not a failure of the device.
+      if (res.error.code === 'bad-output') {
+        run.code('rule', LABELS.shapeRefused);
+        return run.finish('unsupported', { reason: UNAVAILABLE.oneFact });
+      }
       return run.finish('error');
     }
     if (res.trace.where === 'cloud') run.warn(callData === 'sample' ? WARNINGS.sampleDataCloud() : WARNINGS.cloudFallback());
@@ -511,7 +543,7 @@ async function prepare(run: Run): Promise<Proposal> {
     if (rec.kind === 'photo') {
       excerpt = body;
     } else {
-      const d = deriveExcerpt(body, { start: 0, end: body.length }, answer);
+      const d = deriveExcerpt(body, { start: 0, end: body.length }, excerptBasis(answer, lookup));
       excerpt = d.excerpt;
       unsupported = d.unsupported;
     }
@@ -544,6 +576,12 @@ async function prepare(run: Run): Promise<Proposal> {
   const parts = { answer, excerpt: excerpt || undefined, full: recordBody(rec) };
   const photo = rec.kind === 'photo' ? await photoBlobFor(db, rec.id) : undefined;
   const data = recordDataClass(rec);
+  let knownSenders: Set<string> | undefined;
+  try {
+    knownSenders = knownSendersOf(db);
+  } catch {
+    knownSenders = undefined;   // a stand-in index: the item's own sender still counts (11 section 5.6)
+  }
   let scanSaved = false;
   const buildAll = async (extra: { extraEntities?: KnownEntity[]; extraQuotes?: string[] } = {}): Promise<StepOption[]> => {
     const built = await Promise.all(
@@ -553,6 +591,7 @@ async function prepare(run: Run): Promise<Proposal> {
           question: lookup,
           rule,
           allowNano: false,
+          ...(knownSenders ? { knownSenders } : {}),
           ...extra,
           ...(photo ? { photo } : {}),
           ...(input.signal ? { signal: input.signal } : {}),
@@ -569,6 +608,14 @@ async function prepare(run: Run): Promise<Proposal> {
   const enforceAll = (built: StepOption[]) => LADDER_STEPS.map((step, i) => enforceOption(step, built[i], { maxStep: input.maxStep, aiName, hasExcerpt: !!excerpt }));
   const built = await buildAll();
   let options = enforceAll(built);
+  // 15.0 One fact per answer (11 section 10.3a, Nov 21, B05 and B13): at the answer level, an answer that packs a
+  // list or two facts makes the outcome unsupported, with the same line as a question that asks for several things.
+  const answerOpt = options[0];
+  if (answerOpt && !answerOpt.available && answerOpt.unavailableReason === UNAVAILABLE.oneFact &&
+      (input.requestedStep === 'answer' || !options.some((o) => o.available))) {
+    run.end(piiId, codeTrace('pii', LABELS.oneFactAnswer, Math.round(performance.now() - p0)));
+    return run.finish('unsupported', { reason: UNAVAILABLE.oneFact });
+  }
   const optionTraces = built.flatMap((o) => o.trace ?? []);
   const piiMs = Math.round(performance.now() - p0);
   if (optionTraces.length) {
@@ -603,6 +650,13 @@ async function prepare(run: Run): Promise<Proposal> {
   if (check.quotes.length > 0 && !rec.injection?.suspicious) run.warn(WARNINGS.injection(check.quotes[0]));
   // 11 section 11.1: the privacy pipeline's own warnings, for kinds the pipeline has not already worded (pii-check-limited).
   for (const w of privacyWarnings(rec, options, { nanoPii: check.nanoPii })) if (!run.warnings.some((x) => x.kind === w.kind)) run.warn(w);
+  // 11 section 11.5 (Nov 21, B15): screening, legal, medical, HR or immigration in the item or the answer. The warning
+  // keeps it from auto-approve, so the person decides.
+  const answerText = options[0]?.available ? options[0].text : '';
+  if (itemTouchesSensitiveTopic(rec) || touchesSensitiveTopic(answerText)) {
+    run.warn(WARNINGS.sensitiveTopic());
+    run.code('rule', LABELS.sensitive);
+  }
 
   // 16. Related items, filtered exactly like the main item.
   let related: Candidate[] = [];

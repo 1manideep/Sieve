@@ -1,5 +1,6 @@
 // Question cues that act as filters (20 sections 9.4 and 10.2): who an item is from, whether the question wants the
 // newest item, and whether it asks for a count. Plain code, no model.
+import type { QueryHints } from '@sieve/shared';
 import { isDictionaryLoaded, isEnglishWord } from './dictionary';
 import { displayName, fromAddress } from './text';
 import { STOP_WORDS } from './tokenize';
@@ -208,7 +209,8 @@ const ITEMS =
   'emails?|e-mails?|mails?|messages?|texts?|orders?|receipts?|invoices?|photos?|pictures?|pics?|images?|screenshots?|files?|documents?|docs?|notes?|notifications?|newsletters?|alerts?|statements?|bills?|deliveries|packages?|parcels?|shipments?|replies|threads?|senders?|subscriptions?|transactions?|charges?|runs?|rides?|workouts?|activities|times';
 const COUNT_RES: RegExp[] = [
   new RegExp(String.raw`\bhow\s+many\s+(?:[\p{L}\p{N}'-]+\s+){0,3}?(?:${ITEMS})\b(?!\s+(?:a|per|each)\s+(?:day|week|month|year)\b)`, 'iu'),
-  new RegExp(String.raw`\b(?:count|total|number|tally)\s+of\s+(?:(?:my|the|all)\s+)?(?:[\p{L}\p{N}'-]+\s+){0,2}?(?:${ITEMS})\b`, 'iu'),
+  // plural only: "the number of my orders" is a count, "the order number of my Amazon order" and "the total of my order" are not
+  new RegExp(String.raw`\b(?:count|total|number|tally)\s+of\s+(?:(?:my|the|all)\s+)?(?:[\p{L}\p{N}'-]+\s+){0,2}?(?:${ITEMS.replace(/\?/g, '')})\b`, 'iu'),
   new RegExp(String.raw`\bcount\s+(?:up\s+)?(?:my|the|all)\s+(?:[\p{L}\p{N}'-]+\s+){0,2}?(?:${ITEMS})\b`, 'iu'),
   /\bhow\s+often\b.*\b(?:email|emails|emailed|write|writes|wrote|send|sends|sent|message|messages|messaged|text|texts|texted|order|ordered|run|ran)\b/iu,
 ];
@@ -216,4 +218,53 @@ const COUNT_RES: RegExp[] = [
 /** "How many emails...", "the number of orders", "count my receipts", "how often does X email me". */
 export function asksCount(text: string): boolean {
   return COUNT_RES.some((re) => re.test(text));
+}
+
+const NUM = 'two|three|four|five|six|seven|eight|nine|ten|\\d{1,2}';
+const FIELDS = 'fields?|details?|things|facts|values|pieces of information|parts';
+const FIELD_NOUNS = 'subjects|senders|titles|names|dates|amounts|totals|addresses|numbers|prices|fields|details';
+const SEVERAL_RES: RegExp[] = [
+  /^\W*(?:(?:please|can you|could you|would you)\s+)?(?:list|enumerate|itemi[sz]e)\b/iu,
+  /\b(?:list|enumerate|itemi[sz]e)\s+(?:all|every|each|my|the|your|out)\b/iu,
+  /\b(?:give|show|send|tell)\s+(?:me\s+)?(?:a|the)\s+list\b/iu,
+  /\ba\s+list\s+of\s+(?:all\s+|my\s+|the\s+|your\s+)/iu,
+  /\ball\s+of\b/iu,
+  new RegExp(String.raw`\b(?:every|each)\s+(?:single\s+)?(?:${ITEMS}|${FIELDS}|payments?|accounts?)\b`, 'iu'),
+  new RegExp(String.raw`\b(?:${NUM})\s+(?:[\p{L}-]+\s+)?(?:${FIELDS})\b`, 'iu'),
+  new RegExp(String.raw`\b(?:${FIELD_NOUNS})\s+of\s+(?:my|the|all|each|every|your|these|those)\b`, 'iu'),
+  new RegExp(String.raw`\b(?:last|latest|recent|newest|first|top|past)\s+(?:${NUM})\s+(?:[\p{L}-]+\s+)?(?:${ITEMS})\b`, 'iu'),
+  new RegExp(String.raw`\b(?:${NUM})\s+(?:last|latest|recent|newest|most recent)\s+(?:[\p{L}-]+\s+)?(?:${ITEMS})\b`, 'iu'),
+  /\bin\s+(?:one|a single)\s+(?:sentence|line|answer|reply|message)\b/iu,
+  /\b(?:what|when|where|who|which|how)\b[^?]*?\band\s+(?:what|when|where|who|which|how)\b/iu,
+];
+/** "the amount, date and merchant": three or more things asked for at once, after "the", "my" or "of". */
+const ASKED_LIST =
+  /\b(?:the|my|your|their|its|of|for|about|me)\s+[\p{L}-]+(?:\s+[\p{L}-]+)?,\s+(?:the\s+|my\s+)?[\p{L}-]+(?:\s+[\p{L}-]+)?,?\s+(?:and|or)\s+(?:the\s+|my\s+)?[\p{L}-]+/iu;
+
+/**
+ * A question that asks for several fields or items at once (10 section 12.4, Nov 21): "list", "all of", "every",
+ * "five fields", "subjects of my last emails", "my last five emails", "in one sentence", "what ... and when ...", or
+ * three things in a row. This level shares one fact at a time, so it is unsupported before any model call.
+ */
+export function asksSeveral(text: string): boolean {
+  return SEVERAL_RES.some((re) => re.test(text)) || ASKED_LIST.test(text);
+}
+
+const ONLY_RES: [NonNullable<QueryHints['source']>, RegExp][] = [
+  ['files', /\b(?:local\s+(?:files?|documents?|docs?)|(?:files?|documents?|docs?)\s+only|only\s+(?:in\s+|from\s+)?(?:my\s+)?(?:local\s+)?(?:files?|documents?|docs?|folders?)|(?:in|from|among|on)\s+my\s+(?:local\s+)?(?:files?|documents?|docs?|folders?|computer|disk|drive))\b/iu],
+  ['photos', /\b(?:(?:photos?|pictures?|pics)\s+only|only\s+(?:in\s+|from\s+)?(?:my\s+)?(?:photos?|pictures?|pics)|(?:in|from|among)\s+my\s+(?:photos?|pictures?|pics|camera roll|photo library))\b/iu],
+  ['mail', /\b(?:(?:e-?mails?|mail|inbox)\s+only|only\s+(?:in\s+|from\s+)?(?:my\s+)?(?:e-?mails?|mail|inbox|gmail)|(?:in|from|among)\s+my\s+(?:e-?mails?|mail|inbox|gmail)|in\s+gmail)\b/iu],
+];
+
+/**
+ * The source a question limits itself to (20 section 10.2, Nov 21): "local files only", "in my files", "from my
+ * photos", "in my mail". A filter, unlike the `source` hint a single word gives ("the pdf", "emails"), which boosts.
+ */
+export function sourceCue(text: string): NonNullable<QueryHints['source']> | undefined {
+  let best: { at: number; source: NonNullable<QueryHints['source']> } | undefined;
+  for (const [source, re] of ONLY_RES) {
+    const m = re.exec(text);
+    if (m && (!best || m.index < best.at)) best = { at: m.index, source };
+  }
+  return best?.source;
 }

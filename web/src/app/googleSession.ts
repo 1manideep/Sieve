@@ -21,6 +21,7 @@ import { attachHomeBaseEngine, useHomeBase } from '@/state/homeBase';
 import { useIndexing } from '@/state/indexing';
 import { tables } from '@/state/localDb';
 import { useGrants } from '@/state/grants';
+import type { SieveDb } from '@/index';
 import type { SessionUser } from '@/state/session';
 import { useSettings } from '@/state/settings';
 import { useToasts } from '@/state/toasts';
@@ -31,6 +32,7 @@ interface Running {
   uid: string;
   engine: HomeBaseEngine;
   stops: (() => void)[];        // run in reverse order
+  db: SieveDb;                  // the real index, whose source jobs stop with the session
 }
 
 let running: Running | null = null;
@@ -169,7 +171,7 @@ export async function startGoogleSession(user: SessionUser): Promise<void> {
     markAutoApproved: (receiptId, on) => markAutoApproved(uid, receiptId, on),
   });
   attachHomeBaseEngine(engine);
-  running = { uid, engine, stops };
+  running = { uid, engine, stops, db };
 
   stops.push(
     resilientSnapshot(
@@ -278,6 +280,13 @@ export async function stopGoogleSession(): Promise<void> {
     push.stopPushSession();
   } catch {
     // push never loaded
+  }
+  // The Gmail sync, folder rescans and the queue stop with the session (also when another tab signed out).
+  try {
+    const sources = await import('@/sources');
+    await sources.stopSources(r.db);
+  } catch (error) {
+    console.error('stop sources', error);
   }
 }
 

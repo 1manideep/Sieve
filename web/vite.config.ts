@@ -131,7 +131,7 @@ export default defineConfig(({ mode }) => {
         '/mcp': {
           target: 'http://127.0.0.1:5001',
           changeOrigin: true,
-          rewrite: (path: string) => path.replace(/^\/mcp/, '/demo-sieve/us-central1/mcp'),
+          rewrite: (path: string) => path.replace(/^\/mcp/, `/${env.VITE_FIREBASE_PROJECT_ID || 'demo-sieve'}/us-central1/mcp`),
         },
       },
     },

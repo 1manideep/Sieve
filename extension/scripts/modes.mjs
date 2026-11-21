@@ -3,14 +3,18 @@
 export const HOSTED_ORIGIN = 'https://sieve.manideep.info';
 export const DEV_ORIGIN = 'http://localhost:5173';
 export const WEB_APP_ORIGIN = 'https://sieve-manideep.web.app';   // Hosting's default domain, until the custom domain is live
+export const FIREBASE_APP_ORIGIN = 'https://sieve-manideep.firebaseapp.com';   // Hosting's second default domain, same site
+
+/** The hosted app: every domain Firebase Hosting serves it on. Release and store trust these only. */
+export const HOSTED_ORIGINS = [HOSTED_ORIGIN, WEB_APP_ORIGIN, FIREBASE_APP_ORIGIN];
 
 /** @typedef {'dev' | 'release' | 'store'} BuildMode */
 
 /** @type {Readonly<Record<BuildMode, { appUrl: string; origins: readonly string[]; out: string; keepKey: boolean }>>} */
 export const MODES = {
-  dev: { appUrl: DEV_ORIGIN, origins: [HOSTED_ORIGIN, WEB_APP_ORIGIN, DEV_ORIGIN], out: 'dist-dev', keepKey: true },
-  release: { appUrl: HOSTED_ORIGIN, origins: [HOSTED_ORIGIN, WEB_APP_ORIGIN], out: 'dist', keepKey: true },
-  store: { appUrl: HOSTED_ORIGIN, origins: [HOSTED_ORIGIN, WEB_APP_ORIGIN], out: 'dist-store', keepKey: false },
+  dev: { appUrl: DEV_ORIGIN, origins: [...HOSTED_ORIGINS, DEV_ORIGIN], out: 'dist-dev', keepKey: true },
+  release: { appUrl: HOSTED_ORIGIN, origins: [...HOSTED_ORIGINS], out: 'dist', keepKey: true },
+  store: { appUrl: HOSTED_ORIGIN, origins: [...HOSTED_ORIGINS], out: 'dist-store', keepKey: false },
 };
 
 /** Every key a built manifest may have (50 section 12.4, plus "commands" from section 8.9). */
