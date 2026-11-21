@@ -18,7 +18,7 @@ def test_e9_admission_bucket(db, broker_secret):
     now = fb.now()                                  # one instant: no draining between the calls
     results = [ratelimit.admit(db, lh, now) for _ in range(config.RATE_LIMIT_CALLS + 1)]
     assert all(r.allowed for r in results[:-1]) and not results[-1].allowed
-    assert results[-1].grant.ai_name == "Test AI" and results[-1].retry_after_seconds == 10
+    assert results[-1].grant.ai_name == "Test AI" and results[-1].retry_after_seconds == 5
     assert ref.get().get("rateUsed") == config.RATE_LIMIT_CALLS      # the refused call added nothing
     check = ratelimit.admit(db, lh, now, weight=config.CHECK_CALL_WEIGHT)
     assert not check.allowed and check.retry_after_seconds == 5
@@ -26,7 +26,7 @@ def test_e9_admission_bucket(db, broker_secret):
     assert ref.get().get("rateUsed") == config.RATE_LIMIT_CALLS - 1 and ref.get().get("rateRefunds") == 1
     assert ratelimit.admit(db, lh, now, weight=0.5).allowed and ratelimit.admit(db, lh, now, weight=0.5).allowed
     assert not ratelimit.admit(db, lh, now, weight=0.5).allowed
-    later = now + timedelta(seconds=7.5)            # the stated wait was about 10 s; the real one is 7.5 s
+    later = now + timedelta(seconds=3)              # the stated wait was 5 s; the real one is 3 s
     assert ratelimit.admit(db, lh, later).allowed
     assert ref.get().get("rateUsed") == pytest.approx(config.RATE_LIMIT_CALLS)
     assert db.collection(f"users/{uid}/grants").document(out["grantId"]).get().get("lastUsedAt")

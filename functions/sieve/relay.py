@@ -162,7 +162,7 @@ def _admit_request_txn(txn: Any, coll: Any, new_ref: Any, *, key: str, grant_id:
         txn.create(new_ref, {**data, "status": "offline"})
         return Admitted("offline", request_id=new_ref.id)
     waiting = list(coll.where(filter=FieldFilter("requester.grantId", "==", grant_id))
-                   .where(filter=FieldFilter("status", "in", OPEN_AND_ANSWERED))
+                   .where(filter=FieldFilter("status", "in", list(OPEN_STATUSES)))
                    .limit(config.MAX_OPEN_REQUESTS_PER_GRANT).stream(transaction=txn))
     if len(waiting) >= config.MAX_OPEN_REQUESTS_PER_GRANT:
         return Admitted("limit", waiting=tuple(s.id for s in waiting))

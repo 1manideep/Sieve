@@ -161,15 +161,22 @@ def test_offline_and_errors_are_not_reused(db, broker_secret):
 
 def test_pending_limit_lists_the_waiting_ids(db, broker_secret):
     s = Setup(db, broker_secret)
-    waiting = [s.ask(f"Different question {i}?").request_id for i in range(3)]
-    over = s.ask("A fourth question?")
+    waiting = [s.ask(f"Different question {i}?").request_id for i in range(10)]
+    over = s.ask("An eleventh question?")
     assert over.status == "error" and over.request_id is None
-    assert over.message.startswith("At most 3 requests can wait per connection, and 3 are waiting now: ")
+    assert over.message.startswith("At most 10 requests can wait per connection, and 10 are waiting now: ")
     assert over.message.endswith(". Call sieve_check on those first, then ask again.")
     assert all(f"\"{rid}\"" in over.message for rid in waiting)
-    assert len(s.docs()) == 3
+    assert len(s.docs()) == 10
     # a retry of a waiting question still finds its request at the limit
     assert s.ask("Different question 0?").request_id == waiting[0]
+
+
+def test_an_approved_answer_not_yet_collected_holds_no_slot(db, broker_secret):
+    s = Setup(db, broker_secret)
+    for _ in range(10):
+        put_request(db, s.uid, s.grant_id, status="answered")
+    assert s.ask("One more question?").status == "pending"
 
 
 def test_check_statuses(db, broker_secret):

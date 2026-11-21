@@ -6,6 +6,7 @@ import time
 from datetime import datetime, timezone
 
 from sieve import config, links, tools
+from tests.emulator._grants import put_request
 from tests.helpers import emulator as emu
 from tests.helpers.home_base import HomeBaseSim, answer, blocked, decline, never, no_match
 from tests.http._setup import QUESTION, check, ladder, owner
@@ -146,14 +147,17 @@ def test_h11_parallel_calls(db):
 def test_h12_open_request_limit(db):
     o = owner(db)
     s = emu.LegacySession(o.secret)
+    # nine requests already wait for this connection; one real call takes the tenth slot
+    waiting = [put_request(db, o.uid, o.grant["grantId"], status="queued") for _ in range(9)]
     with HomeBaseSim(db, o.uid, o.device, never()):
-        outs = [ladder(s, question=f"Different question {i}?")[1] for i in range(4)]
-    assert [x["status"] for x in outs[:3]] == ["pending"] * 3
-    assert outs[3]["status"] == "error" and "request_id" not in outs[3]
-    assert outs[3]["message"].startswith("At most 3 requests can wait per connection, and 3 are waiting now: ")
-    assert all(f"\"{x['request_id']}\"" in outs[3]["message"] for x in outs[:3])
+        tenth = ladder(s, question="Different question 0?")[1]
+        over = ladder(s, question="An eleventh question?")[1]
+    assert tenth["status"] == "pending"
+    assert over["status"] == "error" and "request_id" not in over
+    assert over["message"].startswith("At most 10 requests can wait per connection, and 10 are waiting now: ")
+    assert all(f"\"{rid}\"" in over["message"] for rid in [*waiting, tenth["request_id"]])
     rate = db.collection("connectors").document(links.link_hash(o.secret)).get().to_dict()
-    assert rate["rateRefunds"] > 0.9                 # the refused fourth call was given back (30 section 11)
+    assert rate["rateRefunds"] > 0.9                 # the refused eleventh call was given back (30 section 11)
 
 
 def test_h13_modern_header_mismatch(db):

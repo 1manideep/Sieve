@@ -74,15 +74,16 @@ def test_unsupported_and_unknown_statuses():
 
 
 def test_open_limit_text_states_the_limit():
-    ids = ["A" * 20, "B" * 20, "C" * 20]
+    ids = [chr(65 + i) * 20 for i in range(10)]
     out = tools.open_limit_result(ids)
     assert out.status == "error" and out.request_id is None
-    assert out.message == ("At most 3 requests can wait per connection, and 3 are waiting now: "
-                           f"\"{ids[0]}\", \"{ids[1]}\", \"{ids[2]}\". Call sieve_check on those first, then ask again.")
-    assert tools.open_limit_result([]).message.startswith("At most 3 requests can wait per connection, and 3 are "
+    listed = ", ".join(f"\"{i}\"" for i in ids)
+    assert out.message == ("At most 10 requests can wait per connection, and 10 are waiting now: "
+                           f"{listed}. Call sieve_check on those first, then ask again.")
+    assert tools.open_limit_result([]).message.startswith("At most 10 requests can wait per connection, and 10 are "
                                                           "waiting now. ")
     answer = tools.TOOLS["sieve_answer"]["description"]
-    assert "At most 3 requests can wait per connection; wait for sieve_check before asking more." in answer
+    assert "At most 10 requests can wait per connection; wait for sieve_check before asking more." in answer
 
 
 def test_descriptions_carry_the_waits_and_the_retry_rule():
@@ -117,7 +118,7 @@ def test_instructions_and_tools_name_only_allowed_tools(step, allowed, hidden):
     for name in allowed:
         assert name in text + json.dumps(listed)
     assert "sieve_check waits about 20 seconds per call" in text
-    assert "At most 3 requests can wait per connection; wait for sieve_check before asking more." in text
+    assert "At most 10 requests can wait per connection; wait for sieve_check before asking more." in text
     assert "otherwise today is 2026-11-16." in text
     if step == "answer":
         assert "5. Ask with sieve_answer. This connection shares one-sentence answers only." in text

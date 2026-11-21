@@ -26,7 +26,7 @@ def _full(at: datetime = NOW) -> ratelimit.Bucket:
 def test_stated_wait_rounds_up_to_five_seconds():
     assert [ratelimit.stated_wait(s) for s in (0.01, 3.75, 5.0, 5.01, 7.5, 10.0, 12.0, 61.0)] == \
         [5, 5, 5, 10, 10, 10, 15, 65]
-    assert ratelimit.max_stated_wait() == 10
+    assert ratelimit.max_stated_wait() == 5
     assert ratelimit.drain_per_second() == pytest.approx(CAP / 600)
 
 
@@ -40,7 +40,7 @@ def test_the_wait_is_the_real_wait():
         stated = ratelimit.stated_wait(wait)
         assert stated % 5 == 0 and real <= stated < real + 5
         assert ratelimit.take(_full(), weight, _at(stated))[1] == 0
-    assert ratelimit.stated_wait(ratelimit.take(_full(), 1.0, NOW)[1]) == 10
+    assert ratelimit.stated_wait(ratelimit.take(_full(), 1.0, NOW)[1]) == 5
     assert ratelimit.stated_wait(ratelimit.take(_full(), CHECK, NOW)[1]) == 5
 
 
@@ -54,11 +54,11 @@ def test_rate_limit_message_states_the_wait():
 
 
 def test_the_description_states_the_limit_and_the_wait_in_one_sentence():
-    sentence = ("A connection may make 80 calls per 10 minutes, and each sieve_check counts as half a call; past "
-                "that, the result says how many seconds to wait, at most 10.")
+    sentence = ("A connection may make 200 calls per 10 minutes, and each sieve_check counts as half a call; past "
+                "that, the result says how many seconds to wait, at most 5.")
     for step in ("answer", "excerpt", "full"):
         assert sentence in tools.description("sieve_answer", step)
-    assert sentence.count(".") == 1 and CHECK == 0.5 and ratelimit.max_stated_wait() == 10
+    assert sentence.count(".") == 1 and CHECK == 0.5 and ratelimit.max_stated_wait() == 5
 
 
 # ---------- weights ----------
@@ -137,7 +137,7 @@ PENDING = config.MAX_OPEN_REQUESTS_PER_GRANT
 
 
 def _workload(windows: int) -> list[tuple[float, float]]:
-    """(time, weight): 3 pending requests polled every 20 s, plus 20 new questions per 10 minutes sent at once
+    """(time, weight): 10 waiting requests polled every 20 s, plus 20 new questions per 10 minutes sent at once
     at the start of each window, the worst place for them."""
     calls = [(w * WINDOW + 0.001 * q, 1.0) for w in range(windows) for q in range(QUESTIONS)]
     calls += [(i * POLL_EVERY + 0.01 * p, CHECK) for p in range(PENDING)
@@ -157,16 +157,16 @@ def _run(calls: list[tuple[float, float]]) -> tuple[int, float]:
 
 
 def test_budget_arithmetic():
-    polls = PENDING * (WINDOW // POLL_EVERY)       # 3 x 30 = 90 polls in 10 minutes
-    units = polls * CHECK + QUESTIONS              # 45 + 20 = 65 call units
-    assert (polls, units) == (90, 65.0)
-    assert units < CAP == 80                        # 15 units, about a fifth of the budget, to spare
+    polls = PENDING * (WINDOW // POLL_EVERY)       # 10 x 30 = 300 polls in 10 minutes
+    units = polls * CHECK + QUESTIONS              # 150 + 20 = 170 call units
+    assert (polls, units) == (300, 170.0)
+    assert units < CAP == 200                       # 30 units, about a seventh of the budget, to spare
 
 
 def test_budget_holds_for_the_heaviest_normal_use():
     refused, peak = _run(_workload(windows=6))      # an hour of it
     assert refused == 0
-    assert peak <= QUESTIONS + PENDING * CHECK + 1e-6   # the bucket never holds more than the burst: 21.5 of 80
+    assert peak <= QUESTIONS + PENDING * CHECK + 1e-6   # the bucket never holds more than the burst: 25 of 200
 
 
 def test_the_old_budget_fails_the_same_use(monkeypatch):
@@ -235,7 +235,7 @@ def test_refused_calls_are_given_back(limiter, monkeypatch):
     assert _call("sieve_answer", {"question": "Q", "colour": "red"})["status"] == "error"
     monkeypatch.setattr(relay, "handle_ladder_tool", lambda deps, ctx, tool, args, t0: tools.open_limit_result(
         ["A" * 20, "B" * 20, "C" * 20]))
-    assert _call("sieve_answer", {"question": "Q"})["message"].startswith("At most 3 requests can wait")
+    assert _call("sieve_answer", {"question": "Q"})["message"].startswith("At most 10 requests can wait")
     monkeypatch.setattr(relay, "handle_ladder_tool", lambda deps, ctx, tool, args, t0: tools.key_reused_result())
     assert _call("sieve_answer", {"question": "Q", "idempotency_key": "k"})["message"] == tools.MSG_KEY_REUSED
     assert limiter.refunds == 6 and limiter.bucket.used == 0 and limiter.bucket.refunds == 6
@@ -257,7 +257,7 @@ def test_a_rate_limited_call_states_the_wait_and_is_not_counted(limiter, monkeyp
     monkeypatch.setattr(relay, "handle_check", lambda deps, ctx, rid, t0: tools.pending_result(rid))
     limiter.bucket = _full()
     out = _call("sieve_answer", {"question": "Q"})
-    assert out == {"status": "error", "message": "Too many requests from this connection. Wait about 10 seconds, "
+    assert out == {"status": "error", "message": "Too many requests from this connection. Wait about 5 seconds, "
                                                  "then try again."}
     assert _call("sieve_check", {"request_id": RID})["message"].endswith("Wait about 5 seconds, then try again.")
     assert limiter.bucket == _full() and limiter.refunds == 0
