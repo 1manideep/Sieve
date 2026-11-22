@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env } from '@/app/env';
-import { PRIVACY, TESTS } from '@/copy/how-tests';
+import { BARS_MET, PRIVACY, TESTS } from '@/copy/how-tests';
 import { HOW_COPY } from '@/copy/screens-how';
 import { SCREENS } from '@/copy/strings';
 import { expectNoAxeViolations } from '@/test/axe';
@@ -114,7 +114,7 @@ describe('/how', () => {
     renderHow();
     const section = document.getElementById('tests') as HTMLElement;
     const stats = within(section).getAllByRole('listitem');
-    expect(stats.map((li) => li.querySelector('b')?.textContent)).toEqual([TESTS.automated.tests.toLocaleString('en-US'), '96%', '23 of 27', '0']);
+    expect(stats.map((li) => li.querySelector('b')?.textContent)).toEqual([TESTS.automated.tests.toLocaleString('en-US'), '96%', '24 of 27', '0']);
     expect(stats[2]).toHaveTextContent('The first round scored 5.');
     // whose mailbox it was and what was replaced, said before anything is opened
     expect(PRIVACY).toMatch(/^The live rounds ran on the developer's own personal Gmail\./);
@@ -135,12 +135,16 @@ describe('/how', () => {
       'Search benchmark',
       'The on-device model',
       'Live rounds on a real mailbox',
+      'First measurements, before the build',
+      'A review from seven angles',
+      'The demo computer',
       'What these tests do not show',
     ]);
     expect(within(section).getByRole('table', { name: 'Table 6 · Search benchmark: 68 questions among 2,020 items' })).toBeInTheDocument();
     const rounds = within(section).getByRole('table', { name: 'Table 7 · Live rounds, 37 runs each' });
     expect(within(rounds).getAllByRole('row')).toHaveLength(TESTS.live.rounds.length + 1);
-    expect(section).toHaveTextContent('Round 3 met three of the four: 85% right (23 of 27), 7% missed (2 of 27), nothing made up, and 8% wrong (2 of 25 answers).');
+    expect(BARS_MET).toBe(4);
+    expect(section).toHaveTextContent('Round 5 met all four: 89% right (24 of 27), 4% missed (1 of 27), 4% wrong (1 of 25 answers), and nothing made up.');
     expect(screen.getAllByRole('table')).toHaveLength(7);
     await expectNoAxeViolations();
 
