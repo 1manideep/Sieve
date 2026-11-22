@@ -66,6 +66,8 @@ const RERANK_LIMIT = Number(process.env.EVAL_RERANK_LIMIT ?? 20);
 
 // ---------- the embedder, with a disk cache keyed by the exact input text (the model and its settings are fixed)
 
+// --expand: other search words per question id, { "id": ["word", ...] }, passed to search as its `expand` option.
+const EXPAND: Record<string, string[]> = process.env.EVAL_EXPAND ? (JSON.parse(readFileSync(process.env.EVAL_EXPAND, 'utf8')) as Record<string, string[]>) : {};
 // --embed-model: another embedding model for this run, with what it needs put before a question or a passage.
 const EMBED_MODEL = process.env.EMBED_MODEL ?? '';
 const QUERY_PREFIX = process.env.EVAL_QUERY_PREFIX ?? '';
@@ -238,7 +240,7 @@ async function ask(db: SieveDb, q: Question): Promise<{ ids: string[]; report?: 
     }
     if (p.corrected) lookup = p.corrected;
   }
-  const cands = await search(db, lookup, { ...(hints ? { hints } : {}), ...(DEPTH !== CANDIDATE_POOL ? { k: DEPTH } : {}), onReport: (r) => (report = r) });
+  const cands = await search(db, lookup, { ...(hints ? { hints } : {}), ...(DEPTH !== CANDIDATE_POOL ? { k: DEPTH } : {}), ...(EXPAND[q.id]?.length ? { expand: EXPAND[q.id] } : {}), onReport: (r) => (report = r) });
   let list: { rec: IndexRecord; cand: Candidate }[] = [];
   for (const c of cands) {
     const rec = await getRecord(db, c.recordId);

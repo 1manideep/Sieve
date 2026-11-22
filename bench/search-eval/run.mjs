@@ -29,6 +29,7 @@ if (flag('help')) {
   --rerank-limit <n>   score only the first n passages, the rest keep their place (the app on one WASM thread
                        scores about 12 within its budget; default 20, as on WebGPU)
   --rerank-pool <n>    how many of the best candidates the reranker gets (the app: 20)
+  --expand <file.json> other search words per question id, { "id": ["word", ...] }, given to search as its expand option
   --embed-model <id>   another embedding model (384 numbers per text) instead of the app's, downloaded once into
                        the temp folder; with --embed-pooling mean|cls, --query-prefix and --passage-prefix as it needs
   --sweep <file.json>  a list of { label, tuning } to run against SEARCH_TUNING (web/src/index/config.ts)
@@ -82,6 +83,7 @@ const env = {
   EVAL_SWEEP: value('sweep', '') ? resolve(value('sweep', '')) : '',
   EVAL_RERANK_LIMIT: value('rerank-limit', '20'),
   EVAL_RERANK_POOL: value('rerank-pool', ''),
+  EVAL_EXPAND: value('expand', '') ? resolve(value('expand', '')) : '',
   EMBED_MODEL: value('embed-model', ''),
   EMBED_POOLING: value('embed-pooling', ''),
   EMBED_REMOTE_CACHE: value('embed-model', '') ? join(CACHE, 'embed-models') : '',
