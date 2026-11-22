@@ -112,6 +112,9 @@ function onGmailRow(db: SieveDb, watch: RowWatch, row: SourceRow | undefined): v
     if (changed && usable.value !== before && row?.connected && !row.paused && isLeader(db) && !stoppedDbs.has(db)) syncAfterNewToken(db);
   } else {
     if (before !== null) clearGmailToken(before);
+    // A tab loaded after the token ran out never saw it in use: the row still holds it, or when it ended. Without this
+    // a reload stopped clicks from renewing, and new mail was not read until Continue (Nov 22, 2026).
+    if (watch.expiresAt === null) watch.expiresAt = stored?.expiresAt ?? (row as GmailRow | undefined)?.tokenEndedAt ?? null;
     // Renewal inside a click is for a token that ran out by time; a refused, signed-out or removed token waits for Continue.
     const ranOut = watch.expiresAt !== null && Date.now() >= watch.expiresAt - GMAIL_TOKEN_SKEW_MS;
     if (!ranOut) watch.expiresAt = null;

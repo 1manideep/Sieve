@@ -2,10 +2,14 @@
 // every tab of this account shares the token for its lifetime (up to an hour) and a reload keeps it. Dexie keeps a
 // field that is not indexed without a schema change. Never in the Playground database, Firestore, a URL or a log.
 import type { SieveDb, SourceRow } from '../../index/db';
+import { GMAIL_TOKEN_SKEW_MS } from '../../index/config';
 import { adoptGmailToken, getGmailToken, isUsableGmailToken, type GmailToken } from './auth';
 
-/** The Gmail row with the token field this module adds. */
-export type GmailRow = SourceRow & { accessToken?: GmailToken };
+/**
+ * The Gmail row with the fields this module adds: the token, and when the last one ran out by time (not a refused or
+ * removed one), so a tab loaded after that can still renew it inside a click.
+ */
+export type GmailRow = SourceRow & { accessToken?: GmailToken; tokenEndedAt?: number };
 
 function patchGmailRow(db: SieveDb, patch: Partial<GmailRow>): Promise<number> {
   return db.sources.update('gmail', patch as Partial<SourceRow>);
@@ -23,25 +27,29 @@ export async function readStoredToken(db: SieveDb): Promise<GmailToken | null> {
   if (db.sieveKind !== 'real') return null;
   const t = storedTokenOf(await db.sources.get('gmail'));
   if (!t) return null;
-  const { value } = t;
+  const { value, expiresAt } = t;
   if (isUsableGmailToken(t)) return t;
-  await clearStoredToken(db, value);
+  // one that only ran out by time leaves its end on the row
+  await clearStoredToken(db, value, Date.now() >= expiresAt - GMAIL_TOKEN_SKEW_MS ? expiresAt : undefined);
   return null;
 }
 
 /** Keeps the token on the row (real database only), with any other fields of the same write. */
 export async function writeStoredToken(db: SieveDb, t: GmailToken | null, patch: Partial<SourceRow> = {}): Promise<void> {
-  const full: Partial<GmailRow> = db.sieveKind === 'real' && t ? { ...patch, accessToken: t } : patch;
+  const full: Partial<GmailRow> = db.sieveKind === 'real' && t ? { ...patch, accessToken: t, tokenEndedAt: undefined } : patch;
   if (Object.keys(full).length > 0) await patchGmailRow(db, full);
 }
 
-/** Removes the stored token; with `onlyValue`, only when that is the token stored (another tab may have renewed it). */
-export async function clearStoredToken(db: SieveDb, onlyValue?: string): Promise<void> {
+/**
+ * Removes the stored token; with `onlyValue`, only when that is the token stored (another tab may have renewed it).
+ * `endedAt`: the token ran out by time, at that moment.
+ */
+export async function clearStoredToken(db: SieveDb, onlyValue?: string, endedAt?: number): Promise<void> {
   if (db.sieveKind !== 'real') return;
   await db.transaction('rw', db.sources, async () => {
     const t = storedTokenOf(await db.sources.get('gmail'));
     if (!t || (onlyValue !== undefined && t.value !== onlyValue)) return;
-    await patchGmailRow(db, { accessToken: undefined });
+    await patchGmailRow(db, { accessToken: undefined, tokenEndedAt: endedAt });
   });
 }
 

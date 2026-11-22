@@ -253,6 +253,40 @@ describe('Continue and renewal inside clicks', () => {
     expect(fakeAuth.reauthenticateWithPopup).not.toHaveBeenCalled();
   });
 
+  // Two ways the row can look to a page loaded after the token ran out: the spent token is still on it, or a sync
+  // already cleared it and left when it ended. Before Nov 22, 2026 such a page never renewed inside a click.
+  for (const cleared of [false, true]) {
+    it(`a page loaded after the token ran out still renews inside a click (${cleared ? 'token cleared' : 'token still on the row'})`, async () => {
+      await connect();
+      const name = db.name;
+      later(61 * 60_000);
+      if (cleared) {
+        await runGmailSync(db);
+        const row = await db.sources.get('gmail');
+        expect(keptToken(row)).toBeNull();
+        expect((row as { tokenEndedAt?: number } | undefined)?.tokenEndedAt).toBeGreaterThan(0);
+      }
+      await closeDb(db, { flush: false });   // the page goes away, and its memory with it
+      resetGmailAuth();
+      resetGmailRenew();
+      const tab = await freshTab();
+      try {
+        const renew = await import('./renew');   // the reloaded page's own copy
+        await tab.registry.startSources(tab.db);
+        await until(async () => (await tab.db.sources.get('gmail'))?.needsAuth === true && renew.renewTargetDb() !== null);
+        const before = gis.requests.length;
+        document.body.click();
+        expect(gis.requests.slice(before)).toEqual([{ prompt: '', login_hint: gmail.email }]);
+        await until(async () => keptToken(await tab.db.sources.get('gmail')) !== null);
+        expect((await tab.db.sources.get('gmail'))?.needsAuth).toBe(false);
+        renew.resetGmailRenew();
+      } finally {
+        await tab.close();
+        db = openDbNamed(name, 'real');
+      }
+    }, 30_000);
+  }
+
   it('a click asks nothing while more than 10 minutes are left', async () => {
     await connect();
     const before = gis.requests.length;
