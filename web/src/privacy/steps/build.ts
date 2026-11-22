@@ -216,6 +216,8 @@ export async function buildStepOption(
     return option;
   } catch (e) {
     if (isAbortError(e) && opts.signal?.aborted) throw e;
+    // Fails closed (S7), but never silently: this used to hide a crash in the masking behind "nothing to share".
+    console.error('Sieve: building a step failed.', step, e instanceof Error ? e.name : typeof e);
     return unavailable(step, UNAVAILABLE.failed);                                                                   // S7
   }
 }

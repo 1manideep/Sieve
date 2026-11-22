@@ -82,6 +82,30 @@ describe('one-time codes and sign-in links (secret-code, T10)', () => {
   });
 });
 
+describe('a hyphen in a personal detail (Nov 21, 2026: the masking threw a SyntaxError on every one)', () => {
+  it('masks a hyphenated name, a dashed phone number and a dashed reference without throwing', async () => {
+    const shop = rec({ id: 'gmail:shop', from: 'Tindle Store <orders@tindle.example>', text: 'Hi Anne-Marie Delacroix, call us at 312-555-0142 about reference 4471-2209.' });
+    const found: KnownEntity[] = [
+      { text: 'Anne-Marie Delacroix', type: 'name', by: 'nano' },
+      { text: '312-555-0142', type: 'phone', by: 'nano' },
+      { text: '4471-2209', type: 'other', by: 'nano' },
+    ];
+    const out = await answer(shop, 'Anne-Marie Delacroix can be reached at 312-555-0142 about 4471-2209.', 'What does the email say about my order?', found);
+    expect(out).not.toContain('Anne-Marie');
+    expect(out).not.toContain('312-555-0142');
+    // the asker's own reference stays readable
+    const asked = await answer(shop, 'Reference 4471-2209 is about your order.', 'What is reference 4471-2209 about?', found);
+    expect(asked).toContain('4471-2209');
+  });
+
+  it('escapeRegExp output is valid with and without the u flag for every punctuation mark', async () => {
+    const { escapeRegExp } = await import('../text');
+    const marks = '.*+?^${}()|[]\\/-#&,:;=@_~\'"!%<>';
+    for (const flags of ['', 'u', 'giu']) expect(() => new RegExp(escapeRegExp(`a${marks}b 2732-9756`), flags)).not.toThrow();
+    expect(new RegExp(`^${escapeRegExp(marks)}$`, 'u').test(marks)).toBe(true);
+  });
+});
+
 describe('names and the words the asker typed (T02, T04, T05)', () => {
   it('T04: "1manideep" from the question is never masked; another person stays masked', async () => {
     const gh = rec({ id: 'gmail:gh', from: 'GitHub <noreply@github.com>', text: 'Hi 1manideep, a new release of 1manideep/Sieve was published by Ramki Kumar.' });

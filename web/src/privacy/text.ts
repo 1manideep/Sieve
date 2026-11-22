@@ -132,7 +132,10 @@ export function collapseSpaces(s: string): string {
 }
 
 export function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\/-]/g, '\\$&');
+  // Only the characters with a meaning in a pattern. A hyphen has none outside a character class, and with the `u`
+  // flag "\-" there is a SyntaxError: every phone number, hyphenated name and receipt number made the masking throw,
+  // which ended a request as an error or as "nothing to share" (Nov 21, 2026).
+  return s.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 }
 
 /** "1 piece" / "2 pieces". */
