@@ -237,6 +237,9 @@ describe('the tester cases (Nov 20)', () => {
     hybrid.words = ['anything'];
     await prepareProposal(input({ question: 'Where does booking 3391976083 leave from?', hints: { terms: ['3391976083'] } }));
     expect(hybrid.wordCalls).toHaveLength(2);
+    // the asker's days already narrow the search: not asked either
+    await prepareProposal(input({ question: 'What did Good Dog say on June 10?', hints: { after: '2026-06-10', before: '2026-06-10' } }));
+    expect(hybrid.wordCalls).toHaveLength(2);
   });
 
   it('with no on-device model the search runs with the question as it is: the question never goes to the cloud for other words (Nov 22)', async () => {

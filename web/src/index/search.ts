@@ -40,7 +40,8 @@ export interface SearchReport {
 }
 
 /** Hard filters (20 section 10.2): an item that fails one never becomes a candidate. */
-export interface HardFilter { sender?: string; after?: string; before?: string; source?: QueryHints['source']; categories?: Category[] }
+/** `senderExact`: some sender in the index is spelled as the cue is, so a near spelling is another sender ("Payal" for "PayPal"). */
+export interface HardFilter { sender?: string; senderExact?: boolean; after?: string; before?: string; source?: QueryHints['source']; categories?: Category[] }
 
 /** A category hint that leaves fewer results than this is dropped, and the search runs again without it. */
 export const CATEGORY_MIN_RESULTS = 3;
@@ -143,7 +144,7 @@ export function kindFits(source: NonNullable<QueryHints['source']>, kind: ItemKi
 export function passesFilter(f: HardFilter, r: { from?: string; date: number; mentionedDays?: string[]; kind?: ItemKind; category?: Category }): boolean {
   if (f.source && !kindFits(f.source, r.kind)) return false;
   if (f.categories && r.category && !categoryFits(f.categories, r.category)) return false;
-  if (f.sender && !senderMatches(f.sender, r.from)) return false;
+  if (f.sender && !senderMatches(f.sender, r.from, f.senderExact)) return false;
   if ((f.after || f.before) && !inRange(iso(new Date(r.date)), f) && !(r.mentionedDays ?? []).some((d) => inRange(d, f))) return false;
   return true;
 }
@@ -360,6 +361,17 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
     if (!known && rt.keyword.inTitles(cue)) {
       senderDropped = cue;
       delete filter.sender;
+    }
+  }
+  // A sender spelled as the cue is: then only such senders fit, and a near spelling ("Payal" for "PayPal") is another
+  // sender. With no sender spelled that way the cue may be a typo ("Gymshrk"), and near spellings fit.
+  if (filter.sender) {
+    const cue = filter.sender;
+    for (const m of rt.meta.values()) {
+      if (senderMatches(cue, m.from, true)) {
+        filter.senderExact = true;
+        break;
+      }
     }
   }
   const filtered = Object.keys(filter).length > 0;

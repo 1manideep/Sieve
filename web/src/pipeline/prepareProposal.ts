@@ -434,10 +434,12 @@ async function prepare(run: Run): Promise<Proposal> {
 
   // 3c. Other words for the search, from the on-device model: the item that answers often says "trash corrals"
   // where the question says "garbage enclosures". Not when the question holds an exact number (the number finds its
-  // item). Never a reason to stop: with no on-device model, a slow one or an unusable reply the search runs as it is.
+  // item) or the asker gave the days (they already narrow the search; with more items found on those days the model
+  // answered "what did my landlord remind me about on November 4" from another sender's email of that day, Nov 22,
+  // 2026). Never a reason to stop: with no on-device model, a slow one or an unusable reply the search runs as it is.
   let expand: string[] = [];
   if (run.aborted) return run.stopped();
-  if (identifierTerms(lookup, hints?.terms).length === 0) {
+  if (identifierTerms(lookup, hints?.terms).length === 0 && !hints?.after && !hints?.before) {
     const wordsId = run.start('retrieve', RUNNING.words, 'device');
     const w = await searchWords(lookup, input.dataClass, input.signal ? { signal: input.signal } : {});
     if (w.ok) expand = w.value;

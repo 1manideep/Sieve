@@ -33,6 +33,11 @@ describe('senderMatches', () => {
     expect(senderMatches('The Quarry', 'thequarryuiuc@relay.example')).toBe(true);
     expect(senderMatches('Maple Court', 'themaplecourtapts@relay.example')).toBe(true);
     expect(senderMatches('Chase', 'purchases@store.example')).toBe(false);   // five letters inside another word is not a name
+    // exact: no near spelling; the name inside a bare address still fits
+    expect(senderMatches('Kestrel', 'Kestral Pay <hello@kestral.example>')).toBe(true);
+    expect(senderMatches('Kestrel', 'Kestral Pay <hello@kestral.example>', true)).toBe(false);
+    expect(senderMatches('Kestrel', 'Kestrelmoor Bank <alerts@kestrelmoor.example>', true)).toBe(true);
+    expect(senderMatches('The Quarry', 'thequarryuiuc@relay.example', true)).toBe(true);
   });
 
   it('an address cue must be the address or its domain', () => {

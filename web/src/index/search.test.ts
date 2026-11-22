@@ -244,6 +244,20 @@ describe('search', () => {
     await db.records.bulkDelete(ids);
   });
 
+  it('a sender spelled as the request names it shuts out a near spelling; with no such sender the near spelling fits (Nov 22)', async () => {
+    const at = Date.now();
+    await ingest(db, { source: 'gmail', sourceRef: 'pp-real', kind: 'email', title: 'Your balance is low', from: 'Paywell <service@paywell.example>', date: at - 2 * 86_400_000, text: 'Your Paywell balance is below 25 dollars.' }, 'sample');
+    await ingest(db, { source: 'gmail', sourceRef: 'pp-near', kind: 'email', title: 'Coffee on Friday?', from: 'Paywel Rao <paywel.rao@inbox.example>', date: at - 86_400_000, text: 'Are you free for coffee on Friday?' }, 'sample');
+    let report: SearchReport | undefined;
+    const res = await search(db, 'What was my most recent Paywell email about?', { hints: { from: 'Paywell' }, onReport: (r) => (report = r) });
+    expect(res.map((c) => c.recordId)).toEqual(['gmail:pp-real']);
+    expect(report?.filters).toMatchObject({ sender: 'Paywell', senderExact: true });
+    // nobody is spelled "Paywel1": the near spelling finds both, as a typo should
+    const typo = await search(db, 'What was my most recent email from them about?', { hints: { from: 'Paywel1' } });
+    expect(typo.map((c) => c.recordId).sort()).toEqual(['gmail:pp-near', 'gmail:pp-real']);
+    await db.records.bulkDelete(['gmail:pp-real', 'gmail:pp-near']);
+  });
+
   it('other words for the question find an item that shares none of the question\'s words (Nov 22)', async () => {
     const ids: string[] = [];
     for (let i = 0; i < 12; i++) {

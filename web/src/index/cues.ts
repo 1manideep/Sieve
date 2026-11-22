@@ -67,22 +67,23 @@ export function isRoleCue(cue: string): boolean {
   return w.length === 1 && ROLE_WORDS.has(w[0]!);
 }
 
-function wordMatches(w: string, token: string): boolean {
+function wordMatches(w: string, token: string, exact = false): boolean {
   if (w === token) return true;
-  if (w.length >= 5 && token.length >= 5 && osaDistance(w, token, 1) <= 1) return true;
   if (w.length >= 4 && token.startsWith(w)) return true;
   // An address with no display name holds the name inside one run of letters ("thequarryuiuc@relay.example" for
   // "The Quarry"): a cue of six or more letters fits anywhere in it. Before, such a sender's mail never passed its own
   // sender filter (Nov 22, 2026: 4 of about 35 emails did, the ones sent with a display name).
-  return w.length >= 6 && token.includes(w);
+  if (w.length >= 6 && token.includes(w)) return true;
+  return !exact && w.length >= 5 && token.length >= 5 && osaDistance(w, token, 1) <= 1;
 }
 
 /**
  * Whether an item from `from` fits the sender cue (20 section 10.2): word by word, case-insensitive, against the display
  * name, the address local part and the domain, so "Amazon" fits amazon.com and "Kay" fits "Kay Narayanan". Every cue
  * word must fit; "Good Dog" also fits gooddog.example as one word. An address cue must equal the address or its domain.
+ * `exact`: no near spelling ("Gymshrk" for Gymshark); the search asks for it when some sender is spelled as the cue is.
  */
-export function senderMatches(cue: string, from: string | undefined): boolean {
+export function senderMatches(cue: string, from: string | undefined, exact = false): boolean {
   if (!from) return false;
   const c = cue.trim().toLowerCase();
   if (c.includes('@')) {
@@ -92,9 +93,9 @@ export function senderMatches(cue: string, from: string | undefined): boolean {
   const cw = words(c.replace(DETERMINERS, '')).filter((w) => !FILLER.has(w));
   if (cw.length === 0) return true;
   const tokens = senderTokens(from);
-  if (cw.every((w) => tokens.some((t) => wordMatches(w, t)))) return true;
+  if (cw.every((w) => tokens.some((t) => wordMatches(w, t, exact)))) return true;
   const joined = cw.join('');
-  return joined.length >= 5 && tokens.some((t) => wordMatches(joined, t));
+  return joined.length >= 5 && tokens.some((t) => wordMatches(joined, t, exact));
 }
 
 /** The words of every sender in the index that could name a sender on their own (not English words, not generic). */
