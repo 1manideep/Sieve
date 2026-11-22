@@ -38,4 +38,4 @@ export { sentences, contentWords, stem, collapseWhitespace, cutAtWord, localDay,
 export { extractFacts, normFact, findUnsupportedFacts } from './facts';
 export { estimateTokens, estimatePromptTokens, charsForTokens } from './budget';
 export { codeTrace, modelTrace } from './trace';
-export { CONSENT_MAX_AGE_MS, EXCERPT_MAX_CHARS, ANSWER_MAX_CHARS, SELECT_MAX_PASSAGES } from './config';
+export { CANDIDATE_POOL, CONSENT_MAX_AGE_MS, EXCERPT_MAX_CHARS, ANSWER_MAX_CHARS, SELECT_MAX_PASSAGES } from './config';

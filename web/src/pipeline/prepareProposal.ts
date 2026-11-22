@@ -9,7 +9,7 @@ import type {
   Candidate, Category, CategoryRule, IndexRecord, KnownEntity, Proposal, ProposalOutcome, QueryHints, StepOption, TraceKind, TraceStep, Warning, Where,
 } from '@sieve/shared';
 import {
-  CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, codeTrace, deriveExcerpt, excerptBasis, fitPassages, getNanoAvailability, hasFreshConsent,
+  CANDIDATE_POOL, CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, codeTrace, deriveExcerpt, excerptBasis, fitPassages, getNanoAvailability, hasFreshConsent,
   recordBody, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
 } from '@/ai';
 import {
@@ -96,7 +96,7 @@ export async function screenCandidates(
       secret += 1;
       return;
     }
-    if (allowed.length < SELECT_MAX_PASSAGES) allowed.push({ rec, cand });
+    if (allowed.length < CANDIDATE_POOL) allowed.push({ rec, cand });
   });
   const aiName = input.requester.aiName;
   const parts = [
@@ -258,7 +258,7 @@ export function inAppHints(p: ParsedQuestion): QueryHints {
 }
 
 /**
- * Candidates asked of search beyond the SELECT_MAX_PASSAGES the answer step reads, so items the rules hold back in step
+ * Candidates asked of search beyond the CANDIDATE_POOL that is kept, so items the rules hold back in step
  * 5 (never, a one-time code, outside the grant) leave room for the next ones. Search used to return up to 14 (five by
  * vector, then keyword, live and sender extras); since Nov 21, 2026 it returns exactly k.
  */
@@ -426,7 +426,7 @@ async function prepare(run: Run): Promise<Proposal> {
   let dateRelaxed: SearchReport['dateRelaxed'];
   try {
     cands = await search(db, lookup, {
-      k: SELECT_MAX_PASSAGES + SCREEN_SPARES,
+      k: CANDIDATE_POOL + SCREEN_SPARES,
       ruleOf: (c) => ruleFor(input.settings, c),
       ...(input.allowedSources ? { sources: input.allowedSources } : {}),
       ...(searchHints ? { hints: searchHints } : {}),
@@ -497,6 +497,8 @@ async function prepare(run: Run): Promise<Proposal> {
       run.code('retrieve', LABELS.newestState);
     }
   }
+  // 6c. Once they are in order, the model reads the best few: among lookalike items it picks better from 5 than from 7.
+  if (allowed.length > SELECT_MAX_PASSAGES) allowed = allowed.slice(0, SELECT_MAX_PASSAGES);
 
   // 7. Data class and the own-data cloud policy.
   const ownCloud: OwnCloudPolicy = {

@@ -18,7 +18,12 @@ export const CHARS_PER_TOKEN = 3;                            // conservative est
 export const IMAGE_TOKENS_ESTIMATE = 1500;                   // per image; the spike may lower it
 export const RETRY_RESERVE_TOKENS = 60;                      // room for the retry reminder
 export const SELECT_TARGET_TOKENS = 2500;                    // soft target for the question-time prompt (latency)
-export const SELECT_MAX_PASSAGES = 7;                        // VECTOR_K + KEYWORD_SAFETY_K
+// Measured on the on-device model (Nov 21, 2026): among lookalike items it picked the right one 19 of 20 times with 5
+// passages and 16 of 20 with 7, while search holds the right item in its best 5 nearly as often as in its best 7
+// (90% and 93% on the seed set with 1,974 distractors). Fewer passages, better answers.
+export const SELECT_MAX_PASSAGES = 5;
+/** The candidates kept before they are put in order (the latest first, an exact number's items only): VECTOR_K + KEYWORD_SAFETY_K. The best SELECT_MAX_PASSAGES of them are read. */
+export const CANDIDATE_POOL = 7;
 export const PASSAGE_CONTEXT_CHARS = 300;                    // extra sentences around a chunk, each side, when the budget allows
 export const PASSAGE_MAX_CHARS = 1600;
 export const PASSAGE_MIN_CHARS = 400;

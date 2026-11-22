@@ -134,13 +134,14 @@ describe('selectAndAnswer (10 section 16.7)', () => {
     expect(res.ok && res.value.excerpt).toBe('We received your security deposit of $1,200 on March 3.');
   });
 
-  it('SE-9: seven 5,000-character records with chunks all fit, widened only up to the soft target', () => {
+  it('SE-9: of seven 5,000-character records the best five are read, all fit, widened only up to the soft target', () => {
     const records = Array.from({ length: 7 }, (_, i) =>
       record({ id: `playground:r${i}`, title: `Item ${i}`, text: `Sentence number ${i} is here and it says something. `.repeat(100).slice(0, 5000) }),
     );
     const ranges = Object.fromEntries(records.map((r) => [r.id, { start: 1000, end: 1200 }]));
     const passages = fitPassages('something', records, ranges, { today: TODAY });
-    expect(passages).toHaveLength(7);
+    expect(passages).toHaveLength(5);
+    expect(passages.map((p) => p.record.id)).toEqual(records.slice(0, 5).map((r) => r.id));
     for (const p of passages) expect(p.range.start).toBeLessThanOrEqual(1000);
     expect(estimate(selectPrompt('something', passages, { today: TODAY }))).toBeLessThan(SELECT_TARGET_TOKENS);
   });

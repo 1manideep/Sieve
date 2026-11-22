@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, it, vi } from 'vitest';
 import { VECTOR_K } from '@sieve/shared';
 import type { Candidate, IndexRecord, QueryHints } from '@sieve/shared';
 import { startNodeEmbedder, type NodeEmbedClient } from '../../tests/harness/nodeEmbedder';
-import { SELECT_MAX_PASSAGES } from '../../web/src/ai/config';
+import { CANDIDATE_POOL, SELECT_MAX_PASSAGES } from '../../web/src/ai/config';
 import { PLAYGROUND_NOW } from '../../web/src/index/config';
 import { asksLatest } from '../../web/src/index/cues';
 import { openDb, type SieveDb } from '../../web/src/index/db';
@@ -218,9 +218,11 @@ async function ask(db: SieveDb, q: Question): Promise<{ ids: string[]; report?: 
   let list: { rec: IndexRecord; cand: Candidate }[] = [];
   for (const c of cands) {
     const rec = await getRecord(db, c.recordId);
-    if (rec && list.length < SELECT_MAX_PASSAGES) list.push({ rec, cand: c });
+    if (rec && list.length < CANDIDATE_POOL) list.push({ rec, cand: c });
   }
   if (asksLatest(lookup) && list.length > 1) list = (useBaselineLatest ? baselineLatest : helpers.latestOrder ?? baselineLatest)(list, report?.filters, lookup);
+  // scored at 7 so recall at 5 and at 7 can be compared; the answer step reads the first SELECT_MAX_PASSAGES
+  void SELECT_MAX_PASSAGES;
   return { ids: list.map((x) => x.rec.id.replace('playground:', '')), report };
 }
 

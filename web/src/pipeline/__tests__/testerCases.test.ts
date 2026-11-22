@@ -144,6 +144,16 @@ describe('the tester cases (Nov 20)', () => {
     expect(hybrid.callsFor('select-answer').at(-1)?.meta?.recordIds).toEqual(['gmail:ord-confirmed', 'gmail:ord-cancelled']);
   });
 
+  it('of seven candidates the model reads the best five; the count and place in the reason code say so', async () => {
+    const seven = Array.from({ length: 7 }, (_, i) => record({ id: `gmail:note-${i}`, source: 'gmail', title: `Note ${i}`, from: 'Ramki <ramki@inbox.example>', category: 'Work', date: T - (i + 1) * DAY, text: `Note ${i} about the release plan.` }));
+    for (const r of seven) idx.records.set(r.id, r);
+    idx.search.mockResolvedValue(seven.map((r) => idx.cand(r.id)));
+    model('P2', 'The release plan moved.', false);
+    const p = await prepareProposal(input({ question: 'What happened to the release plan?' }));
+    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(seven.slice(0, 5).map((r) => r.id));
+    expect(p.reasonCode).toBe('second-check-no-r2of5-tx-gx-b1');
+  });
+
   it('a second check that says no names the pick without its content (place, exact terms, numbers)', async () => {
     idx.search.mockResolvedValue([GOOD_DOG, ...RAMKI.slice(0, 2)].map((r) => idx.cand(r.id)));
     model('P1', 'Bella has a vet visit on Jun 12 at 5 PM.', false);
