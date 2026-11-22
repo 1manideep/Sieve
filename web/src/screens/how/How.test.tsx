@@ -1,12 +1,31 @@
-// /how (F4): Run walks the four steps; the card's Approve finishes them; Run again starts over.
-import { render, screen, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+// /how: the paper's headings, figures and tables, the "On this page" links, the video placeholder and the two links
+// under "What's next".
+import { act, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
-import { HOW_COPY } from '@/copy/screens-main';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { env } from '@/app/env';
+import { HOW_COPY } from '@/copy/screens-how';
 import { SCREENS } from '@/copy/strings';
 import { expectNoAxeViolations } from '@/test/axe';
-import { CHOSEN, DASH_COUNT, HowScreen, makeDashes } from './index';
+import { HOW_VIDEO_URL, HowScreen, VideoCard } from './index';
+
+const SECTIONS = [
+  ['introduction', 'Introduction'],
+  ['summary', 'Summary'],
+  ['principles', 'Design principles'],
+  ['architecture', 'Architecture'],
+  ['index', 'The private index'],
+  ['question', 'The path of one question'],
+  ['ladder', 'The need-to-know ladder'],
+  ['rules', 'Category rules'],
+  ['hidden-instructions', 'Hidden instructions'],
+  ['personal-details', 'Personal details'],
+  ['relay', 'The relay'],
+  ['receipts', 'Receipts and the trace'],
+  ['models', 'Where each model call runs'],
+  ['limits', 'Limits'],
+  ['next', "What's next"],
+] as const;
 
 function renderHow() {
   return render(
@@ -18,61 +37,159 @@ function renderHow() {
   );
 }
 
-function counters() {
-  const list = screen.getByRole('list', { name: HOW_COPY.countersLabel });
-  return within(list).getAllByRole('listitem').map((li) => li.textContent);
+function rail() {
+  return screen.getByRole('navigation', { name: HOW_COPY.onThisPage });
 }
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('/how', () => {
-  it('starts ready: 46 seeded dashes, the first caption and zero counts', async () => {
+  it('has one h1, the lead, the status line and the 15 sections in order, each under its id', async () => {
     renderHow();
-    expect(screen.getByRole('heading', { level: 1, name: SCREENS.how.heading })).toBeInTheDocument();
-    const field = screen.getByTestId('dashes');
-    expect(field).toHaveAttribute('aria-hidden', 'true');
-    expect(field.querySelectorAll('[data-chosen]')).toHaveLength(1);
-    expect(field.children).toHaveLength(DASH_COUNT);
-    expect(makeDashes()[CHOSEN]).toMatchObject({ x: 300, y: 316, c: '#8AB4F8' });
-    expect(makeDashes()).toEqual(makeDashes());
-    expect(screen.getByText(HOW_COPY.stepLabels[0])).toBeInTheDocument();
-    expect(screen.getByText(HOW_COPY.captions[0])).toBeInTheDocument();
-    expect(counters()).toEqual([`46${HOW_COPY.searched}`, `0${HOW_COPY.readByModel}`, `0${HOW_COPY.left}`]);
+    const h1s = screen.getAllByRole('heading', { level: 1 });
+    expect(h1s.map((h) => h.textContent)).toEqual(['How Sieve works']);
+    expect(SCREENS.how.heading).toBe('How Sieve works');
+    expect(screen.getByText(/^An AI assistant sends a question\./)).toBeInTheDocument();
+    expect(screen.getByText(/^This content was last updated in November 2026/)).toBeInTheDocument();
+
+    const h2s = screen.getAllByRole('heading', { level: 2 });
+    expect(h2s.map((h) => h.textContent)).toEqual(SECTIONS.map(([, title]) => title));
+    h2s.forEach((h2, i) => expect(h2.closest('section')).toHaveAttribute('id', SECTIONS[i]?.[0]));
     await expectNoAxeViolations();
   });
 
-  it('advances through the steps, waits for Approve, then runs again', async () => {
-    const user = userEvent.setup();
+  it('draws the four figures with their captions; the three diagrams are labelled images with their own arrowheads', () => {
+    const { container } = renderHow();
+    const figures = screen.getAllByRole('figure');
+    expect(figures).toHaveLength(4);
+    figures.forEach((figure, i) => {
+      expect(figure.querySelector('figcaption b')).toHaveTextContent(`Figure ${i + 1}`);
+    });
+    expect(figures[0]).toHaveTextContent('The question goes in, and one approved text comes out.');
+    expect(figures[3]).toHaveTextContent('One request through the relay.');
+
+    const diagrams = [figures[0], figures[1], figures[3]].map((f) => within(f as HTMLElement).getByRole('img'));
+    for (const svg of diagrams) {
+      expect(svg.tagName.toLowerCase()).toBe('svg');
+      expect(svg.getAttribute('aria-label')?.length).toBeGreaterThan(40);
+    }
+    expect(within(figures[1] as HTMLElement).getByRole('img')).toHaveAccessibleName(/^Ten steps in three lanes\./);
+
+    // Figure 3 is HTML: three slips, the masks marked in the full item.
+    const slips = within(figures[2] as HTMLElement).getAllByRole('heading', { level: 3 });
+    expect(slips.map((h) => h.textContent)).toEqual(['Answer', 'Excerpt', 'Full item']);
+    expect(figures[2]).toHaveTextContent('From: [name] <[email]>');
+
+    const markerIds = [...container.querySelectorAll('marker')].map((m) => m.id);
+    expect(markerIds).toHaveLength(6);
+    expect(new Set(markerIds).size).toBe(6);
+    for (const line of container.querySelectorAll('[marker-end]')) {
+      const id = /^url\(#(.+)\)$/.exec(line.getAttribute('marker-end') ?? '')?.[1];
+      expect(markerIds).toContain(id);
+    }
+  });
+
+  it('has the five tables, each with its caption', () => {
     renderHow();
+    expect(screen.getAllByRole('table')).toHaveLength(5);
+    for (const caption of [
+      'Table 1 · The parts of Sieve',
+      'Table 2 · What each step does',
+      'Table 3 · The three steps',
+      'Table 4 · Rules a category can have',
+      'Table 5 · Inference mode by step',
+    ]) {
+      expect(screen.getByRole('table', { name: caption })).toBeInTheDocument();
+    }
+    const steps = screen.getByRole('table', { name: 'Table 2 · What each step does' });
+    expect(within(steps).getAllByRole('row')).toHaveLength(11);
+    expect(within(steps).getByRole('columnheader', { name: HOW_COPY.number })).toBeInTheDocument();
+  });
 
-    await user.click(screen.getByRole('button', { name: 'Run' }));
-    expect(screen.getByText(HOW_COPY.stepLabels[1])).toBeInTheDocument();
-    expect(screen.getByText(HOW_COPY.matched)).toBeInTheDocument();
-    expect(screen.getByText(HOW_COPY.captions[1])).toBeInTheDocument();
+  it('points every "On this page" link, in the rail and in the folded list, at a section that exists', () => {
+    const { container } = renderHow();
+    const folded = container.querySelector('details');
+    expect(folded).not.toBeNull();
+    const lists = [within(rail()).getAllByRole('link'), within(folded as HTMLElement).getAllByRole('link', { hidden: true })];
+    for (const links of lists) {
+      expect(links.map((a) => a.textContent)).toEqual(SECTIONS.map(([, title]) => title));
+      for (const link of links) {
+        const id = new URL(link.getAttribute('href') ?? '', 'https://sieve.test').hash.slice(1);
+        const section = document.getElementById(id);
+        expect(section?.tagName.toLowerCase()).toBe('section');
+        expect(within(section as HTMLElement).getByRole('heading', { level: 2 })).toHaveTextContent(link.textContent ?? '');
+      }
+    }
+    // Before anything is observed, the first section is the one being read.
+    expect(within(rail()).getByRole('link', { name: 'Introduction' })).toHaveAttribute('aria-current', 'location');
+  });
 
-    await user.click(screen.getByRole('button', { name: 'Next' }));
-    expect(screen.getByText(HOW_COPY.itemTitle)).toBeInTheDocument();
-    expect(screen.getByText(HOW_COPY.reading)).toBeInTheDocument();
-    expect(counters()[1]).toBe(`1${HOW_COPY.readByModel}`);
+  it('moves the mark in the rail to the section being read', () => {
+    let notify: IntersectionObserverCallback = () => undefined;
+    const observed: string[] = [];
+    class FakeObserver {
+      constructor(callback: IntersectionObserverCallback) {
+        notify = callback;
+      }
+      observe(target: Element) {
+        observed.push(target.id);
+      }
+      unobserve() {}
+      disconnect() {}
+      takeRecords() {
+        return [];
+      }
+    }
+    vi.stubGlobal('IntersectionObserver', FakeObserver);
+    renderHow();
+    expect(observed).toEqual(SECTIONS.map(([id]) => id));
 
-    await user.click(screen.getByRole('button', { name: 'Next' }));
-    expect(screen.getByText(HOW_COPY.sentence)).toBeInTheDocument();
-    const approve = screen.getByRole('button', { name: HOW_COPY.approve });
+    const seen = (id: string, isIntersecting: boolean) => ({ target: document.getElementById(id), isIntersecting }) as unknown as IntersectionObserverEntry;
+    act(() => notify([seen('relay', true), seen('receipts', true)], {} as IntersectionObserver));
+    expect(within(rail()).getByRole('link', { name: 'The relay' })).toHaveAttribute('aria-current', 'location');
+    expect(within(rail()).getByRole('link', { name: 'Introduction' })).not.toHaveAttribute('aria-current');
 
-    // The bar's button waits for the choice: it takes the focus to Approve and changes nothing.
-    await user.click(screen.getByRole('button', { name: HOW_COPY.runLabels[3] }));
-    expect(approve).toHaveFocus();
-    expect(screen.getByText(HOW_COPY.stepLabels[3])).toBeInTheDocument();
+    act(() => notify([seen('relay', false)], {} as IntersectionObserver));
+    expect(within(rail()).getByRole('link', { name: 'Receipts and the trace' })).toHaveAttribute('aria-current', 'location');
+    expect(within(rail()).getAllByRole('link').filter((a) => a.hasAttribute('aria-current'))).toHaveLength(1);
+  });
 
-    await user.click(approve);
-    expect(screen.getByText(HOW_COPY.stepLabels[4])).toBeInTheDocument();
-    expect(screen.getByText(HOW_COPY.approved)).toBeInTheDocument();
-    expect(screen.getByText(HOW_COPY.cloudTitle)).toBeInTheDocument();
-    expect(screen.getByText(HOW_COPY.stayed)).toBeInTheDocument();
-    expect(counters()).toEqual([`46${HOW_COPY.searched}`, `1${HOW_COPY.readByModel}`, `44${HOW_COPY.left}`]);
-    await expectNoAxeViolations();
+  it('shows the video as a still placeholder: no link, no button, the "coming soon" chip', () => {
+    expect(HOW_VIDEO_URL).toBeNull();
+    renderHow();
+    const video = screen.getByRole('img', { name: HOW_COPY.video.label });
+    expect(video.tagName.toLowerCase()).toBe('div');
+    expect(video.closest('a, button')).toBeNull();
+    expect(video.querySelector('a, button')).toBeNull();
+    expect(video).toHaveTextContent(HOW_COPY.video.title);
+    expect(video).toHaveTextContent(HOW_COPY.video.soon);
+  });
 
-    await user.click(screen.getByRole('button', { name: 'Run again' }));
-    expect(screen.getByText(HOW_COPY.stepLabels[0])).toBeInTheDocument();
-    expect(screen.queryByText(HOW_COPY.cloudTitle)).not.toBeInTheDocument();
-    expect(counters()[2]).toBe(`0${HOW_COPY.left}`);
+  it('opens the video in a new tab once it has a URL, without the chip', () => {
+    render(<VideoCard url="https://video.example/how" />);
+    const link = screen.getByRole('link', { name: HOW_COPY.video.title });
+    expect(link).toHaveAttribute('href', 'https://video.example/how');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(screen.queryByText(HOW_COPY.video.soon)).toBeNull();
+  });
+
+  it('sends "Open the Playground" to the Playground and "Read the source" to the repository', () => {
+    renderHow();
+    const next = document.getElementById('next') as HTMLElement;
+    const links = within(next).getAllByRole('link');
+    expect(links.map((a) => a.textContent)).toEqual(['Open the Playground', 'Read the source']);
+    expect(links[0]).toHaveAttribute('href', '/playground');
+    expect(links[1]).toHaveAttribute('href', env.repoUrl);
+    expect(links[1]).toHaveAttribute('target', '_blank');
+  });
+
+  it('keeps the copy free of em dashes, en dashes and double hyphens', () => {
+    const { container } = renderHow();
+    const words = [container.textContent ?? '', ...[...container.querySelectorAll('[aria-label]')].map((el) => el.getAttribute('aria-label') ?? '')];
+    const dashes = new RegExp(`[${String.fromCharCode(0x2013, 0x2014)}]|--`);
+    for (const text of words) expect(text).not.toMatch(dashes);
   });
 });

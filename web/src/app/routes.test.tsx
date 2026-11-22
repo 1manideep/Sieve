@@ -57,7 +57,9 @@ describe('routes, signed out', () => {
     // The header's Open Sieve signs in with Google, like the hero button; nothing links to the Playground.
     expect(within(banner).getByRole('button', { name: PUBLIC_NAV.openSieve })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Playground/ })).toBeNull();
-    expect(within(banner).getByText(PUBLIC_NAV.openSource)).toBeInTheDocument();
+    // No "Open source" pill beside the name; the landing's own footer line still says it.
+    expect(banner).not.toHaveTextContent(/open source/i);
+    expect(screen.getByText(/· open source$/)).toBeInTheDocument();
     await waitFor(() => expect(document.title).toBe(TITLES.welcome));
     await expectNoAxeViolations();
   });
@@ -75,7 +77,11 @@ describe('routes, signed out', () => {
     renderRoute('/how');
     expect(await screen.findByRole('heading', { level: 1, name: SCREENS.how.heading })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: PUBLIC_NAV.how })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument();
+    expect(screen.getByRole('banner')).not.toHaveTextContent(/open source/i);
+    expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(15);
+    expect(screen.getByRole('link', { name: 'Open the Playground' })).toHaveAttribute('href', '/playground');
+    // One footer: the public layout's sentence.
+    expect(screen.getByRole('contentinfo')).toHaveTextContent(PUBLIC_NAV.footer);
     await waitFor(() => expect(document.title).toBe(TITLES.how));
     await expectNoAxeViolations();
   });

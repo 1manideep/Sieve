@@ -84,7 +84,6 @@ export const RAIL = {
 /** The public header and footer (docs/design/final-flow.md, F1 and F2). */
 export const PUBLIC_NAV = {
   label: 'Site',
-  openSource: 'Open source',
   how: 'How it works',
   tryComputer: 'Try on a real computer',
   github: 'GitHub',
@@ -207,7 +206,7 @@ export const SCREENS = {
     lead: 'Sieve reads your mail, files and photos here, with Gemini Nano. An outside AI gets one line, after you say yes. A receipt every time.',
   },
   how: {
-    heading: 'What happens to your data',
+    heading: 'How Sieve works',
   },
   prepare: {
     heading: 'Prepare the on-device model',

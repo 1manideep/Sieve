@@ -1,198 +1,254 @@
-// /how, F4 in docs/design/final-flow.md: what happens to your data. 46 dashes stand for the items on this computer;
-// Run walks through the four steps (searched, picked, answered here, approved) and the counters follow. Nothing here
-// talks to a model: it is the same story with fixed numbers, told one step at a time.
-import { useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+// /how, "How Sieve works" (F4 in docs/design/final-flow.md): the hero with the statement and the video card, then
+// the white paper in one card with a sticky "On this page" rail beside it. Below 1040px the rail is hidden and a
+// folded "On this page" list opens the paper instead. The words live in copy/screens-how.ts; this file lays them out.
+// In-page links are router links, so ScrollRestoration scrolls to the section instead of undoing the jump.
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { env } from '@/app/env';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
-import { Button } from '@/components/Button/Button';
-import { Icon } from '@/components/icons';
-import { HOW_COPY } from '@/copy/screens-main';
+import { LinkButton } from '@/components/Button/Button';
+import { HOW_COPY, HOW_SECTIONS, type HowBlock, type HowCell, type HowListItem, type HowTable } from '@/copy/screens-how';
 import { SCREENS, TITLES } from '@/copy/strings';
+import { ArchitectureFigure, LadderFigure, RelayFigure, StepsFigure } from './figures';
 import styles from './how.module.css';
 
-export type Step = 0 | 1 | 2 | 3 | 4;
+/** The explainer video. While it is null the card is a still placeholder; set it to the video's URL and the card
+ *  opens the video in a new tab, without the "coming soon" chip. */
+export const HOW_VIDEO_URL: string | null = null;
 
-interface Dash { x: number; y: number; r: number; c: string }
+const SECTION_IDS = HOW_SECTIONS.map((s) => s.id);
 
-/** The board's stage is 1440 x 640; dash positions are in those units and drawn as percentages. */
-const STAGE_W = 1440;
-const STAGE_H = 640;
-const DASH_W = 22;
-const DASH_H = 7;
-export const DASH_COUNT = 46;
-export const CHOSEN = 17;
-const COLORS = ['#FFFFFF', '#8AB4F8', '#C2D7FE', '#1B6EF3', '#FFFFFF'] as const;
+const FIGURES = { architecture: ArchitectureFigure, steps: StepsFigure, ladder: LadderFigure, relay: RelayFigure };
 
-/** The board's seeded dashes (seed 23, Lehmer LCG): the same field on every visit. The chosen one is blue. */
-export function makeDashes(): Dash[] {
-  let seed = 23;
-  const rnd = () => {
-    seed = (seed * 48271) % 2147483647;
-    return seed / 2147483647;
-  };
-  const dashes: Dash[] = [];
-  for (let i = 0; i < DASH_COUNT; i++) {
-    const x = Math.round(60 + rnd() * 1300);
-    const y = Math.round(20 + rnd() * 580);
-    dashes.push({ x, y, r: Math.round(rnd() * 180), c: COLORS[i % COLORS.length] ?? '#FFFFFF' });
-  }
-  dashes[CHOSEN] = { x: 300, y: 316, r: 20, c: '#8AB4F8' };
-  return dashes;
+/** The section being read: the first one that crosses the band from 10% to 30% down the window. */
+export function useActiveSection(ids: readonly string[]): string | undefined {
+  const [active, setActive] = useState(ids[0]);
+  useEffect(() => {
+    if (!('IntersectionObserver' in window)) return;
+    const seen = new Set<string>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) seen.add(entry.target.id);
+          else seen.delete(entry.target.id);
+        }
+        const current = ids.find((id) => seen.has(id));
+        if (current) setActive(current);
+      },
+      { rootMargin: '-10% 0px -70% 0px' },
+    );
+    for (const id of ids) {
+      const section = document.getElementById(id);
+      if (section) observer.observe(section);
+    }
+    return () => observer.disconnect();
+  }, [ids]);
+  return active;
 }
 
-const DASHES = makeDashes();
-
-const pctX = (x: number) => `${((x / STAGE_W) * 100).toFixed(3)}%`;
-const pctY = (y: number) => `${((y / STAGE_H) * 100).toFixed(3)}%`;
-
-function Field({ step }: { step: Step }) {
+/** The copy's **strong** and `code` marks as elements; the rest stays plain text. */
+function Rich({ text }: { text: string }) {
   return (
-    <div className={styles.field} aria-hidden="true" data-testid="dashes">
-      {DASHES.map((d, i) => {
-        const chosen = i === CHOSEN;
-        const opacity = step === 0 ? (chosen ? 1 : 0.85) : chosen ? 1 : step >= 4 ? 0.18 : 0.26;
-        const scale = step >= 1 && chosen ? 1.8 : 1;
-        return (
-          <span
-            key={i}
-            className={styles.dash}
-            data-chosen={chosen || undefined}
-            style={{
-              left: pctX(d.x + DASH_W / 2),
-              top: pctY(d.y + DASH_H / 2),
-              background: d.c,
-              opacity,
-              transform: `translate(-50%, -50%) rotate(${d.r}deg) scale(${scale})`,
-            }}
-          />
-        );
-      })}
-      {step >= 1 ? <span className={styles.ring} style={{ left: pctX(310), top: pctY(320) }} /> : null}
+    <>
+      {text.split(/(\*\*[^*]+\*\*|`[^`]+`)/).map((part, i) =>
+        part.startsWith('**') ? (
+          <strong key={i}>{part.slice(2, -2)}</strong>
+        ) : part.startsWith('`') ? (
+          <code key={i}>{part.slice(1, -1)}</code>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
+
+function List({ items, ordered }: { items: readonly HowListItem[]; ordered?: boolean }) {
+  const Tag = ordered ? 'ol' : 'ul';
+  return (
+    <Tag>
+      {items.map((item, i) => (
+        <li key={i}>
+          {typeof item === 'string' ? (
+            <Rich text={item} />
+          ) : (
+            <>
+              {item.text}
+              <ul>
+                {item.items.map((sub) => (
+                  <li key={sub}>{sub}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </li>
+      ))}
+    </Tag>
+  );
+}
+
+function Cell({ cell }: { cell: HowCell }) {
+  if (typeof cell === 'string') return <Rich text={cell} />;
+  return (
+    <>
+      <span className={cell.tone ? `${styles.chip} ${styles[cell.tone]}` : styles.chip}>{cell.chip}</span>
+      {cell.after}
+    </>
+  );
+}
+
+function Table({ table }: { table: HowTable }) {
+  return (
+    <div className={styles.scroll}>
+      <table>
+        <caption>{table.caption}</caption>
+        <thead>
+          <tr>
+            {table.head.map((head, i) => (
+              <th key={i} scope="col">
+                {head || <span className="visually-hidden">{HOW_COPY.number}</span>}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {table.rows.map((row, r) => (
+            <tr key={r}>
+              {row.map((cell, c) => (
+                <td key={c} className={table.head[c] ? undefined : styles.num}>
+                  <Cell cell={cell} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
+function Block({ block }: { block: HowBlock }) {
+  if ('p' in block) return <p><Rich text={block.p} /></p>;
+  if ('h3' in block) return <h3>{block.h3}</h3>;
+  if ('ul' in block) return <List items={block.ul} />;
+  if ('ol' in block) return <List items={block.ol} ordered />;
+  if ('table' in block) return <Table table={block.table} />;
+  if ('note' in block) {
+    return (
+      <div className={styles.note}>
+        <p><Rich text={block.note} /></p>
+      </div>
+    );
+  }
+  if ('figure' in block) {
+    const Figure = FIGURES[block.figure];
+    return <Figure />;
+  }
+  return (
+    <div className={styles.next}>
+      <LinkButton to="/playground" variant="primary">
+        {HOW_COPY.playground}
+      </LinkButton>
+      <LinkButton to={env.repoUrl} external variant="secondary">
+        {HOW_COPY.source}
+      </LinkButton>
+    </div>
+  );
+}
+
+/** The video card: a still picture with a play mark and the title. A link only once the video exists. */
+export function VideoCard({ url }: { url: string | null }) {
+  const v = HOW_COPY.video;
+  const inside = (
+    <>
+      <svg viewBox="0 0 640 360" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <circle className={styles.ring} cx="320" cy="180" r="118" />
+        <polyline points="70,84 214,150" />
+        <polyline points="96,196 204,186" />
+        <polyline points="78,292 220,226" />
+        <polyline points="150,128 214,150" />
+        <polyline points="160,250 220,226" />
+        <circle cx="70" cy="84" r="3" />
+        <circle cx="150" cy="128" r="2.4" />
+        <circle cx="96" cy="196" r="3" />
+        <circle cx="160" cy="250" r="2.4" />
+        <circle cx="78" cy="292" r="3" />
+        <text x="58" y="68">{v.mail}</text>
+        <text x="50" y="216">{v.files}</text>
+        <text x="62" y="314">{v.photos}</text>
+        <line className={styles.out} x1="442" y1="180" x2="548" y2="180" />
+        <circle className={styles.blue} cx="560" cy="180" r="5" />
+        <circle className={styles.halo} cx="560" cy="180" r="12" />
+        <text className={styles.blue} x="560" y="212" textAnchor="middle">{v.line}</text>
+      </svg>
+      <span className={styles.over}>
+        <span className={styles.play} aria-hidden="true" />
+        <span className={styles.title}>{v.title}</span>
+        {url ? null : <span className={`${styles.chip} ${styles.soon}`}>{v.soon}</span>}
+      </span>
+    </>
+  );
+  if (url) {
+    return (
+      <a className={styles.video} href={url} target="_blank" rel="noopener noreferrer">
+        {inside}
+      </a>
+    );
+  }
+  return (
+    <div className={styles.video} role="img" aria-label={v.label}>
+      {inside}
+    </div>
+  );
+}
+
+function Contents({ active }: { active?: string }) {
+  return (
+    <ol>
+      {HOW_SECTIONS.map(({ id, title }) => (
+        <li key={id}>
+          <Link to={`#${id}`} aria-current={id === active ? 'location' : undefined}>
+            {title}
+          </Link>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 export function HowScreen() {
-  const [step, setStep] = useState<Step>(0);
-  const approveRef = useRef<HTMLButtonElement>(null);
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  const advance = () => {
-    if (step === 3) {
-      // "Approve to continue": the choice is the card's Approve button, so take the focus there.
-      approveRef.current?.focus();
-      return;
-    }
-    setStep(step === 4 ? 0 : ((step + 1) as Step));
-  };
-  const back = () => {
-    if (location.key !== 'default') navigate(-1);
-    else navigate('/');
-  };
-
-  const read = step >= 2 ? '1' : '0';
-  const left = step >= 4 ? '44' : '0';
-
+  const active = useActiveSection(SECTION_IDS);
   return (
     <div className={styles.page}>
-      <div className={`ribbon ${styles.ribbon}`} aria-hidden="true" />
-
-      <div className={styles.bar}>
-        <div className={styles.titleRow}>
-          <button type="button" className={styles.back} onClick={back}>
-            <Icon name="arrow-left" size={18} />
-            <span className="visually-hidden">{HOW_COPY.back}</span>
-          </button>
-          <div className={styles.titles}>
-            <h1 className={styles.eyebrow}>{SCREENS.how.heading}</h1>
-            <p className={styles.question}>{HOW_COPY.question}</p>
-          </div>
+      <div className={styles.hero}>
+        <div>
+          <h1>{SCREENS.how.heading}</h1>
+          <p className={styles.lead}>{HOW_COPY.lead}</p>
+          <p className={styles.status}>{HOW_COPY.status}</p>
         </div>
-        <div className={styles.controls}>
-          <span className={styles.stepLabel}>{HOW_COPY.stepLabels[step]}</span>
-          <Button variant="primary" size="lg" className={styles.run} onClick={advance}>
-            {HOW_COPY.runLabels[step]}
-          </Button>
-        </div>
+        <VideoCard url={HOW_VIDEO_URL} />
       </div>
 
-      <section className={styles.stage} aria-label={HOW_COPY.stageLabel}>
-        <div className={styles.fieldWrap}>
-          <Field step={step} />
-          {step >= 1 ? (
-            <span className={styles.matched} style={{ left: `calc(${pctX(310)} + 35px)`, top: pctY(320) }}>
-              {HOW_COPY.matched}
-            </span>
-          ) : null}
-        </div>
+      <div className={styles.frame}>
+        <article className={styles.paper}>
+          <details className={styles.toc}>
+            <summary className={styles.label}>{HOW_COPY.onThisPage}</summary>
+            <Contents />
+          </details>
+          {HOW_SECTIONS.map((section) => (
+            <section key={section.id} id={section.id}>
+              <h2>{section.title}</h2>
+              {section.blocks.map((block, i) => (
+                <Block key={i} block={block} />
+              ))}
+            </section>
+          ))}
+        </article>
 
-        <div className={styles.flow}>
-          {step >= 2 ? (
-            <div className={styles.card}>
-              <div className={styles.cardHead}>
-                <span className={styles.cardTitle}>
-                  <span className={styles.cardMark} aria-hidden="true" />
-                  <span className={styles.cardName}>{HOW_COPY.itemTitle}</span>
-                </span>
-                <span>{HOW_COPY.itemMeta}</span>
-              </div>
-              {step === 2 ? <p className={styles.reading}>{HOW_COPY.reading}</p> : null}
-              {step >= 3 ? (
-                <>
-                  <p className={styles.sentence}>{HOW_COPY.sentence}</p>
-                  <div className={styles.cardFoot}>
-                    <span className={styles.meta}>{HOW_COPY.sentenceMeta}</span>
-                    {step === 3 ? (
-                      <Button ref={approveRef} variant="primary" tone="blue" size="sm" onClick={() => setStep(4)}>
-                        {HOW_COPY.approve}
-                      </Button>
-                    ) : (
-                      <span className={styles.approved}>
-                        <span className={styles.okDot} aria-hidden="true" />
-                        {HOW_COPY.approved}
-                      </span>
-                    )}
-                  </div>
-                </>
-              ) : null}
-            </div>
-          ) : null}
-
-          {step >= 4 ? (
-            <>
-              <div className={styles.cross}>
-                <span className={styles.crossLine} aria-hidden="true" />
-                <span className={styles.crossLabel}>{HOW_COPY.cross}</span>
-              </div>
-              <div className={styles.cloud}>
-                <span className={styles.cloudTitle}>{HOW_COPY.cloudTitle}</span>
-                <span className={styles.cloudBody}>{HOW_COPY.cloudBody}</span>
-              </div>
-              <span className={styles.stayed}>{HOW_COPY.stayed}</span>
-            </>
-          ) : null}
-        </div>
-      </section>
-
-      <div className={styles.footer}>
-        <p className={styles.caption} aria-live="polite">
-          {HOW_COPY.captions[step]}
-        </p>
-        <ul className={styles.counters} aria-label={HOW_COPY.countersLabel}>
-          <li className={styles.counter}>
-            <span className={styles.value}>46</span>
-            <span className={styles.counterCaption}>{HOW_COPY.searched}</span>
-          </li>
-          <li className={styles.counter}>
-            <span className={styles.value}>{read}</span>
-            <span className={styles.counterCaption}>{HOW_COPY.readByModel}</span>
-          </li>
-          <li className={styles.counter}>
-            <span className={`${styles.value} ${styles.valueBlue}`}>{left}</span>
-            <span className={styles.counterCaption}>{HOW_COPY.left}</span>
-          </li>
-        </ul>
+        <nav className={styles.rail} aria-label={HOW_COPY.onThisPage}>
+          <p className={styles.label}>{HOW_COPY.onThisPage}</p>
+          <Contents active={active} />
+        </nav>
       </div>
     </div>
   );

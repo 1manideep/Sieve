@@ -397,40 +397,6 @@ export const WELCOME_COPY = {
   built: 'Built for #BuildHybridAI · Firebase AI Logic · Gemini Nano · open source',
 } as const;
 
-/** F4, /how: 46 items become one line (docs/design/final-flow.md). */
-export const HOW_COPY = {
-  eyebrow: 'What happens to your data',
-  question: 'What did my landlord say about the deposit?',
-  stageLabel: 'Your 46 items on this computer',
-  stepLabels: ['Ready', 'Step 1 of 4 · searched', 'Step 2 of 4 · picked one', 'Step 3 of 4 · answered here', 'Step 4 of 4 · one line left'],
-  runLabels: ['Run', 'Next', 'Next', 'Approve to continue', 'Run again'],
-  captions: [
-    'Your 46 items: mail, files, photos. This is what an AI with a direct connector reads to answer one question. Press Run to see what Sieve does instead.',
-    'Searched all 46 by meaning, on this computer, in 0.3 seconds. One matched. No model has read anything yet.',
-    'Gemini Nano opens the one item, here. It never sees the other 45, and nothing has left this computer.',
-    'Nano wrote one sentence from it. The sentence holds no name, address or number. Approve it, or keep it here.',
-    'You approved. 44 characters crossed to Gemini in the cloud. 45 items stayed where they were, unread. The receipt says who, what, how much and when.',
-  ],
-  matched: '1 of 46 matched',
-  itemTitle: 'Re: Deposit for the apartment',
-  itemMeta: 'Oct 29 · Home · Gmail',
-  reading: 'Gemini Nano is reading this one item on this computer. The other 45 were never opened by any model.',
-  sentence: 'Your deposit was $1,200, paid on March 3, and it will be returned within 30 days of moving out.',
-  sentenceMeta: 'Gemini Nano · written here · 44 characters · 0 details inside',
-  approve: 'Approve 44 characters',
-  approved: 'approved · receipt #0412',
-  cross: '44 characters cross',
-  cloudTitle: 'Gemini, in the cloud',
-  cloudBody: 'Received 44 characters. Drafted a reply. Never saw the email, the name, the address or the number.',
-  stayed: '45 items, never read by any model, still here',
-  countersLabel: 'The count so far',
-  searched: 'searched here',
-  readByModel: 'read by a model, here',
-  left: 'characters that left',
-  back: 'Go back',
-  stepsLabel: 'The steps',
-} as const;
-
 export const PREPARE_COPY = {
   back: 'Back',
 } as const;

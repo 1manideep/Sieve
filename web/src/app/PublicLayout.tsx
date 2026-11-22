@@ -1,4 +1,4 @@
-// PublicLayout: the public header (docs/design/final-flow.md, F2): "Sieve" with the OPEN SOURCE pill on the left;
+// PublicLayout: the public header (docs/design/final-flow.md, F2): "Sieve" on the left;
 // How it works, Try on a real computer, GitHub and the white Open Sieve pill on the right, which signs in with Google
 // like the hero button on /welcome (the Playground is not linked: it is the demo seats' screen). Under 1024px
 // the text links sit behind a menu button. The footer carries the sentence. On /welcome the header floats over the
@@ -39,7 +39,6 @@ export function PublicLayout() {
         <div className={styles.inner}>
           <div className={styles.brand}>
             <Logo to="/" />
-            <span className={styles.openSource}>{PUBLIC_NAV.openSource}</span>
           </div>
           <button
             type="button"
