@@ -208,18 +208,18 @@ describe('search', () => {
     expect(report?.filters).toBeUndefined();
   });
 
-  it('a sender read from the question that no item is from, but titles hold, only ranks ("my latest SIP order")', async () => {
-    await ingest(db, { source: 'gmail', sourceRef: 'sip-1', kind: 'email', title: 'SIP order summary', from: 'Kestrel Broking <noreply@mailer.kestrelbroking.example>', date: Date.now(), text: 'Your SIP order has been executed. Instrument: NIFTYBEES. Quantity: 12.' }, 'own');
+  it('a sender read from the question that no item is from, but titles hold, only ranks ("my latest Subscribe order")', async () => {
+    await ingest(db, { source: 'gmail', sourceRef: 'sub-1', kind: 'email', title: 'Subscribe order summary', from: 'Larkfield Goods <noreply@mailer.larkfield.example>', date: Date.now(), text: 'Your Subscribe order has shipped. Item: coffee beans. Quantity: 12 bags.' }, 'own');
     let report: SearchReport | undefined;
-    const res = await search(db, 'How many NIFTYBEES units did my latest SIP order buy?', { onReport: (r) => (report = r) });
-    expect(res.map((c) => c.recordId)).toContain('gmail:sip-1');
-    expect(report?.senderDropped).toBe('SIP');
+    const res = await search(db, 'How many bags of coffee beans did my latest Subscribe order hold?', { onReport: (r) => (report = r) });
+    expect(res.map((c) => c.recordId)).toContain('gmail:sub-1');
+    expect(report?.senderDropped).toBe('Subscribe');
     expect(report?.filters?.sender).toBeUndefined();
     // a sender the asking assistant sent stays a filter, whatever the titles hold
-    expect(await search(db, 'How many units did my latest order buy?', { hints: { from: 'SIP' } })).toEqual([]);
+    expect(await search(db, 'How many bags did my latest order hold?', { hints: { from: 'Subscribe' } })).toEqual([]);
     // a name nothing in the index knows still finds nothing
     expect(await search(db, 'When did my latest Northgear order ship?')).toEqual([]);
-    await db.records.delete('gmail:sip-1');
+    await db.records.delete('gmail:sub-1');
   });
 
   it("the sender's newest items join the list when the question asks for the latest (T04)", async () => {

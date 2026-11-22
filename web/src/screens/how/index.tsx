@@ -2,12 +2,13 @@
 // the white paper in one card with a sticky "On this page" rail beside it. Below 1040px the rail is hidden and a
 // folded "On this page" list opens the paper instead. The words live in copy/screens-how.ts; this file lays them out.
 // In-page links are router links, so ScrollRestoration scrolls to the section instead of undoing the jump.
-import { useEffect, useState } from 'react';
+// The section on tests shows four numbers; a button opens every test behind them.
+import { useEffect, useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { env } from '@/app/env';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
-import { LinkButton } from '@/components/Button/Button';
-import { HOW_COPY, HOW_SECTIONS, type HowBlock, type HowCell, type HowListItem, type HowTable } from '@/copy/screens-how';
+import { Button, LinkButton } from '@/components/Button/Button';
+import { HOW_COPY, HOW_SECTIONS, type HowBlock, type HowCell, type HowListItem, type HowMore, type HowTable } from '@/copy/screens-how';
 import { PUBLIC_NAV, SCREENS, TITLES } from '@/copy/strings';
 import { ArchitectureFigure, LadderFigure, RelayFigure, StepsFigure } from './figures';
 import styles from './how.module.css';
@@ -127,6 +128,22 @@ function Table({ table }: { table: HowTable }) {
   );
 }
 
+/** A button that opens the blocks behind it, in place. They are not in the page until it is pressed. */
+function More({ more }: { more: HowMore }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <>
+      <Button variant="secondary" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+        {open ? more.hide : more.show}
+      </Button>
+      <div id={id} className={styles.more} hidden={!open}>
+        {open ? more.blocks.map((block, i) => <Block key={i} block={block} />) : null}
+      </div>
+    </>
+  );
+}
+
 function Block({ block }: { block: HowBlock }) {
   if ('p' in block) return <p><Rich text={block.p} /></p>;
   if ('h3' in block) return <h3>{block.h3}</h3>;
@@ -144,6 +161,19 @@ function Block({ block }: { block: HowBlock }) {
     const Figure = FIGURES[block.figure];
     return <Figure />;
   }
+  if ('stats' in block) {
+    return (
+      <ul className={styles.stats}>
+        {block.stats.map((stat) => (
+          <li key={stat.label}>
+            <b>{stat.value}</b>
+            {stat.label}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  if ('more' in block) return <More more={block.more} />;
   return (
     <div className={styles.next}>
       <LinkButton to="/try" variant="primary">

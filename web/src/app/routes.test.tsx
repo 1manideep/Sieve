@@ -78,7 +78,7 @@ describe('routes, signed out', () => {
     expect(await screen.findByRole('heading', { level: 1, name: SCREENS.how.heading })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: PUBLIC_NAV.how })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('banner')).not.toHaveTextContent(/open source/i);
-    expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(15);
+    expect(screen.getAllByRole('heading', { level: 2 })).toHaveLength(16);
     // Like the landing, nothing here links to the Playground: the page's own button is the header's "Try on a real computer".
     expect(screen.queryByRole('link', { name: /Playground/ })).toBeNull();
     for (const a of screen.getAllByRole('link', { name: PUBLIC_NAV.tryComputer })) expect(a).toHaveAttribute('href', '/try');

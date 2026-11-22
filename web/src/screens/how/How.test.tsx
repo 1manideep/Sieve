@@ -1,9 +1,10 @@
-// /how: the paper's headings, figures and tables, the "On this page" links, the video placeholder and the two links
-// under "What's next".
-import { act, render, screen, within } from '@testing-library/react';
+// /how: the paper's headings, figures and tables, the "On this page" links, the video placeholder, the section on
+// tests with its button, and the two links under "What's next".
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env } from '@/app/env';
+import { TESTS } from '@/copy/how-tests';
 import { HOW_COPY } from '@/copy/screens-how';
 import { SCREENS } from '@/copy/strings';
 import { expectNoAxeViolations } from '@/test/axe';
@@ -23,6 +24,7 @@ const SECTIONS = [
   ['relay', 'The relay'],
   ['receipts', 'Receipts and the trace'],
   ['models', 'Where each model call runs'],
+  ['tests', 'How Sieve is tested'],
   ['limits', 'Limits'],
   ['next', "What's next"],
 ] as const;
@@ -46,7 +48,7 @@ afterEach(() => {
 });
 
 describe('/how', () => {
-  it('has one h1, the lead, the status line and the 15 sections in order, each under its id', async () => {
+  it('has one h1, the lead, the status line and the 16 sections in order, each under its id', async () => {
     renderHow();
     const h1s = screen.getAllByRole('heading', { level: 1 });
     expect(h1s.map((h) => h.textContent)).toEqual(['How Sieve works']);
@@ -106,6 +108,52 @@ describe('/how', () => {
     const steps = screen.getByRole('table', { name: 'Table 2 · What each step does' });
     expect(within(steps).getAllByRole('row')).toHaveLength(11);
     expect(within(steps).getByRole('columnheader', { name: HOW_COPY.number })).toBeInTheDocument();
+  });
+
+  it('shows four numbers about the tests, and opens every test behind them with one button', async () => {
+    renderHow();
+    const section = document.getElementById('tests') as HTMLElement;
+    const stats = within(section).getAllByRole('listitem');
+    expect(stats.map((li) => li.querySelector('b')?.textContent)).toEqual([TESTS.automated.tests.toLocaleString('en-US'), '96%', '23 of 27', '0']);
+    expect(stats[2]).toHaveTextContent('The first round scored 5.');
+
+    const button = within(section).getByRole('button', { name: 'Show all the tests' });
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(within(section).queryByRole('heading', { level: 3 })).toBeNull();
+    expect(within(section).queryByRole('table')).toBeNull();
+
+    fireEvent.click(button);
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    expect(button).toHaveTextContent('Hide the tests');
+    expect(document.getElementById(button.getAttribute('aria-controls') ?? '')).toBeVisible();
+    expect(within(section).getAllByRole('heading', { level: 3 }).map((h) => h.textContent)).toEqual([
+      'Automated tests',
+      'Search benchmark',
+      'The on-device model',
+      'Live rounds on a real mailbox',
+      'What these tests do not show',
+    ]);
+    expect(within(section).getByRole('table', { name: 'Table 6 · Search benchmark: 68 questions among 2,020 items' })).toBeInTheDocument();
+    const rounds = within(section).getByRole('table', { name: 'Table 7 · Live rounds, 37 runs each' });
+    expect(within(rounds).getAllByRole('row')).toHaveLength(TESTS.live.rounds.length + 1);
+    expect(section).toHaveTextContent('Only counts are published.');
+    expect(section).toHaveTextContent('Round 3 met three of the four: 85% right (23 of 27), 7% missed (2 of 27), nothing made up, and 8% wrong (2 of 25 answers).');
+    expect(screen.getAllByRole('table')).toHaveLength(7);
+    await expectNoAxeViolations();
+
+    fireEvent.click(button);
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getAllByRole('table')).toHaveLength(5);
+  });
+
+  it('counts every run of every live round once', () => {
+    const { live } = TESTS;
+    expect(live.answerable + live.absent).toBe(live.runs);
+    for (const r of live.rounds) {
+      expect(r.right + r.wrong + r.missed + r.nothing + r.declined + r.errors, r.name).toBe(live.runs);
+    }
+    // the summary's "made-up answers" line: the runs since round 1 that returned nothing, correctly
+    expect(live.rounds.slice(1).reduce((sum, r) => sum + r.nothing, 0)).toBe(live.absentRuns);
   });
 
   it('points every "On this page" link, in the rail and in the folded list, at a section that exists', () => {

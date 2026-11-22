@@ -1,7 +1,9 @@
-// Copy for /how, "How Sieve works": the hero, the video card, the paper's 15 sections and the words in its figures.
+// Copy for /how, "How Sieve works": the hero, the video card, the paper's 16 sections and the words in its figures.
+// The section on tests, with every number in it, is in how-tests.ts.
 // It lives apart from screens-main.ts so it loads with the /how route only, never with the landing.
 // In the paper's text, **words** are drawn as strong and `words` as code; the screen renders both as elements, never
 // as HTML. All sample text is invented. No em dashes anywhere.
+import { TESTS_SECTION } from './how-tests';
 
 /** A chip in a table cell, with optional text after it. */
 export interface HowChip {
@@ -19,6 +21,17 @@ export interface HowTable {
   rows: readonly (readonly HowCell[])[];
 }
 export type HowFigure = 'architecture' | 'steps' | 'ladder' | 'relay';
+/** A number with the words that say what it counts. */
+export interface HowStat {
+  value: string;
+  label: string;
+}
+/** Blocks kept behind a button until the reader asks for them. */
+export interface HowMore {
+  show: string;
+  hide: string;
+  blocks: readonly HowBlock[];
+}
 export type HowBlock =
   | { p: string }
   | { h3: string }
@@ -27,6 +40,8 @@ export type HowBlock =
   | { note: string }
   | { table: HowTable }
   | { figure: HowFigure }
+  | { stats: readonly HowStat[] }
+  | { more: HowMore }
   | { next: true };
 export interface HowSection {
   id: string;
@@ -468,6 +483,7 @@ export const HOW_SECTIONS: readonly HowSection[] = [
       { p: 'Every call is a single prompt that Sieve assembles. Sieve keeps no chat session on private data.' },
     ],
   },
+  TESTS_SECTION,
   {
     id: 'limits',
     title: 'Limits',
