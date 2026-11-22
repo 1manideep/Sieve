@@ -16,8 +16,7 @@ import {
   asksCount, asksLatest, asksSeveral, asksState, clockFor, flushUrgentEmbeds, getRecord, identifierTerms, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
   type HardFilter, type ParsedQuestion, type SearchReport, type SieveDb,
 } from '@/index';
-import { asksSaid, holdsTopic, topicTerms } from '@/index/cues';
-import { iso } from '@/index/dates';
+import { holdsTopic, topicTerms } from '@/index/cues';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
 import { isYesNoQuestion } from '@/privacy/steps/answerShape';
 import { errorLine, errorName } from '@/robust/errorLine';
@@ -489,22 +488,6 @@ async function prepare(run: Run): Promise<Proposal> {
   if (latest && allowed.length > 1) {
     allowed = latestOrder(allowed, filters, lookup);
     run.code('retrieve', LABELS.newestFirst);
-  }
-
-  // 6a2. Days in the request and a question about what was said or sent then ("what did X remind me about on
-  // November 4"): the items dated on those days are the ones meant, so when some candidates are, those that only
-  // mention such a day are not read. A bill tracker's email of the next day about "a transaction from November 4" was
-  // picked 5 of 5 times over the landlord's reminder of that day (Nov 22, 2026); without it the reminder is picked.
-  const days = filters as HardFilter | undefined;
-  if ((days?.after || days?.before) && allowed.length > 1 && asksSaid(lookup)) {
-    const dated = allowed.filter((a) => {
-      const d = iso(new Date(a.rec.date));
-      return (!days.after || d >= days.after) && (!days.before || d <= days.before);
-    });
-    if (dated.length > 0 && dated.length < allowed.length) {
-      run.code('retrieve', LABELS.datedOnly(allowed.length - dated.length));
-      allowed = dated;
-    }
   }
 
   // 6b. An exact identifier in the question (an order, booking or receipt number): the candidates that hold it are the

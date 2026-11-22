@@ -225,13 +225,6 @@ export function holdsTopic(topic: readonly string[], title: string, from: string
   return topic.filter((t) => have.has(t)).length > 1;
 }
 
-const SAID_RE = /\b(?:did\b.*\b(?:say|send|tell|remind|write|ask|notify|announce|email|message)|said|sent|told|reminded|wrote|asked|notified|announced|emailed|messaged)\b/i;
-
-/** "What did X remind me about on November 4?", "what was sent last Friday": the days are when the item was sent. */
-export function asksSaid(text: string): boolean {
-  return SAID_RE.test(text);
-}
-
 const STATE_RE = /\b(?:status|update on|any (?:update|news)|where is|where's|what happened (?:to|with)|still|yet|currently|right now|so far)\b/i;
 
 /** "What is the status of order X?", "Has X shipped yet?": the newest item about X says how it stands now. */

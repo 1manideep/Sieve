@@ -33,7 +33,7 @@ vi.mock('@/playground/assets', async () => (await import('../../tests/harness/da
 // The reranker's contract (web/src/index/rerank.ts), answered by this eval: "did not run", or the Node cross-encoder.
 // Its budget is long on purpose: the eval measures the order a reranker gives, not how fast this machine runs it.
 vi.mock('../../web/src/index/rerank', () => ({
-  RERANK_MAX_PASSAGES: 20,
+  RERANK_MAX_PASSAGES: Number(process.env.EVAL_RERANK_POOL ?? 0) || 20,
   RERANK_BUDGET_MS: 600_000,
   warmupRerank: () => undefined,
   rerank: (question: string, passages: { id: string; text: string }[], opts: unknown) =>

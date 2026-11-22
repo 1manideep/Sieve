@@ -186,27 +186,6 @@ describe('the tester cases (Nov 20)', () => {
     expect(hybrid.callsFor('select-answer').at(-1)?.meta?.recordIds).toEqual(['gmail:cover-promo', 'gmail:cover-welcome']);
   });
 
-  it('what was said on a day: items dated that day are read, not one that only mentions the day (Nov 22)', async () => {
-    const at = (m: number, d: number) => new Date(2026, m - 1, d, 10, 0).getTime();
-    const reminder = record({ id: 'gmail:rent-reminder', source: 'gmail', title: 'Friendly reminder: late fees begin tomorrow', from: 'Maple Court <office@maplecourt.example>', category: 'Home', date: at(11, 4), text: 'Rent for November is due. Late fees begin tomorrow.' });
-    const cocoa = record({ id: 'gmail:cocoa', source: 'gmail', title: 'Hot cocoa in the clubhouse', from: 'Maple Court <office@maplecourt.example>', category: 'Home', date: at(11, 4), text: 'Join us for hot cocoa this Thursday.' });
-    const tracker = record({ id: 'gmail:tracker', source: 'gmail', title: 'A transaction needs a category', from: 'Pennywise <hello@pennywise.example>', category: 'Money', date: at(11, 5), text: 'Your $25.00 transaction from November 4 at Maple Court needs a category.', mentionedDays: ['2026-11-04'] });
-    for (const r of [reminder, cocoa, tracker]) idx.records.set(r.id, r);
-    const found = [reminder, tracker, cocoa].map((r) => idx.cand(r.id));
-    const days = { after: '2026-11-04', before: '2026-11-04' };
-    idx.search.mockImplementation(async (_db, _q, opts) => {
-      (opts as { onReport?: (r: object) => void }).onReport?.({ filters: days });
-      return found;
-    });
-    model('P1', 'Late fees begin tomorrow.');
-    const p = await prepareProposal(input({ question: 'What did my apartment complex remind me about on November 4?', hints: days }));
-    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(['gmail:rent-reminder', 'gmail:cocoa']);
-    expect(labels(p)).toContain('Left out 1 item that only mentions those days, because the question asks what was said then');
-    // a question about something that happened that day reads all three: the item about it may be dated another day
-    await prepareProposal(input({ question: 'What happened with Maple Court on November 4?', hints: days }));
-    expect(hybrid.callsFor('select-answer').at(-1)?.meta?.recordIds).toHaveLength(3);
-  });
-
   it('a second check that says no names the pick without its content (place, exact terms, numbers)', async () => {
     idx.search.mockResolvedValue([GOOD_DOG, ...RAMKI.slice(0, 2)].map((r) => idx.cand(r.id)));
     model('P1', 'Bella has a vet visit on Jun 12 at 5 PM.', false);

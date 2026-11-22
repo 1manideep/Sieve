@@ -28,6 +28,7 @@ if (flag('help')) {
   --rerank-tokens <n>  the most tokens of a (question, passage) pair (default 192, the app's WASM setting)
   --rerank-limit <n>   score only the first n passages, the rest keep their place (the app on one WASM thread
                        scores about 12 within its budget; default 20, as on WebGPU)
+  --rerank-pool <n>    how many of the best candidates the reranker gets (the app: 20)
   --sweep <file.json>  a list of { label, tuning } to run against SEARCH_TUNING (web/src/index/config.ts)
   --label <name>       the name of this configuration in the table (default "current")
   --extra <file.json>  more emails and questions of your own, { items: [{ id, title, from, date, text }], questions },
@@ -78,6 +79,7 @@ const env = {
   EVAL_DEPTH: value('depth', ''),
   EVAL_SWEEP: value('sweep', '') ? resolve(value('sweep', '')) : '',
   EVAL_RERANK_LIMIT: value('rerank-limit', '20'),
+  EVAL_RERANK_POOL: value('rerank-pool', ''),
   ...(value('rerank-model', '') ? { RERANK_MODEL: value('rerank-model', '') } : {}),
   ...(value('rerank-tokens', '') ? { RERANK_MAX_TOKENS: value('rerank-tokens', '') } : {}),
 };
