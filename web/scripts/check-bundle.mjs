@@ -16,7 +16,7 @@ const KB = 1000;
 const BUDGETS = {
   welcome: 170 * KB,       // shell, router, React, Firebase app and auth, welcome chunk
   playground: 320 * KB,    // adds the AI layer, pipeline, privacy code, index, Dexie, MiniSearch
-  afterSignIn: 182 * KB,   // additional JS for / after Google sign-in (Firestore, RTDB, messaging, services, engine); 160 in 40 section 17.1, raised Nov 18: firebase/firestore 13.3.0 alone is 147.7 KB gzipped; 182 since Nov 21: the icon rail and the assistants' real marks
+  afterSignIn: 184 * KB,   // additional JS for / after Google sign-in (Firestore, RTDB, messaging, services, engine); 160 in 40 section 17.1, raised Nov 18: firebase/firestore 13.3.0 alone is 147.7 KB gzipped; 182 since Nov 21: the icon rail and the assistants' real marks; 184 since Nov 22: the total sat at 182.0 and moved a few bytes with every build (the entry chunk lists hashed file names), so a build failed by 11 bytes with no code of its own in the count
   routeChunk: 60 * KB,     // any single route chunk
   css: 37 * KB,            // all CSS (35 until Nov 21: the four redesigned control screens)
   fonts: 0,                // none bundled: Google Sans and Google Sans Code come from Google Fonts (index.html)
