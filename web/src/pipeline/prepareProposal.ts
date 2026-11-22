@@ -210,7 +210,17 @@ class Run {
       outcome,
       createdAt: this.now,
       ...(outcome === 'error' ? { errorCode: this.errorCode ?? 'unknown' } : {}),
+      ...(outcome !== 'ready' && outcome !== 'error' && this.reasonCode ? { reasonCode: this.reasonCode } : {}),
     };
+  }
+
+  /** Why nothing is shared, as a short fixed code (never content); see Proposal.reasonCode. */
+  reasonCode: string | undefined;
+
+  /** Sets the reason code and returns the run, so a site reads `run.why('model-none').finish('no-match')`. */
+  why(code: string): this {
+    this.reasonCode = code;
+    return this;
   }
 
   /**
@@ -328,7 +338,7 @@ async function prepare(run: Run): Promise<Proposal> {
     run.code('clean', LABELS.instructionsLeftOut(stripped.removed));
     if (!/[\p{L}\p{N}]/u.test(lookup)) {
       run.code('rule', LABELS.nothingLeft);
-      return run.finish('no-match');
+      return run.why('question-empty').finish('no-match');
     }
   }
   let hints = input.hints;
@@ -361,13 +371,13 @@ async function prepare(run: Run): Promise<Proposal> {
   // 3a. A count needs every item, and this level answers from one: unsupported, before any search (12.4).
   if (asksCount(lookup)) {
     run.code('rule', LABELS.countUnsupported);
-    return run.finish('unsupported');
+    return run.why('asks-count').finish('unsupported');
   }
   // 3b. Several fields or items at once ("list", "all of", "five fields", "my last five emails"): this level shares
   // one fact at a time, so it is unsupported before any search or model call (12.4, Nov 21, B01 and B04).
   if (asksSeveral(lookup)) {
     run.code('rule', LABELS.severalUnsupported);
-    return run.finish('unsupported', { reason: UNAVAILABLE.oneFact });
+    return run.why('asks-several').finish('unsupported', { reason: UNAVAILABLE.oneFact });
   }
 
   // 4. Retrieve.
@@ -427,7 +437,7 @@ async function prepare(run: Run): Promise<Proposal> {
   if (cands.some((c) => c.matchedBy === 'gmail-search')) {
     run.push({ kind: 'retrieve', label: LABELS.gmailSearch, where: 'cloud', ms: 0, charsSent: lookup.length, at: Date.now() });
   }
-  if (cands.length === 0) return run.finish('no-match');
+  if (cands.length === 0) return run.why('search-found-nothing').finish('no-match');
 
   // 5 and 6. Load and filter, with no model involved.
   if (run.aborted) return run.stopped();
@@ -435,7 +445,7 @@ async function prepare(run: Run): Promise<Proposal> {
   if (screened.label) run.code('rule', screened.label);
   const { neverBlocked } = screened;
   let allowed = screened.allowed;
-  if (allowed.length === 0) return run.blockedOrNoMatch(neverBlocked);
+  if (allowed.length === 0) return run.why('rules-held-every-candidate').blockedOrNoMatch(neverBlocked);
 
   // 6a. "The latest": newest first among the candidates that match (latestOrder).
   const latest = asksLatest(lookup);
@@ -491,7 +501,7 @@ async function prepare(run: Run): Promise<Proposal> {
       if (input.ownWithoutConsent === 'skip') {
         const drop = new Set(missing.map((r) => r.id));
         allowed = allowed.filter((a) => !drop.has(a.rec.id));
-        if (allowed.length === 0) return run.finish('no-match');
+        if (allowed.length === 0) return run.why('no-cloud-consent').finish('no-match');
       } else {
         return askConsent(allowed, missing);
       }
@@ -534,13 +544,13 @@ async function prepare(run: Run): Promise<Proposal> {
       // this level can't answer in one fact, not a failure of the device.
       if (res.error.code === 'bad-output') {
         run.code('rule', LABELS.shapeRefused);
-        return run.finish('unsupported', { reason: UNAVAILABLE.oneFact });
+        return run.why('model-bad-output').finish('unsupported', { reason: UNAVAILABLE.oneFact });
       }
       run.errorCode = `model-${res.error.code}`;
       return run.finish('error');
     }
     if (res.trace.where === 'cloud') run.warn(callData === 'sample' ? WARNINGS.sampleDataCloud() : WARNINGS.cloudFallback());
-    if (res.value.recordId === null) return run.blockedOrNoMatch(neverBlocked);
+    if (res.value.recordId === null) return run.why('model-picked-none').blockedOrNoMatch(neverBlocked);
 
     const pick = list.find((a) => a.rec.id === res.value.recordId);
     if (!pick) {
@@ -568,7 +578,7 @@ async function prepare(run: Run): Promise<Proposal> {
     }
     if (reruns >= 1) {
       run.end(freshId, codeTrace('retrieve', LABELS.freshKeptChanging, freshMs));
-      return run.finish('no-match');
+      return run.why('item-kept-changing').finish('no-match');
     }
     const reread: IndexRecord | undefined = fresh.status === 'changed' ? fresh.fresh : undefined;
     if (reread && answerStillHolds(pick.rec, reread, res.value.answer)) {
@@ -582,7 +592,7 @@ async function prepare(run: Run): Promise<Proposal> {
     if (!reread) {
       run.end(freshId, codeTrace('retrieve', LABELS.freshGone(kind), freshMs));
       list = list.filter((a) => a.rec.id !== pick.rec.id);
-      if (list.length === 0) return run.blockedOrNoMatch(neverBlocked);
+      if (list.length === 0) return run.why('item-gone').blockedOrNoMatch(neverBlocked);
     } else {
       run.end(freshId, codeTrace('retrieve', LABELS.freshChangedReread(kind), freshMs));
       list = list.map((a) => (a.rec.id === reread.id ? { rec: reread, cand: { ...a.cand, chunk: undefined } } : a));
@@ -607,7 +617,7 @@ async function prepare(run: Run): Promise<Proposal> {
     run.warn(WARNINGS.unchecked());
   } else {
     run.end(verifyId, { ...checked.trace, label: checked.value.answers ? LABELS.verifyYes : LABELS.verifyNo });
-    if (!checked.value.answers) return run.finish('no-match');
+    if (!checked.value.answers) return run.why('second-check-said-no').finish('no-match');
   }
 
   // 13. The excerpt, chosen by plain code.
@@ -694,7 +704,7 @@ async function prepare(run: Run): Promise<Proposal> {
   if ((shape === UNAVAILABLE.oneFact || shape === UNAVAILABLE.badOutput) &&
       (input.requestedStep === 'answer' || !options.some((o) => o.available))) {
     run.end(piiId, codeTrace('pii', shape === UNAVAILABLE.oneFact ? LABELS.oneFactAnswer : LABELS.shapeRefused, Math.round(performance.now() - p0)));
-    return run.finish('unsupported', { reason: UNAVAILABLE.oneFact });
+    return run.why(shape === UNAVAILABLE.oneFact ? 'answer-has-several-facts' : 'answer-has-structure').finish('unsupported', { reason: UNAVAILABLE.oneFact });
   }
   const optionTraces = built.flatMap((o) => o.trace ?? []);
   const piiMs = Math.round(performance.now() - p0);

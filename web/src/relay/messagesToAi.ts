@@ -9,6 +9,15 @@ export const MSG = {
   oneFact: 'Sieve shares one fact at a time at this level.',
   modelUnavailable: "Sieve can't read the person's data on this device right now. Try again later.",
   error: "Sieve couldn't prepare an answer on the person's device. Try again later.",
+  /**
+   * A result line with the reason nothing was shared, as a short code with no content ("model-picked-none"). Only
+   * while the person has auto-approve (testing mode) on for that connection: otherwise the line stays as it is, so
+   * an outside assistant cannot tell a held item from one that was not found.
+   */
+  withReason: (line: string, code: string | undefined) => {
+    const c = (code ?? '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 48);
+    return c ? `${line} (${c})` : line;
+  },
   /** The same line with which step failed, as a short code with no content ("model-timeout", "search-TypeError"). */
   errorWith: (code: string) => `Sieve couldn't prepare an answer on the person's device. Try again later. (${code.replace(/[^A-Za-z0-9-]/g, '').slice(0, 48) || 'unknown'})`,
   badRequest: "Sieve couldn't read this request. Ask again.",

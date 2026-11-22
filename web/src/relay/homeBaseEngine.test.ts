@@ -945,6 +945,18 @@ describe('home base engine: auto-approve, testing mode (40 section 13.8.9)', () 
     expect(['req1', 'req3'].map((id) => h.state.entries![id].phase)).toEqual(['awaiting-person', 'awaiting-person']);
   });
 
+  it('says why nothing was shared only while auto-approve is on for that connection', async () => {
+    const h = await activeHarness(autoDeps());
+    h.prepare.mockImplementation(async (i: PrepareInput) => proposal({ requestId: i.requestId, outcome: 'no-match', reasonCode: 'model-picked-none' }));
+    h.push([request()]);
+    await flush();
+    expect(h.finish.mock.calls[0][3]).toEqual({ status: 'no-match', message: MSG.noMatch });   // off: the plain line
+    turnOn();
+    h.push([request({ id: 'req2', createdAt: T0 + 1 })]);
+    await flush();
+    expect(h.finish.mock.calls[1][3]).toEqual({ status: 'no-match', message: `${MSG.noMatch} (model-picked-none)` });
+  });
+
   it('waits when the request asks for more than the answer', async () => {
     turnOn();
     const h = await activeHarness(autoDeps());

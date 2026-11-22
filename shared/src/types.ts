@@ -165,6 +165,8 @@ export interface Proposal {
   createdAt: number;
   /** Outcome 'error' only: which step failed, as a short fixed code with no content (for example "model-timeout"). */
   errorCode?: string;
+  /** Why nothing is shared (no-match, unsupported), as a short fixed code with no content. A testing aid. */
+  reasonCode?: string;
 }
 
 export interface Decision {

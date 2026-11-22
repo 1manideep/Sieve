@@ -843,7 +843,14 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
     }
     // A card with nothing to approve would only end as "declined" (T08): it ends here, like no match. Declined is
     // only ever the person's own choice. (The consent card has its own action.)
-    if (proposal.outcome === 'ready' && !proposal.options.some((o) => o.available && o.text.trim())) proposal = { ...proposal, outcome: 'no-match' };
+    if (proposal.outcome === 'ready' && !proposal.options.some((o) => o.available && o.text.trim())) {
+      // the reason line of the answer step is fixed copy, never content: its first words name what withheld the answer
+      const reason = (proposal.options[0]?.unavailableReason ?? '').toLowerCase().replace(/[^a-z ]/g, '').trim().split(/\s+/).slice(0, 5).join('-');
+      proposal = { ...proposal, outcome: 'no-match', reasonCode: `answer-withheld-${reason || 'unknown'}` };
+    }
+    // Testing mode (auto-approve on for this connection): the result says which step shared nothing.
+    const testing = !playground && deps.autoApprove?.(req.requester.grantId) === true;
+    const said = (line: string): string => (testing ? MSG.withReason(line, proposal?.reasonCode) : line);
     switch (proposal.outcome) {
       case 'ready':
       case 'needs-cloud-consent':
@@ -878,11 +885,11 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
         return;
       }
       case 'no-match':
-        await finishAuto(id, { status: 'no-match', message: MSG.noMatch }, 'no-match', proposal);
+        await finishAuto(id, { status: 'no-match', message: said(MSG.noMatch) }, 'no-match', proposal);
         return;
       case 'unsupported':
         // the line of the outcome (a count, or one fact at a time), never content
-        await finishAuto(id, { status: 'unsupported', message: proposal.options[0]?.unavailableReason === MSG.oneFact ? MSG.oneFact : MSG.unsupported }, 'no-match', proposal);
+        await finishAuto(id, { status: 'unsupported', message: said(proposal.options[0]?.unavailableReason === MSG.oneFact ? MSG.oneFact : MSG.unsupported) }, 'no-match', proposal);
         return;
       case 'model-unavailable':
         deps.toast({ tone: 'warning', title: HOME_BASE.modelUnavailableToast(aiName) });
