@@ -7,7 +7,7 @@ import { setPrivacyModelHost } from '../model/client';
 import { looksLikeIdNumber } from '../pii/validators/idNumber';
 import { clearScanMemo } from '../scan/scan';
 import { itemTouchesSensitiveTopic, sensitiveTopicOf, touchesSensitiveTopic } from '../sensitive';
-import { asksAddress, asksSubject, hasList, isYesNoQuestion, packsSeveralFacts, shapeAnswer, stripSubject } from '../steps/answerShape';
+import { asksAddress, asksSubject, firstFactClause, hasList, isYesNoQuestion, packsSeveralFacts, shapeAnswer, stripSubject } from '../steps/answerShape';
 import { buildStepOption, UNAVAILABLE } from '../steps/build';
 
 const ai = vi.hoisted(() => ({ runModel: vi.fn(), getNanoAvailability: vi.fn() }));
@@ -67,19 +67,28 @@ describe('B15: a yes or no question gets exactly "Yes." or "No."', () => {
 });
 
 describe('B05, B13, B01: one fact per answer', () => {
-  it('B13: two clauses, each with its own fact, are more than one fact', async () => {
+  it('B13: two clauses, each with its own fact, are more than one fact: only the first is shared', async () => {
     const text = 'Your AWS account ID is 123456789012, and your free plan ended on October 26.';
     expect(packsSeveralFacts(text)).toBe(true);
     const o = await buildStepOption('answer', { answer: text }, AWS, 'own', opts('What is my AWS account ID?'));
-    expect(o).toMatchObject({ available: false, unavailableReason: 'Sieve shares one fact at a time at this level.' });
+    expect(o.available).toBe(true);
+    expect(o.text).toMatch(/^Your AWS account ID is /);
+    expect(o.text).not.toContain('October 26');
+    expect(o.text).not.toContain('free plan');
+    expect(firstFactClause('Your order US20418833 has been cancelled. A refund of $48.00 is on its way.')).toBe('Your order US20418833 has been cancelled.');
+    expect(firstFactClause('It is fine, and so is this.')).toBeNull();
     expect(packsSeveralFacts('Your AWS account ID is [id number], and your free plan ended on October 26.')).toBe(true);
     expect(packsSeveralFacts('Your AWS account ID is 123456789012. Your free plan ended on October 26.')).toBe(true);
   });
 
-  it('B05: the sender and the subject joined in two clauses are two facts', async () => {
+  it('B05: the sender and the subject joined in two clauses are two facts: the second is not shared', async () => {
     const text = 'Your latest email is from Amazon, and its subject is "Your order of Echo Dot has shipped".';
     const o = await buildStepOption('answer', { answer: text }, AMAZON, 'own', opts('What is my latest email about?'));
-    expect(o.unavailableReason).toBe(UNAVAILABLE.oneFact);
+    expect(o.available).toBe(true);
+    expect(o.text).toBe('Your latest email is from Amazon.');
+    // a list is still refused whole
+    const list = await buildStepOption('answer', { answer: 'You paid $12, $40 and $7.' }, AMAZON, 'own', opts('What did I pay?'));
+    expect(list.unavailableReason).toBe(UNAVAILABLE.oneFact);
   });
 
   it('B01: a list of names, masked or not, and numbered items', () => {

@@ -75,10 +75,10 @@ function clampRange(range: PassageRange, length: number): PassageRange {
 }
 
 const MONEY_ASKED = /\b(?:how much|charged?|charges?|costs?|price[ds]?|paid|pay|payment|amount|total|fees?|refund(?:ed)?|bill(?:ed)?|balance|rent|owed?|worth|salary)\b/i;
-const DATE_ASKED = /\b(?:when|what (?:date|day|time)|which (?:date|day)|how long|deadline|due|expir\w*|runs? out|until|check-?in|check-?out|deliver\w*|arriv\w*|depart\w*|leav\w+)\b/i;
+const DATE_ASKED = /\b(?:when|date|what (?:day|time)|which day|how long|deadline|due|expir\w*|runs? out|until|check-?in|check-?out)\b/i;
 const MONEY_HELD = /(?:[$€£₹]|\b(?:USD|EUR|GBP|INR|Rs\.?)\s?)\s?\d|\b\d[\d,]*\.\d{2}\b/;
 const DATE_HELD =
-  /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\b|\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}:\d{2}\b|\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\b/i;
+  /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\b|\b\d{1,2}[/-]\d{1,2}[/-](?:\d{4}|\d{2})\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}:\d{2}\b|\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\b|\b(?:today|tonight|tomorrow|yesterday)\b|\b\d+\s+(?:days?|weeks?|months?|hours?)\b/i;
 
 /**
  * The kind of fact a question asks for, as a test on text: an amount of money ("how much", "charged"), or a date or

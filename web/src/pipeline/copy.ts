@@ -70,6 +70,8 @@ export const LABELS = {
   newestFirst: 'Put the matches newest first, because the question asks for the latest',
   identifierOnly: (n: number) => `Read only the ${n === 1 ? 'item' : `${n} items`} that ${n === 1 ? 'holds' : 'hold'} the exact number in the question`,
   newestState: 'Put those newest first, because the newest says how it stands now',
+  kindOnly: (left: number) => `Left out ${left === 1 ? '1 item' : `${left} items`} with no amount or date in ${left === 1 ? 'it' : 'them'}, because the question asks for one`,
+  pickAgain: 'That item did not answer the question, so Sieve read the others once more',
   verifyYes: 'The item answers the question',
   verifyNo: 'The item does not answer the question',
   verifyFailed: "Couldn't check the answer against the item on this device",

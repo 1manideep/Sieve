@@ -151,7 +151,47 @@ describe('the tester cases (Nov 20)', () => {
     model('P2', 'The release plan moved.', false);
     const p = await prepareProposal(input({ question: 'What happened to the release plan?' }));
     expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(seven.slice(0, 5).map((r) => r.id));
-    expect(p.reasonCode).toBe('second-check-no-r2of5-tx-gx-b1');
+    // the second check said no: that item is dropped and the model picks once more from the other four, then it ends
+    expect(hybrid.callsFor('select-answer')).toHaveLength(2);
+    expect(hybrid.callsFor('select-answer')[1].meta?.recordIds).toEqual([seven[0], seven[2], seven[3], seven[4]].map((r) => r.id));
+    expect(p.outcome).toBe('no-match');
+    expect(p.reasonCode).toBe('second-check-no-2x-r2of4-tx-gx-b1');
+  });
+
+  it('a second check that says no to the first pick: the model picks again from the rest, and that answer is shared', async () => {
+    const promo = record({ id: 'gmail:cover-promo', source: 'gmail', title: 'Keep Biscuit covered', from: 'Pawsure <news@pawsure.example>', category: 'Personal', date: T - 2 * DAY, text: 'Your free cover is ending soon. Continue today so there is no gap.' });
+    const welcome = record({ id: 'gmail:cover-welcome', source: 'gmail', title: 'Welcome to Pawsure', from: 'Pawsure <hello@pawsure.example>', category: 'Personal', date: T - 20 * DAY, text: 'Biscuit is covered until December 2, 2026. After that the cover ends unless you continue.' });
+    for (const r of [promo, welcome]) idx.records.set(r.id, r);
+    idx.search.mockResolvedValue([promo, welcome].map((r) => idx.cand(r.id)));
+    let verifies = 0;
+    hybrid = createFakeHybrid((spec) => {
+      if (spec.purpose === 'verify-answer') {
+        verifies += 1;
+        return { text: JSON.stringify({ answers: verifies > 1, reason: 'x' }), source: 'on_device' };
+      }
+      const first = hybrid.callsFor('select-answer').length <= 1;
+      return { text: JSON.stringify(first ? { item: 'P1', answer: 'The free cover is ending soon.' } : { item: 'P1', answer: 'The cover runs until December 2, 2026.' }), source: 'on_device' };
+    });
+    setHybridForTests(hybrid);
+    const p = await prepareProposal(input({ question: 'What does Pawsure say about the free cover?' }));
+    expect(hybrid.callsFor('select-answer').map((c) => c.meta?.recordIds)).toEqual([['gmail:cover-promo', 'gmail:cover-welcome'], ['gmail:cover-welcome']]);
+    expect(p.outcome).toBe('ready');
+    expect(p.item?.recordId).toBe('gmail:cover-welcome');
+    expect(labels(p)).toContain('That item did not answer the question, so Sieve read the others once more');
+  });
+
+  it('a question that asks for a date reads only the items that hold one, when some do', async () => {
+    const promo = record({ id: 'gmail:cover-promo', source: 'gmail', title: 'Keep Biscuit covered', from: 'Pawsure <news@pawsure.example>', category: 'Personal', date: T - 2 * DAY, text: 'Your free cover is ending soon. Continue so there is no gap.' });
+    const welcome = record({ id: 'gmail:cover-welcome', source: 'gmail', title: 'Welcome to Pawsure', from: 'Pawsure <hello@pawsure.example>', category: 'Personal', date: T - 20 * DAY, text: 'Biscuit is covered until December 2, 2026.' });
+    for (const r of [promo, welcome]) idx.records.set(r.id, r);
+    idx.search.mockResolvedValue([promo, welcome].map((r) => idx.cand(r.id)));
+    model('P1', 'The free cover runs out on December 2, 2026.');
+    const p = await prepareProposal(input({ question: "When does my dog's free cover run out?" }));
+    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(['gmail:cover-welcome']);
+    expect(labels(p)).toContain('Left out 1 item with no amount or date in it, because the question asks for one');
+    // a question that asks for neither reads both
+    await prepareProposal(input({ question: 'What does Pawsure say about the free cover?' }));
+    expect(hybrid.callsFor('select-answer').at(-1)?.meta?.recordIds).toEqual(['gmail:cover-promo', 'gmail:cover-welcome']);
   });
 
   it('a second check that says no names the pick without its content (place, exact terms, numbers)', async () => {
@@ -159,7 +199,8 @@ describe('the tester cases (Nov 20)', () => {
     model('P1', 'Bella has a vet visit on Jun 12 at 5 PM.', false);
     const p = await prepareProposal(input({ question: "When is Bella's vet visit?" }));
     expect(p.outcome).toBe('no-match');
-    expect(p.reasonCode).toBe('second-check-no-r1of3-tx-g1-b1');
+    // the two notes hold no date, so only the booking was read; with nothing else to pick from, it ends there
+    expect(p.reasonCode).toBe('second-check-no-r1of1-tx-g1-b1');
   });
 
   it('T05: a count is unsupported: no search, no model, and the line for the asker', async () => {

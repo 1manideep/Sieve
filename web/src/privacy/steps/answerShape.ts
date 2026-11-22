@@ -184,6 +184,17 @@ export function hasTwoFactClauses(text: string): boolean {
   return clauses.filter(statesFact).length >= 2;
 }
 
+/**
+ * The first clause that states a fact, as a sentence of its own: what is shared of an answer that packed two. The
+ * model leads with what was asked and then adds to it ("Your order was cancelled, and $48.00 will be refunded").
+ */
+export function firstFactClause(text: string): string | null {
+  const first = text.split(CLAUSE_SEP).map((c) => (c ?? '').trim()).find((c) => c && statesFact(c));
+  if (!first) return null;
+  const clause = first.replace(/[,;:\s]+$/, '');
+  return /[.!?]$/.test(clause) ? clause : `${clause}.`;
+}
+
 /** One fact per answer (11 section 10.3a): a list, numbered items or two fact clauses is more than one. */
 export function packsSeveralFacts(text: string): boolean {
   return hasNumberedItems(text) || hasList(text) || hasTwoFactClauses(text);
@@ -332,10 +343,19 @@ export function shapeAnswer(
     if (!first) return { ok: false, reason: 'not-yes-no' };
     return { ok: true, text: /^n/i.test(first[1]!) ? 'No.' : 'Yes.' };
   }
-  if (packsSeveralFacts(text)) return { ok: false, reason: 'one-fact' };
-  const out = !question || !asksAddress(question) ? stripSenderAddress(text, record.from, isPerson) : text;
+  // A list or numbered items is refused whole. Two clauses that each state a fact are cut to the first: one fact is
+  // still all that is shared, and an answer is not lost because the model added a second clause (Nov 21, 2026: "the
+  // status of order ..." ended as unsupported).
+  if (hasNumberedItems(text) || hasList(text)) return { ok: false, reason: 'one-fact' };
+  let one = text;
+  if (hasTwoFactClauses(text)) {
+    const first = firstFactClause(text);
+    if (!first || packsSeveralFacts(first)) return { ok: false, reason: 'one-fact' };
+    one = first;
+  }
+  const out = !question || !asksAddress(question) ? stripSenderAddress(one, record.from, isPerson) : one;
   if (!hasContent(out)) return { ok: false, reason: 'empty' };
-  return { ok: true, text: ended(out, text) };
+  return { ok: true, text: ended(out, one) };
 }
 
 /** After redaction: the answer without the item's subject line (unless asked for), or `empty` when nothing is left. */
