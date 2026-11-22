@@ -66,8 +66,13 @@ const RERANK_LIMIT = Number(process.env.EVAL_RERANK_LIMIT ?? 20);
 
 // ---------- the embedder, with a disk cache keyed by the exact input text (the model and its settings are fixed)
 
+// --embed-model: another embedding model for this run, with what it needs put before a question or a passage.
+const EMBED_MODEL = process.env.EMBED_MODEL ?? '';
+const QUERY_PREFIX = process.env.EVAL_QUERY_PREFIX ?? '';
+const PASSAGE_PREFIX = process.env.EVAL_PASSAGE_PREFIX ?? '';
+
 function cachedEmbedder(inner: NodeEmbedClient): MlClient & { save(): void; close(): void } {
-  const path = CACHE ? `${CACHE}/embed-cache-minilm-q8.json` : '';
+  const path = CACHE ? `${CACHE}/embed-cache-${EMBED_MODEL ? EMBED_MODEL.replace(/[^A-Za-z0-9]+/g, '-') : 'minilm'}-q8.json` : '';
   const cache = new Map<string, string>(path && existsSync(path) ? Object.entries(JSON.parse(readFileSync(path, 'utf8')) as Record<string, string>) : []);
   let added = 0;
   const key = (t: string) => createHash('sha1').update(t).digest('hex');
@@ -81,8 +86,10 @@ function cachedEmbedder(inner: NodeEmbedClient): MlClient & { save(): void; clos
     warmup: (task) => inner.warmup(task),
     status: (task) => inner.status(task),
     subscribe: (fn) => inner.subscribe(fn),
-    async run<I, O>(task: Parameters<MlClient['run']>[0], input: I): Promise<O> {
-      const { texts } = input as unknown as EmbedInput;
+    async run<I, O>(task: Parameters<MlClient['run']>[0], input: I, opts?: { priority?: string }): Promise<O> {
+      // the search embeds the question in the foreground; everything else is a passage
+      const prefix = opts?.priority === 'foreground' ? QUERY_PREFIX : PASSAGE_PREFIX;
+      const texts = (input as unknown as EmbedInput).texts.map((t) => prefix + t);
       const missing = [...new Set(texts.filter((t) => !cache.has(key(t))))];
       if (missing.length > 0) {
         const out = await inner.run<EmbedInput, EmbedOutput>(task, { texts: missing });
