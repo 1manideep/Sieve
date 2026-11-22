@@ -226,6 +226,19 @@ export function holdsTopic(topic: readonly string[], title: string, from: string
   return topic.filter((t) => have.has(t)).length > 1;
 }
 
+const DESCRIBED_RE = /\b(?:did|does|has|have)\s+((?:my|our)\s+[\p{L}' -]{2,40}?)\s+(say|said|send|sent|remind(?:ed)?|ask(?:ed)?|tell|told|email(?:ed)?|write|wrote|written|announced?|notif(?:y|ied)|mention(?:ed)?|want(?:ed)?|need(?:ed)?)\b/iu;
+/**
+ * "What did my apartment complex remind me about on November 4?": the question says who the item is from only by
+ * describing them ("my apartment complex"), and holds no other word to find the item by. Dates and numbers do not
+ * count. Read from the question alone, never from what the index holds.
+ */
+export function describesOnlySender(question: string): boolean {
+  const m = DESCRIBED_RE.exec(question);
+  if (!m) return false;
+  const given = new Set([...terms(m[1] ?? ''), ...terms(m[2] ?? '')]);
+  return terms(question).every((t) => given.has(t) || CALENDAR.has(t) || /^\d/.test(t));
+}
+
 const STATE_RE = /\b(?:status|update on|any (?:update|news)|where is|where's|what happened (?:to|with)|still|yet|currently|right now|so far)\b/i;
 
 /** "What is the status of order X?", "Has X shipped yet?": the newest item about X says how it stands now. */

@@ -251,6 +251,37 @@ describe('the tester cases (Nov 20)', () => {
     expect((idx.search.mock.calls[0][2] as { expand?: string[] }).expand).toBeUndefined();
   });
 
+  it('days and a described sender, with nothing else to go by: unsupported before any search, whatever the index holds (Nov 22)', async () => {
+    const days = { after: '2026-11-04', before: '2026-11-04' };
+    const p = await prepareProposal(input({ question: 'What did my apartment complex remind me about on November 4?', hints: days }));
+    expect(p.outcome).toBe('unsupported');
+    expect(p.reasonCode).toBe('sender-described-not-named');
+    expect(p.options[0]?.unavailableReason).toBe("Sieve could not tell who that is from. Ask again with the sender's name.");
+    expect(idx.search).not.toHaveBeenCalled();
+    expect(hybrid.calls).toHaveLength(0);
+    expect(hybrid.wordCalls).toHaveLength(0);
+    // with the sender named by the asker, the same question is searched
+    idx.search.mockResolvedValue([idx.cand(GOOD_DOG.id)]);
+    await prepareProposal(input({ question: 'What did my apartment complex remind me about on November 4?', hints: { ...days, from: 'Maple Court' } }));
+    expect(idx.search).toHaveBeenCalledTimes(1);
+  });
+
+  it('"the latest" from mail that cannot be checked with Gmail right now: an error that says so, not an old answer (Nov 22)', async () => {
+    idx.search.mockImplementation(async (_db, _q, o) => {
+      (o as { onReport?: (r: unknown) => void }).onReport?.({ filters: { sender: 'Ramki' } });
+      return RAMKI.map((r) => idx.cand(r.id));
+    });
+    idx.verifyFresh.mockResolvedValue('unknown');
+    model('P1', 'Ramki sent update number 2 on the release plan.');
+    const p = await prepareProposal(input({ question: "What did Ramki's latest email say?" }));
+    expect(p.outcome).toBe('error');
+    expect(p.errorCode).toBe('mail-not-current');
+    expect(labels(p).at(-1)).toBe("Couldn't check Gmail for newer mail, so nothing was prepared. Use Continue on the Gmail notice, then ask again.");
+    // a question that does not ask for the latest is still answered from the copy here, with its warning
+    const other = await prepareProposal(input({ question: 'What did Ramki say about the release plan?' }));
+    expect(other.outcome).toBe('ready');
+  });
+
   it('a second check that says no names the pick without its content (place, exact terms, numbers)', async () => {
     idx.search.mockResolvedValue([GOOD_DOG, ...RAMKI.slice(0, 2)].map((r) => idx.cand(r.id)));
     model('P1', 'Bella has a vet visit on Jun 12 at 5 PM.', false);

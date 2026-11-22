@@ -7,6 +7,7 @@ export const MSG = {
   noMatch: 'Nothing to share for that.',
   unsupported: "Sieve answers from one item at a time at this level, so counts aren't available.",
   oneFact: 'Sieve shares one fact at a time at this level.',
+  nameSender: "Sieve could not tell who that is from. Ask again with the sender's name.",
   modelUnavailable: "Sieve can't read the person's data on this device right now. Try again later.",
   error: "Sieve couldn't prepare an answer on the person's device. Try again later.",
   /**
@@ -23,5 +24,10 @@ export const MSG = {
   badRequest: "Sieve couldn't read this request. Ask again.",
   noReadableWords: 'The question had no readable words. Ask again in plain text.',   // 70 R-MCP-04
 } as const;
+
+/** The line for an unsupported result: the pipeline's own reason when it is one of the fixed lines, else the counts line. Never content. */
+export function unsupportedLine(reason: string | undefined): string {
+  return reason === MSG.oneFact || reason === MSG.nameSender ? reason : MSG.unsupported;
+}
 
 export type MessageKey = keyof typeof MSG;

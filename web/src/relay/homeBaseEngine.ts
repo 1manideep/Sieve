@@ -26,7 +26,7 @@ import { decisionDeadline, isPlaygroundRequest } from './deadline';
 import { validateDecision, type DecisionInput, type DecideResultReason } from './decision';
 import type { BridgeHandlers, ExtensionBridge } from './extensionBridge';
 import type { FinishInput, InvalidRequest } from './requests';
-import { MSG } from './messagesToAi';
+import { MSG, unsupportedLine } from './messagesToAi';
 import { pendingPreviews } from './preview';
 import { resilientSnapshot, type ListenerState } from './resilient';
 import { checkBeforeSend, type SendBlock } from './sendCheck';
@@ -904,7 +904,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
         return;
       case 'unsupported':
         // the line of the outcome (a count, or one fact at a time), never content
-        await finishAuto(id, { status: 'unsupported', message: said(proposal.options[0]?.unavailableReason === MSG.oneFact ? MSG.oneFact : MSG.unsupported) }, 'no-match', proposal);
+        await finishAuto(id, { status: 'unsupported', message: said(unsupportedLine(proposal.options[0]?.unavailableReason)) }, 'no-match', proposal);
         return;
       case 'model-unavailable':
         deps.toast({ tone: 'warning', title: HOME_BASE.modelUnavailableToast(aiName) });

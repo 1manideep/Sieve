@@ -58,6 +58,8 @@ export const LABELS = {
   countUnsupported: 'This asks for a count. Sieve answers from one item at a time, so nothing was searched.',
   // Nov 21, the second tester's B-cases
   severalUnsupported: 'This asks for several things at once. Sieve shares one fact at a time, so nothing was searched.',
+  senderNotNamed: 'The request gives days and describes the sender without naming them, so Sieve cannot tell which email is meant. Nothing was searched.',
+  freshLatestUnchecked: "Couldn't check Gmail for newer mail, so nothing was prepared. Use Continue on the Gmail notice, then ask again.",
   oneFactAnswer: 'The answer held more than one fact. Sieve shares one fact at a time at this level, so nothing was offered.',
   shapeRefused: "The model couldn't put the answer in one fact, so nothing was offered.",
   instructionsLeftOut: (phrases: string[]) => `Left words that read as instructions to Sieve out of the search: ${phrases.map((p) => `"${cutQuote(p, 60)}"`).join(', ')}`,
@@ -172,6 +174,7 @@ export const UNAVAILABLE = {
   noMatch: 'Nothing on this device matched.',
   unsupported: "Sieve answers from one item at a time at this level, so counts aren't available.",
   oneFact: 'Sieve shares one fact at a time at this level.',
+  nameSender: "Sieve could not tell who that is from. Ask again with the sender's name.",
   badOutput: 'The answer was not one clean sentence, so it is not offered.',   // the privacy build's line (15.0)
   needsConsent: 'This needs your OK before the cloud model can read it.',
   modelUnavailable: "The on-device model isn't available.",

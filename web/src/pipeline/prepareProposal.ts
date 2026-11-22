@@ -16,7 +16,7 @@ import {
   asksCount, asksLatest, asksSeveral, asksState, clockFor, flushUrgentEmbeds, getRecord, identifierTerms, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
   type HardFilter, type ParsedQuestion, type SearchReport, type SieveDb,
 } from '@/index';
-import { holdsTopic, topicTerms } from '@/index/cues';
+import { describesOnlySender, holdsTopic, topicTerms } from '@/index/cues';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
 import { isYesNoQuestion } from '@/privacy/steps/answerShape';
 import { errorLine, errorName } from '@/robust/errorLine';
@@ -432,6 +432,15 @@ async function prepare(run: Run): Promise<Proposal> {
     return run.why('asks-several').finish('unsupported', { reason: UNAVAILABLE.oneFact });
   }
 
+  // 3b2. "What did my apartment complex remind me about on November 4?": the asker's days, a description of the
+  // sender, and nothing else to find the item by. Sieve cannot tell who that is, and the on-device model then answered
+  // from another sender's email of that day, which the second check let through (a postal digest, Nov 22, 2026). The
+  // request alone decides this, never what the index holds, so the reply says nothing about the person's mail.
+  if ((hints?.after || hints?.before) && !hints?.from && describesOnlySender(lookup)) {
+    run.code('rule', LABELS.senderNotNamed);
+    return run.why('sender-described-not-named').finish('unsupported', { reason: UNAVAILABLE.nameSender });
+  }
+
   // 3c. Other words for the search, from the on-device model: the item that answers often says "trash corrals"
   // where the question says "garbage enclosures". Not when the question holds an exact number (the number finds its
   // item) or the asker gave the days (they already narrow the search; with more items found on those days the model
@@ -681,6 +690,14 @@ async function prepare(run: Run): Promise<Proposal> {
     const fresh: FreshResult = await confirmFresh(db, pick.rec, input.signal);
     const freshMs = Math.round(performance.now() - f0);
     const kind = pick.rec.kind;
+    // "The latest" needs the mail as it is now. When Gmail cannot be asked (its access ran out, no connection), the
+    // newest email here may not be the newest there: an index that had missed a morning's mail answered "your balance
+    // is low" while a newer email had arrived (Nov 22, 2026). Nothing is prepared, and the result says why.
+    if (latest && pick.rec.source === 'gmail' && (fresh.status === 'unknown' || (fresh.status === 'changed' && fresh.unchecked))) {
+      run.end(freshId, codeTrace('retrieve', LABELS.freshLatestUnchecked, freshMs));
+      run.errorCode = 'mail-not-current';
+      return run.finish('error');
+    }
     if (fresh.status === 'ok' || fresh.status === 'unknown') {
       run.end(freshId, codeTrace('retrieve', LABELS.freshChecked(kind), freshMs), false);
       if (fresh.status === 'unknown') run.warn(WARNINGS.sourceUnchecked());

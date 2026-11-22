@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { asksCount, asksLatest, asksState, holdsTopic, identifierTerms, isRoleCue, knownSenderWords, senderCue, senderMatches, topicTerms } from './cues';
+import { asksCount, asksLatest, asksState, describesOnlySender, holdsTopic, identifierTerms, isRoleCue, knownSenderWords, senderCue, senderMatches, topicTerms } from './cues';
 import { loadDictionaryText } from './dictionary';
 
 beforeAll(() => {
@@ -92,6 +92,22 @@ describe('senderCue', () => {
 
   it('known sender words are not English words and not generic', () => {
     expect([...known].sort()).toEqual(['kestrelmoor', 'kestrelmoorbank', 'parcelmoor', 'parcelmoordelivery', 'strava']);
+  });
+});
+
+describe('describesOnlySender', () => {
+  it('a described sender and nothing else to find the item by (dates and numbers do not count)', () => {
+    for (const q of ['What did my apartment complex remind me about on November 4?', 'What did my landlord say on March 3?', 'What has our accountant sent me this Friday?']) {
+      expect(describesOnlySender(q), q).toBe(true);
+    }
+    for (const q of [
+      'What did my landlord say about the deposit?',                // a thing to find it by
+      'What did Kestrelmoor remind me about on November 4?',        // a name, not a description
+      'What did the email say on November 4?',
+      'How much was my rent on November 1?',
+    ]) {
+      expect(describesOnlySender(q), q).toBe(false);
+    }
   });
 });
 
