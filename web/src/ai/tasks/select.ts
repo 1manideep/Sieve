@@ -93,6 +93,19 @@ export function answerKind(question: string): RegExp | null {
   return money ? MONEY_HELD : date ? DATE_HELD : null;
 }
 
+/**
+ * Does an answer hold the kind of fact the question asked for? Any number counts, a weekday or "tomorrow" for a date,
+ * "free" or "nothing" for an amount: this only tells "November 26" and "$15.00" from "it starts on arrival day". True
+ * for a question that asks for neither.
+ */
+export function answersKind(question: string, answer: string): boolean {
+  const money = MONEY_ASKED.test(question);
+  const date = DATE_ASKED.test(question);
+  if ((!money && !date) || /\d/.test(answer)) return true;
+  if (date && DATE_HELD.test(answer)) return true;
+  return money && (MONEY_HELD.test(answer) || /\b(?:free|no charge|not charged|nothing|none|waived|zero)\b/i.test(answer));
+}
+
 /** A sentence that holds the kind of fact asked for counts like this many question words. */
 const KIND_BONUS = 2;
 

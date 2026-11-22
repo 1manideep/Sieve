@@ -151,33 +151,25 @@ describe('the tester cases (Nov 20)', () => {
     model('P2', 'The release plan moved.', false);
     const p = await prepareProposal(input({ question: 'What happened to the release plan?' }));
     expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(seven.slice(0, 5).map((r) => r.id));
-    // the second check said no: that item is dropped and the model picks once more from the other four, then it ends
-    expect(hybrid.callsFor('select-answer')).toHaveLength(2);
-    expect(hybrid.callsFor('select-answer')[1].meta?.recordIds).toEqual([seven[0], seven[2], seven[3], seven[4]].map((r) => r.id));
+    // the second check said no: it ends there, the model is not asked for a second choice
+    expect(hybrid.callsFor('select-answer')).toHaveLength(1);
     expect(p.outcome).toBe('no-match');
-    expect(p.reasonCode).toBe('second-check-no-2x-r2of4-tx-gx-b1');
+    expect(p.reasonCode).toBe('second-check-no-r2of5-tx-gx-b1');
   });
 
-  it('a second check that says no to the first pick: the model picks again from the rest, and that answer is shared', async () => {
-    const promo = record({ id: 'gmail:cover-promo', source: 'gmail', title: 'Keep Biscuit covered', from: 'Pawsure <news@pawsure.example>', category: 'Personal', date: T - 2 * DAY, text: 'Your free cover is ending soon. Continue today so there is no gap.' });
-    const welcome = record({ id: 'gmail:cover-welcome', source: 'gmail', title: 'Welcome to Pawsure', from: 'Pawsure <hello@pawsure.example>', category: 'Personal', date: T - 20 * DAY, text: 'Biscuit is covered until December 2, 2026. After that the cover ends unless you continue.' });
-    for (const r of [promo, welcome]) idx.records.set(r.id, r);
-    idx.search.mockResolvedValue([promo, welcome].map((r) => idx.cand(r.id)));
-    let verifies = 0;
-    hybrid = createFakeHybrid((spec) => {
-      if (spec.purpose === 'verify-answer') {
-        verifies += 1;
-        return { text: JSON.stringify({ answers: verifies > 1, reason: 'x' }), source: 'on_device' };
-      }
-      const first = hybrid.callsFor('select-answer').length <= 1;
-      return { text: JSON.stringify(first ? { item: 'P1', answer: 'The free cover is ending soon.' } : { item: 'P1', answer: 'The cover runs until December 2, 2026.' }), source: 'on_device' };
-    });
-    setHybridForTests(hybrid);
-    const p = await prepareProposal(input({ question: 'What does Pawsure say about the free cover?' }));
-    expect(hybrid.callsFor('select-answer').map((c) => c.meta?.recordIds)).toEqual([['gmail:cover-promo', 'gmail:cover-welcome'], ['gmail:cover-welcome']]);
-    expect(p.outcome).toBe('ready');
-    expect(p.item?.recordId).toBe('gmail:cover-welcome');
-    expect(labels(p)).toContain('That item did not answer the question, so Sieve read the others once more');
+  it('a "when" question answered with no date or number in it shares nothing', async () => {
+    const breeder = record({ id: 'gmail:cover-breeder', source: 'gmail', title: 'Biscuit comes home Saturday', from: 'Dana Hill <dana@oakhill.example>', category: 'Personal', date: T - 25 * DAY, text: 'Pickup is Saturday at 11 AM. His free cover starts on arrival day, after you bring him home.' });
+    idx.records.set(breeder.id, breeder);
+    idx.search.mockResolvedValue([idx.cand(breeder.id)]);
+    model('P1', "Your dog's free cover starts on arrival day, after you bring him home.");
+    const p = await prepareProposal(input({ question: "When does my dog's free cover run out?" }));
+    expect(p.outcome).toBe('no-match');
+    expect(p.reasonCode).toBe('answer-lacks-asked-kind');
+    expect(hybrid.callsFor('verify-answer')).toHaveLength(0);
+    // with a date in it, the same answer goes on to the second check
+    model('P1', 'His free cover runs out 30 days after pickup.');
+    const q = await prepareProposal(input({ question: "When does my dog's free cover run out?" }));
+    expect(q.outcome).toBe('ready');
   });
 
   it('a question that asks for a date reads only the items that hold one, when some do', async () => {

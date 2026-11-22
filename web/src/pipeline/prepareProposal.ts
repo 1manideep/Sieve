@@ -9,7 +9,7 @@ import type {
   Candidate, Category, CategoryRule, IndexRecord, KnownEntity, Proposal, ProposalOutcome, QueryHints, StepOption, TraceKind, TraceStep, Warning, Where,
 } from '@sieve/shared';
 import {
-  CANDIDATE_POOL, CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, answerKind, codeTrace, deriveExcerpt, excerptBasis, fitPassages, getNanoAvailability, hasFreshConsent,
+  CANDIDATE_POOL, CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, answerKind, answersKind, codeTrace, deriveExcerpt, excerptBasis, fitPassages, getNanoAvailability, hasFreshConsent,
   recordBody, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
 } from '@/ai';
 import {
@@ -17,6 +17,7 @@ import {
   type HardFilter, type ParsedQuestion, type SearchReport, type SieveDb,
 } from '@/index';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
+import { isYesNoQuestion } from '@/privacy/steps/answerShape';
 import { errorLine, errorName } from '@/robust/errorLine';
 import { forgetCloudConsentRequest, rememberCloudConsentRequest } from './consent';
 import { LABELS, RUNNING, UNAVAILABLE, WARNINGS, WHERE_PHRASE } from './copy';
@@ -564,134 +565,130 @@ async function prepare(run: Run): Promise<Proposal> {
     }
   }
 
-  // 9 to 12b. The model call, the freshness check with its one allowed re-run, and the second check. A second check
-  // that says no drops that item and the model picks once more from the rest: its first pick was often a lookalike
-  // (a promotion next to the mail that holds the date), and ending there shared nothing (Nov 21, 2026).
+  // 9 to 12a. The one model call, and the freshness check with its one allowed re-run.
+  // (A second pick after the second check says no was tried and taken out, Nov 21, 2026: on real mail it turned two
+  // "nothing" results into wrong answers, a postal digest for a landlord's reminder among them. The check lets about
+  // half of lookalike answers through, so the model's second choice is not worth sharing.)
   let reruns = 0;
-  let repicks = 0;
   let list = allowed;
   let chosen: IndexRecord;
   let value: SelectValue;
-  let recomputeExcerpt: boolean;
+  let recomputeExcerpt = false;
   for (;;) {
-    recomputeExcerpt = false;
-    for (;;) {
-      if (run.aborted) return run.stopped();
-      const callData = callDataOf(list);
-      const records = list.map((a) => a.rec);
-      const where: Where = nano.text === 'available' ? 'device' : 'cloud';
-      const running =
-        where === 'device' ? RUNNING.selectDevice(records) : callData === 'sample' ? RUNNING.selectCloudSample(records) : RUNNING.selectCloudOwn(records);
-      const selectId = run.start('select', running, where);
-      const res: RunModelResult<SelectValue> = await selectAndAnswer(lookup, records, callData, {
-        passages: chunksOf(list),
-        signal: input.signal,
-        ownCloud,
-        hints,
-        today,
-        latest,
-        onAnswerText: (t) => run.answerProgress(t),
-      });
-      run.end(selectId, res.trace);
+    if (run.aborted) return run.stopped();
+    const callData = callDataOf(list);
+    const records = list.map((a) => a.rec);
+    const where: Where = nano.text === 'available' ? 'device' : 'cloud';
+    const running =
+      where === 'device' ? RUNNING.selectDevice(records) : callData === 'sample' ? RUNNING.selectCloudSample(records) : RUNNING.selectCloudOwn(records);
+    const selectId = run.start('select', running, where);
+    const res: RunModelResult<SelectValue> = await selectAndAnswer(lookup, records, callData, {
+      passages: chunksOf(list),
+      signal: input.signal,
+      ownCloud,
+      hints,
+      today,
+      latest,
+      onAnswerText: (t) => run.answerProgress(t),
+    });
+    run.end(selectId, res.trace);
 
-      if (!res.ok) {
-        if (res.error.code === 'aborted' || run.aborted) return run.stopped();
-        if (res.error.code === 'needs-consent') {
-          const missing = await missingConsent(list);
-          return askConsent(list, missing.length ? missing : records.filter((r) => recordDataClass(r) === 'own'));
-        }
-        if (res.error.code === 'unavailable' || res.error.code === 'downloading') return run.finish('model-unavailable');
-        // 12.4 (Nov 21, B04, B14): the model refused the shape (no usable output after its retry). That is a question
-        // this level can't answer in one fact, not a failure of the device.
-        if (res.error.code === 'bad-output') {
-          run.code('rule', LABELS.shapeRefused);
-          return run.why('model-bad-output').finish('unsupported', { reason: UNAVAILABLE.oneFact });
-        }
-        run.errorCode = `model-${res.error.code}`;
-        return run.finish('error');
+    if (!res.ok) {
+      if (res.error.code === 'aborted' || run.aborted) return run.stopped();
+      if (res.error.code === 'needs-consent') {
+        const missing = await missingConsent(list);
+        return askConsent(list, missing.length ? missing : records.filter((r) => recordDataClass(r) === 'own'));
       }
-      if (res.trace.where === 'cloud') run.warn(callData === 'sample' ? WARNINGS.sampleDataCloud() : WARNINGS.cloudFallback());
-      if (res.value.recordId === null) {
-        // how many of the candidates had their whole text ("b"), not only the first lines
-        const whole = list.filter((a) => a.rec.kind === 'photo' || a.rec.text !== undefined).length;
-        return run.why(`${repicks ? 'second-check-no-then-none' : 'model-picked-none'}-of${list.length}-b${whole}`).blockedOrNoMatch(neverBlocked);
+      if (res.error.code === 'unavailable' || res.error.code === 'downloading') return run.finish('model-unavailable');
+      // 12.4 (Nov 21, B04, B14): the model refused the shape (no usable output after its retry). That is a question
+      // this level can't answer in one fact, not a failure of the device.
+      if (res.error.code === 'bad-output') {
+        run.code('rule', LABELS.shapeRefused);
+        return run.why('model-bad-output').finish('unsupported', { reason: UNAVAILABLE.oneFact });
       }
-
-      const pick = list.find((a) => a.rec.id === res.value.recordId);
-      if (!pick) {
-        run.errorCode = 'pick-not-listed';
-        return run.finish('error');
-      }
-
-      // 12a. Freshness, before any step option is built.
-      const freshId = run.start('retrieve', RUNNING.fresh, 'code');
-      const f0 = performance.now();
-      const fresh: FreshResult = await confirmFresh(db, pick.rec, input.signal);
-      const freshMs = Math.round(performance.now() - f0);
-      const kind = pick.rec.kind;
-      if (fresh.status === 'ok' || fresh.status === 'unknown') {
-        run.end(freshId, codeTrace('retrieve', LABELS.freshChecked(kind), freshMs), false);
-        if (fresh.status === 'unknown') run.warn(WARNINGS.sourceUnchecked());
-        chosen = fresh.record;
-        value = res.value;
-        break;
-      }
-      if (fresh.status === 'unreachable') {
-        run.end(freshId, codeTrace('retrieve', LABELS.freshGmailFailed, freshMs));
-        run.errorCode = 'gmail-check';
-        return run.finish('error');
-      }
-      if (reruns >= 1) {
-        run.end(freshId, codeTrace('retrieve', LABELS.freshKeptChanging, freshMs));
-        return run.why('item-kept-changing').finish('no-match');
-      }
-      const reread: IndexRecord | undefined = fresh.status === 'changed' ? fresh.fresh : undefined;
-      if (reread && answerStillHolds(pick.rec, reread, res.value.answer)) {
-        run.end(freshId, codeTrace('retrieve', LABELS.freshChangedHolds(kind), freshMs));
-        if (fresh.status === 'changed' && fresh.unchecked) run.warn(WARNINGS.sourceUnchecked());
-        chosen = reread;
-        value = res.value;
-        recomputeExcerpt = true;
-        break;
-      }
-      if (!reread) {
-        run.end(freshId, codeTrace('retrieve', LABELS.freshGone(kind), freshMs));
-        list = list.filter((a) => a.rec.id !== pick.rec.id);
-        if (list.length === 0) return run.why('item-gone').blockedOrNoMatch(neverBlocked);
-      } else {
-        run.end(freshId, codeTrace('retrieve', LABELS.freshChangedReread(kind), freshMs));
-        list = list.map((a) => (a.rec.id === reread.id ? { rec: reread, cand: { ...a.cand, chunk: undefined } } : a));
-      }
-      reruns += 1;
+      run.errorCode = `model-${res.error.code}`;
+      return run.finish('error');
+    }
+    if (res.trace.where === 'cloud') run.warn(callData === 'sample' ? WARNINGS.sampleDataCloud() : WARNINGS.cloudFallback());
+    if (res.value.recordId === null) {
+      // how many of the candidates had their whole text ("b"), not only the first lines
+      const whole = list.filter((a) => a.rec.kind === 'photo' || a.rec.text !== undefined).length;
+      return run.why(`model-picked-none-of${list.length}-b${whole}`).blockedOrNoMatch(neverBlocked);
+    }
+    // A question that asks when or how much, and an answer with no date and no number in it ("it starts on arrival
+    // day"): the model answered something else, so nothing is shared.
+    if (!isYesNoQuestion(lookup) && !answersKind(lookup, res.value.answer)) {
+      run.code('rule', LABELS.kindMissing);
+      return run.why('answer-lacks-asked-kind').blockedOrNoMatch(neverBlocked);
     }
 
-    // 12b. One more on-device call: does the item really answer the question (sender, date, the fact itself)? No:
-    // nothing to share. A check that could not run leaves the answer for the person to read, with a warning.
-    if (run.aborted) return run.stopped();
-    const chosenData = recordDataClass(chosen);
-    const verifyId = run.start('answer', RUNNING.verify, nano.text === 'available' ? 'device' : chosenData === 'sample' ? 'cloud' : 'code');
-    const checked = await verifyAnswer(lookup, chosen, value.answer, chosenData, {
-      ...(recomputeExcerpt || !value.passage ? {} : { passage: value.passage }),
-      ...(input.signal ? { signal: input.signal } : {}),
-      ...(hints?.after || hints?.before ? { dates: { ...(hints.after ? { after: hints.after } : {}), ...(hints.before ? { before: hints.before } : {}) } } : {}),
-      ownCloud,
-      today,
-    });
-    if (!checked.ok) {
-      run.end(verifyId, { ...checked.trace, label: LABELS.verifyFailed });
-      if (checked.error.code === 'aborted' || run.aborted) return run.stopped();
-      run.warn(WARNINGS.unchecked());
+    const pick = list.find((a) => a.rec.id === res.value.recordId);
+    if (!pick) {
+      run.errorCode = 'pick-not-listed';
+      return run.finish('error');
+    }
+
+    // 12a. Freshness, before any step option is built.
+    const freshId = run.start('retrieve', RUNNING.fresh, 'code');
+    const f0 = performance.now();
+    const fresh: FreshResult = await confirmFresh(db, pick.rec, input.signal);
+    const freshMs = Math.round(performance.now() - f0);
+    const kind = pick.rec.kind;
+    if (fresh.status === 'ok' || fresh.status === 'unknown') {
+      run.end(freshId, codeTrace('retrieve', LABELS.freshChecked(kind), freshMs), false);
+      if (fresh.status === 'unknown') run.warn(WARNINGS.sourceUnchecked());
+      chosen = fresh.record;
+      value = res.value;
       break;
     }
+    if (fresh.status === 'unreachable') {
+      run.end(freshId, codeTrace('retrieve', LABELS.freshGmailFailed, freshMs));
+      run.errorCode = 'gmail-check';
+      return run.finish('error');
+    }
+    if (reruns >= 1) {
+      run.end(freshId, codeTrace('retrieve', LABELS.freshKeptChanging, freshMs));
+      return run.why('item-kept-changing').finish('no-match');
+    }
+    const reread: IndexRecord | undefined = fresh.status === 'changed' ? fresh.fresh : undefined;
+    if (reread && answerStillHolds(pick.rec, reread, res.value.answer)) {
+      run.end(freshId, codeTrace('retrieve', LABELS.freshChangedHolds(kind), freshMs));
+      if (fresh.status === 'changed' && fresh.unchecked) run.warn(WARNINGS.sourceUnchecked());
+      chosen = reread;
+      value = res.value;
+      recomputeExcerpt = true;
+      break;
+    }
+    if (!reread) {
+      run.end(freshId, codeTrace('retrieve', LABELS.freshGone(kind), freshMs));
+      list = list.filter((a) => a.rec.id !== pick.rec.id);
+      if (list.length === 0) return run.why('item-gone').blockedOrNoMatch(neverBlocked);
+    } else {
+      run.end(freshId, codeTrace('retrieve', LABELS.freshChangedReread(kind), freshMs));
+      list = list.map((a) => (a.rec.id === reread.id ? { rec: reread, cand: { ...a.cand, chunk: undefined } } : a));
+    }
+    reruns += 1;
+  }
+
+  // 12b. One more on-device call: does the item really answer the question (sender, date, the fact itself)? No:
+  // nothing to share. A check that could not run leaves the answer for the person to read, with a warning.
+  if (run.aborted) return run.stopped();
+  const chosenData = recordDataClass(chosen);
+  const verifyId = run.start('answer', RUNNING.verify, nano.text === 'available' ? 'device' : chosenData === 'sample' ? 'cloud' : 'code');
+  const checked = await verifyAnswer(lookup, chosen, value.answer, chosenData, {
+    ...(recomputeExcerpt || !value.passage ? {} : { passage: value.passage }),
+    ...(input.signal ? { signal: input.signal } : {}),
+    ...(hints?.after || hints?.before ? { dates: { ...(hints.after ? { after: hints.after } : {}), ...(hints.before ? { before: hints.before } : {}) } } : {}),
+    ownCloud,
+    today,
+  });
+  if (!checked.ok) {
+    run.end(verifyId, { ...checked.trace, label: LABELS.verifyFailed });
+    if (checked.error.code === 'aborted' || run.aborted) return run.stopped();
+    run.warn(WARNINGS.unchecked());
+  } else {
     run.end(verifyId, { ...checked.trace, label: checked.value.answers ? LABELS.verifyYes : LABELS.verifyNo });
-    if (checked.value.answers) break;
-    const code = pickCode(list, chosen, hints, value.answer);
-    const dropped = chosen.id;
-    const rest = list.filter((a) => a.rec.id !== dropped);
-    if (repicks >= 1 || rest.length === 0) return run.why(`second-check-no-${repicks ? '2x-' : ''}${code}`).finish('no-match');
-    repicks += 1;
-    list = rest;
-    run.code('rule', LABELS.pickAgain);
+    if (!checked.value.answers) return run.why(`second-check-no-${pickCode(list, chosen, hints, value.answer)}`).finish('no-match');
   }
 
   // 13. The excerpt, chosen by plain code.
