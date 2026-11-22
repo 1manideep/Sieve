@@ -87,7 +87,7 @@ const DATE_HELD =
  * fact of that kind: a receipt's matched chunk was its header, the price line sat just past it, and the model
  * answered with an amount from another item (6 of 6 on the on-device model, Nov 21, 2026).
  */
-// A question about what an item says ("what did the email about my payment plan say") names its subject with the
+// A question about what an item says ("what did the email about my membership payment say") names its subject with the
 // same words ("payment", "rent", "due"): there only an outright "how much" or "when" asks for an amount or a date.
 // Before, a right answer with no number in it ("your payment failed") was withheld (Nov 22, 2026).
 const SAYS_ASKED = /\b(?:say|says|said|about|regarding|mention(?:s|ed)?)\b/i;

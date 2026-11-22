@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env } from '@/app/env';
-import { TESTS } from '@/copy/how-tests';
+import { PRIVACY, TESTS } from '@/copy/how-tests';
 import { HOW_COPY } from '@/copy/screens-how';
 import { SCREENS } from '@/copy/strings';
 import { expectNoAxeViolations } from '@/test/axe';
@@ -116,6 +116,10 @@ describe('/how', () => {
     const stats = within(section).getAllByRole('listitem');
     expect(stats.map((li) => li.querySelector('b')?.textContent)).toEqual([TESTS.automated.tests.toLocaleString('en-US'), '96%', '23 of 27', '0']);
     expect(stats[2]).toHaveTextContent('The first round scored 5.');
+    // whose mailbox it was and what was replaced, said before anything is opened
+    expect(PRIVACY).toMatch(/^The live rounds ran on the developer's own personal Gmail\./);
+    expect(PRIVACY).toContain('has been replaced with an invented one');
+    expect(section).toHaveTextContent(PRIVACY);
 
     const button = within(section).getByRole('button', { name: 'Show all the tests' });
     expect(button).toHaveAttribute('aria-expanded', 'false');
@@ -136,7 +140,6 @@ describe('/how', () => {
     expect(within(section).getByRole('table', { name: 'Table 6 · Search benchmark: 68 questions among 2,020 items' })).toBeInTheDocument();
     const rounds = within(section).getByRole('table', { name: 'Table 7 · Live rounds, 37 runs each' });
     expect(within(rounds).getAllByRole('row')).toHaveLength(TESTS.live.rounds.length + 1);
-    expect(section).toHaveTextContent('Only counts are published.');
     expect(section).toHaveTextContent('Round 3 met three of the four: 85% right (23 of 27), 7% missed (2 of 27), nothing made up, and 8% wrong (2 of 25 answers).');
     expect(screen.getAllByRole('table')).toHaveLength(7);
     await expectNoAxeViolations();

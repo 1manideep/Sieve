@@ -155,7 +155,7 @@ describe('B09: a brand with a digit or two is not an ID number', () => {
     expect(looksLikeIdNumber('Zip2024', new Set(['zip2024']))).toBe(false);
     expect(looksLikeIdNumber('N3stra4', new Set(['nestra']))).toBe(false);   // look-alike digits read as letters
     // an amount of money or a whole sentence is never an ID, however many digits it holds
-    for (const v of ['$40.00 USD', '$2,480.00', '2,480.00 INR', 'under $40.00 USD', 'Your wallet balance is under $40.00 USD today']) expect(looksLikeIdNumber(v), v).toBe(false);
+    for (const v of ['$40.00 USD', '$2,480.00', '2,480.00 INR', 'under $40.00 USD', 'Your pass credit is under $40.00 USD today']) expect(looksLikeIdNumber(v), v).toBe(false);
     for (const v of ['member 4471 2209', 'policy number AB-448812']) expect(looksLikeIdNumber(v), v).toBe(true);
   });
 

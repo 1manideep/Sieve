@@ -481,7 +481,7 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
   }
 
   // "Benji's latest email": the sender's newest items are a list of their own, so the newest one is there to pick (20 section 10.2).
-  // "The latest email about my Lumora payment plan" names no sender: the newest items about that thing (holdsTopic)
+  // "The latest email about my Lumora membership payment" names no sender: the newest items about that thing (holdsTopic)
   // are the list. Without it a better keyword fit from two days earlier stood before the newest one (Nov 22, 2026).
   const topic = !filter.sender && asksLatest(p.corrected) ? topicTerms(p.corrected) : [];
   const latestList = asksLatest(p.corrected) && (filter.sender || topic.length > 1)

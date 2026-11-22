@@ -1,6 +1,7 @@
 // The numbers and the words of "How Sieve is tested" on /how. Every number in that section comes from TESTS, so a new
-// round of tests is one edit here. Results from a real mailbox are counts only: no question, answer, sender or
-// subject from that mailbox is written here or anywhere else in the repository. No em dashes anywhere.
+// round of tests is one edit here. The live rounds ran on the developer's own personal mailbox, so their results are
+// counts only: no question, answer, sender or subject from that mailbox is written here or anywhere else in the
+// repository, and the page says so (PRIVACY). No em dashes anywhere.
 import type { HowBlock, HowSection } from './screens-how';
 
 export interface LiveRound {
@@ -58,6 +59,10 @@ export const TESTS = {
   },
 } as const;
 
+/** Shown with the numbers, before the button: whose mailbox it was, and what was done to keep it private. */
+export const PRIVACY =
+  "The live rounds ran on the developer's own personal Gmail. To keep that mail private, only counts are published, and every name, number and example on this page, in the code and in its tests has been replaced with an invented one.";
+
 const count = (n: number) => n.toLocaleString('en-US');
 const share = (part: number, whole: number) => `${Math.round((part / whole) * 100)}%`;
 
@@ -102,7 +107,6 @@ const DETAIL: readonly HowBlock[] = [
   {
     p: `The last level is the whole path. An assistant connected through the relay asks questions about a real Gmail mailbox, with approval set to automatic for the test, and then checks every answer against the mailbox itself. A round is ${live.runs} runs: ${live.answerable} of questions the mailbox can answer and ${live.absent} of questions about things that are not in it. The questions ask for an amount on a receipt, a booking found by its number, the newest email from a sender, what a sender wrote on a given day, and things described in words the email does not use.`,
   },
-  { note: 'Only counts are published. The questions, the answers and the mail stay private.' },
   {
     table: {
       caption: `Table 7 · Live rounds, ${live.runs} runs each`,
@@ -148,6 +152,7 @@ export const TESTS_SECTION: HowSection = {
         { value: String(live.madeUp), label: `made-up answers in ${live.absentRuns} runs of questions the mailbox cannot answer` },
       ],
     },
+    { note: PRIVACY },
     {
       p: 'The live rounds are small and come from one mailbox, and the same questions were asked again after each fix. Read them as progress, not as a guarantee. Every round, table and caveat is one click away.',
     },

@@ -152,7 +152,7 @@ describe('rules added on Nov 21, 2026', () => {
 
   it('an investment order and a payment plan are Money, not Shopping', () => {
     expect(codeLabel(email('Finchley Invest <noreply@mailer.finchley.example>', 'Your SIP order was placed')).category).toBe('Money');
-    expect(codeLabel(email('Paylater <noreply@paylater.example>', 'Updated payment plan for your order')).category).toBe('Money');
+    expect(codeLabel(email('Tindle Store <billing@tindle.example>', 'Updated payment plan for your order')).category).toBe('Money');
     expect(codeLabel(email('Tindle Store <orders@tindle.example>', 'Your order #A1024 has shipped')).category).toBe('Shopping');
   });
 

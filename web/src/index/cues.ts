@@ -217,8 +217,8 @@ export function topicTerms(question: string): string[] {
 
 /**
  * Whether an item is about the thing a "latest" question names when no sender says so: its title or its sender holds
- * two of the question's words ("Lumora payment did not go through" for "the most recent email about my Lumora payment
- * plan"). One shared word is not enough: a shop's newest sale email holds the shop's name too.
+ * two of the question's words ("Lumora payment did not go through" for "the most recent email about my Lumora
+ * membership payment"). One shared word is not enough: a shop's newest sale email holds the shop's name too.
  */
 export function holdsTopic(topic: readonly string[], title: string, from: string | undefined): boolean {
   if (topic.length < 2) return false;

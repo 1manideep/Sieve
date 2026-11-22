@@ -27,7 +27,7 @@ export function looksLikeIdNumber(value: string, senders?: ReadonlySet<string>):
   return ID_SHAPE.test(v);
 }
 
-/** An ID is a number with a short label at most, never a sentence ("Your balance is under $40.00 USD today"). */
+/** An ID is a number with a short label at most, never a sentence ("Your pass credit is under $40.00 USD today"). */
 const ID_MAX_WORDS = 5;
 const CURRENCY_SIGN = /[$\u20AC\u00A3\u20B9\u00A5]/;
 const CURRENCY_CODE = /^(?:usd|eur|gbp|inr|cad|aud|rs)\.?$/i;

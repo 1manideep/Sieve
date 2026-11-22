@@ -34,8 +34,8 @@ async function answerOf(record: IndexRecord, answer: string, question: string, e
 const nano = (text: string, type: KnownEntity['type']): KnownEntity => ({ text, type, by: 'nano' });
 
 const PAY = rec({
-  id: 'gmail:pay', from: 'Bramblecroft Pay <notices@bramblecroft.example>', title: 'Your autopay is scheduled', category: 'Money',
-  text: 'Your autopay of $42.10 to Fernvale Water is scheduled for today, November 21st.',
+  id: 'gmail:parcel', from: 'Bramblecroft Post <notices@bramblecroft.example>', title: 'Your delivery is scheduled', category: 'Shopping',
+  text: 'Your delivery of 2 parcels from Fernvale Books is scheduled for today, November 21st.',
 });
 const HOTEL = rec({
   id: 'gmail:hotel', from: 'Quillmere Suites <stay@quillmere.example>', title: 'Your stay is confirmed',
@@ -54,20 +54,20 @@ describe('Defect 1: structure from the model output never reaches an answer', ()
   it('reads "}]", \'{"\', \'"}\', a key, a fence, and a bracket, brace, comma or unpaired quote at an end', () => {
     for (const t of [
       'It today, November 21st.}].',
-      'Your autopay is today, November 21st."}',
-      '{"item":"P1","answer":"Your autopay is today."}',
-      'Your autopay is today", "item": "P1',
-      '```json Your autopay is today.```',
-      '] Your autopay is today.',
-      'Your autopay is today.]',
-      'Your autopay is today,',
-      'Your autopay is today."',
-      '"Your autopay is today.',
+      'Your delivery is today, November 21st."}',
+      '{"item":"P1","answer":"Your delivery is today."}',
+      'Your delivery is today", "item": "P1',
+      '```json Your delivery is today.```',
+      '] Your delivery is today.',
+      'Your delivery is today.]',
+      'Your delivery is today,',
+      'Your delivery is today."',
+      '"Your delivery is today.',
     ]) {
       expect(leaksStructure(t), t).toBe(true);
     }
     for (const t of [
-      'Your autopay of $42.10 is scheduled for today, November 21st.',
+      'Your delivery of 2 parcels is scheduled for today, November 21st.',
       '[name] sent the lease on March 3.',
       'Your check-in is on [address].',
       'The subject is "Your stay is confirmed".',
@@ -81,10 +81,10 @@ describe('Defect 1: structure from the model output never reaches an answer', ()
   });
 
   it('the outgoing answer is not offered when it still carries them; a clean one is', async () => {
-    const bad = await answerOf(PAY, 'Your autopay of $42.10 runs today, November 21st.}]', 'What was my most recent email from Bramblecroft about?');
+    const bad = await answerOf(PAY, 'Your delivery of 2 parcels comes today, November 21st.}]', 'What was my most recent email from Bramblecroft about?');
     expect(bad).toMatchObject({ available: false, unavailableReason: UNAVAILABLE.badOutput });
-    const good = await answerOf(PAY, 'Your autopay of $42.10 runs today, November 21st.', 'What was my most recent email from Bramblecroft about?');
-    expect(good).toMatchObject({ available: true, text: 'Your autopay of $42.10 runs today, November 21st.' });
+    const good = await answerOf(PAY, 'Your delivery of 2 parcels comes today, November 21st.', 'What was my most recent email from Bramblecroft about?');
+    expect(good).toMatchObject({ available: true, text: 'Your delivery of 2 parcels comes today, November 21st.' });
   });
 });
 
@@ -206,16 +206,16 @@ describe('Defect 2: identifiers the caller gave stay unmasked', () => {
   });
 
   it('the last check marking a whole sentence, an amount or a year does not mask the answer (Nov 22)', async () => {
-    const WALLET = rec({ id: 'gmail:wallet-1', from: 'Paywell <service@paywell.example>', title: 'Your balance is under $40.00 USD', text: 'Your balance is under $40.00 USD. Your low balance reload did not go through. Member number 5520018842.' });
-    const said = 'Your low balance reload did not go through, and your balance is under $40.00 USD.';
-    const q = 'What was my most recent Paywell email about?';
-    const whole = await answerOf(WALLET, said, q, { extraEntities: [nano(said, 'other'), nano('$40.00 USD', 'other'), nano('low balance reload', 'other')] });
+    const PASS = rec({ id: 'gmail:pass-1', from: 'Marlin Transit <service@marlin.example>', title: 'Your pass credit is under $40.00 USD', text: 'Your pass credit is under $40.00 USD. Your automatic top-up did not go through. Member number 5520018842.' });
+    const said = 'Your automatic top-up did not go through, and your pass credit is under $40.00 USD.';
+    const q = 'What was my most recent Marlin email about?';
+    const whole = await answerOf(PASS, said, q, { extraEntities: [nano(said, 'other'), nano('$40.00 USD', 'other'), nano('automatic top-up', 'other')] });
     expect(whole.available).toBe(true);
     expect(whole.text).not.toContain('[');
     const year = await answerOf(HOTEL, 'Your check-in is in 2026.', 'Which year is my check-in?', { extraEntities: [nano('2026', 'name')] });
     expect(year.text).toBe('Your check-in is in 2026.');
     // an answer that is only a mask says nothing, so it is not offered
-    const masked = await answerOf(WALLET, '5520018842.', 'What is in my Paywell email?', { extraEntities: [nano('5520018842', 'other')] });
+    const masked = await answerOf(PASS, '5520018842.', 'What is in my Marlin email?', { extraEntities: [nano('5520018842', 'other')] });
     expect(masked.available).toBe(false);
     expect(masked.unavailableReason).toBe(UNAVAILABLE.empty);
   });

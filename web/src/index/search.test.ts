@@ -231,31 +231,31 @@ describe('search', () => {
 
   it('the newest items about a named thing join the list when the question asks for the latest and names no sender (Nov 22)', async () => {
     const day = 86_400_000;
-    const from = 'Tallyo <noreply@tallyo.example>';
+    const from = 'Clubdesk <noreply@clubdesk.example>';
     const ids: string[] = [];
     for (let i = 0; i < 12; i++) {
       ids.push(`gmail:plan-${i}`);
-      await ingest(db, { source: 'gmail', sourceRef: `plan-${i}`, kind: 'email', title: `Your Lumora plan was changed, part ${i + 1}`, from, date: Date.now() - 3 * day - i * 60_000, text: `Your Lumora payment plan was updated. Payment plan ${i + 1}: the next payment of your payment plan is due soon. See your payment plan in the app.` }, 'sample');
+      await ingest(db, { source: 'gmail', sourceRef: `plan-${i}`, kind: 'email', title: `Your Lumora membership was changed, part ${i + 1}`, from, date: Date.now() - 3 * day - i * 60_000, text: `Your Lumora membership payment was updated. Membership payment ${i + 1}: the next payment of your membership is due soon. See your membership payment in the app.` }, 'sample');
     }
     ids.push('gmail:plan-failed');
-    await ingest(db, { source: 'gmail', sourceRef: 'plan-failed', kind: 'email', title: 'Lumora payment did not go through', from, date: Date.now() - day, text: 'We could not collect it from your card. Add money and try again.' }, 'sample');
-    const res = await search(db, 'What did the most recent email about my Lumora payment plan say?', { k: 10 });
+    await ingest(db, { source: 'gmail', sourceRef: 'plan-failed', kind: 'email', title: 'Lumora payment did not go through', from, date: Date.now() - day, text: 'We could not take it this month. Please try again.' }, 'sample');
+    const res = await search(db, 'What did the most recent email about my Lumora membership payment say?', { k: 10 });
     expect(res.map((c) => c.recordId)).toContain('gmail:plan-failed');
     await db.records.bulkDelete(ids);
   });
 
   it('a sender spelled as the request names it shuts out a near spelling; with no such sender the near spelling fits (Nov 22)', async () => {
     const at = Date.now();
-    await ingest(db, { source: 'gmail', sourceRef: 'pp-real', kind: 'email', title: 'Your balance is low', from: 'Paywell <service@paywell.example>', date: at - 2 * 86_400_000, text: 'Your Paywell balance is below 25 dollars.' }, 'sample');
-    await ingest(db, { source: 'gmail', sourceRef: 'pp-near', kind: 'email', title: 'Coffee on Friday?', from: 'Paywel Rao <paywel.rao@inbox.example>', date: at - 86_400_000, text: 'Are you free for coffee on Friday?' }, 'sample');
+    await ingest(db, { source: 'gmail', sourceRef: 'mt-real', kind: 'email', title: 'Your pass credit is low', from: 'Marlin Transit <service@marlin.example>', date: at - 2 * 86_400_000, text: 'Your Marlin pass credit is under 40 dollars.' }, 'sample');
+    await ingest(db, { source: 'gmail', sourceRef: 'mt-near', kind: 'email', title: 'Coffee on Friday?', from: 'Marlon Rao <marlon.rao@inbox.example>', date: at - 86_400_000, text: 'Are you free for coffee on Friday?' }, 'sample');
     let report: SearchReport | undefined;
-    const res = await search(db, 'What was my most recent Paywell email about?', { hints: { from: 'Paywell' }, onReport: (r) => (report = r) });
-    expect(res.map((c) => c.recordId)).toEqual(['gmail:pp-real']);
-    expect(report?.filters).toMatchObject({ sender: 'Paywell', senderExact: true });
-    // nobody is spelled "Paywel1": the near spelling finds both, as a typo should
-    const typo = await search(db, 'What was my most recent email from them about?', { hints: { from: 'Paywel1' } });
-    expect(typo.map((c) => c.recordId).sort()).toEqual(['gmail:pp-near', 'gmail:pp-real']);
-    await db.records.bulkDelete(['gmail:pp-real', 'gmail:pp-near']);
+    const res = await search(db, 'What was my most recent Marlin email about?', { hints: { from: 'Marlin' }, onReport: (r) => (report = r) });
+    expect(res.map((c) => c.recordId)).toEqual(['gmail:mt-real']);
+    expect(report?.filters).toMatchObject({ sender: 'Marlin', senderExact: true });
+    // nobody is spelled "Marlan": the near spelling finds both, as a typo should
+    const typo = await search(db, 'What was my most recent email from them about?', { hints: { from: 'Marlan' } });
+    expect(typo.map((c) => c.recordId).sort()).toEqual(['gmail:mt-near', 'gmail:mt-real']);
+    await db.records.bulkDelete(['gmail:mt-real', 'gmail:mt-near']);
   });
 
   it('two emails a sender really sent on the asked day keep the day filter; with only a mention of the day it is dropped (Nov 22)', async () => {

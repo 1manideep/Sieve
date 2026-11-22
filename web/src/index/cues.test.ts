@@ -34,8 +34,8 @@ describe('senderMatches', () => {
     expect(senderMatches('Maple Court', 'themaplecourtapts@relay.example')).toBe(true);
     expect(senderMatches('Chase', 'purchases@store.example')).toBe(false);   // five letters inside another word is not a name
     // exact: no near spelling; the name inside a bare address still fits
-    expect(senderMatches('Kestrel', 'Kestral Pay <hello@kestral.example>')).toBe(true);
-    expect(senderMatches('Kestrel', 'Kestral Pay <hello@kestral.example>', true)).toBe(false);
+    expect(senderMatches('Kestrel', 'Kestral Rao <kestral.rao@inbox.example>')).toBe(true);
+    expect(senderMatches('Kestrel', 'Kestral Rao <kestral.rao@inbox.example>', true)).toBe(false);
     expect(senderMatches('Kestrel', 'Kestrelmoor Bank <alerts@kestrelmoor.example>', true)).toBe(true);
     expect(senderMatches('The Orchard', 'theorchardapts@relay.example', true)).toBe(true);
   });
@@ -124,16 +124,16 @@ describe('describesOnlySender', () => {
 
 describe('topicTerms and holdsTopic', () => {
   it("the question's own words, without stop words and \"latest\"", () => {
-    expect(topicTerms('What did the most recent email about my Lumora payment plan say?')).toEqual(['lumora', 'payment', 'plan']);
+    expect(topicTerms('What did the most recent email about my Lumora membership payment say?')).toEqual(['lumora', 'membership', 'payment']);
     expect(topicTerms("What's the latest email from my bank?")).toEqual(['bank']);
   });
 
   it('an item is about the thing when its title or sender holds two of those words', () => {
-    const topic = topicTerms('the most recent email about my Lumora payment plan');
-    expect(holdsTopic(topic, 'Lumora payment did not go through', 'Tallyo <noreply@tallyo.example>')).toBe(true);
+    const topic = topicTerms('the most recent email about my Lumora membership payment');
+    expect(holdsTopic(topic, 'Lumora payment did not go through', 'Clubdesk <noreply@clubdesk.example>')).toBe(true);
     expect(holdsTopic(topic, 'Your payments are up to date', 'Lumora <no-reply@lumora.example>')).toBe(true);   // the sender counts, and "payments" is "payment"
     expect(holdsTopic(topic, 'We miss you. Take 20% off', 'Lumora <no-reply@lumora.example>')).toBe(false);
-    expect(holdsTopic(topic, 'Money back for Lumora', 'Tallyo <noreply@tallyo.example>')).toBe(false);
+    expect(holdsTopic(topic, 'Money back for Lumora', 'Clubdesk <noreply@clubdesk.example>')).toBe(false);
     expect(holdsTopic(topicTerms('my latest bank email'), 'Bank statement from your bank', 'Bank <a@bank.example>')).toBe(false);   // one word of its own
   });
 });

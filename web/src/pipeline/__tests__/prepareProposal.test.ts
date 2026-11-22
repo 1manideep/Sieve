@@ -382,14 +382,14 @@ describe('prepareProposal (10 section 16.10)', () => {
   it('"the latest" about a named thing: the candidates whose title or sender holds two of its words go newest first (Nov 22)', () => {
     const mail = (title: string, from: string, day: number) => ({ rec: record({ id: `gmail:${title}`, title, from, date: Date.parse(`2026-11-${String(day).padStart(2, '0')}T09:00:00-06:00`) }) });
     const titles = (list: { rec: IndexRecord }[]) => list.map((x) => x.rec.title);
-    const q = 'What did the most recent email about my Lumora payment plan say?';
+    const q = 'What did the most recent email about my Lumora membership payment say?';
     // the order search gave: the best keyword fits first, the newest one about the plan fifth, the shop's own sale email sixth
     const ranked = [
-      mail('Your Lumora plan was changed', 'Tallyo <noreply@tallyo.example>', 19),
-      mail('Lumora plan closed', 'Tallyo <noreply@tallyo.example>', 19),
-      mail('Last Lumora payment received', 'Tallyo <noreply@tallyo.example>', 19),
-      mail('Money back for Lumora', 'Tallyo <noreply@tallyo.example>', 19),
-      mail('Lumora payment did not go through', 'Tallyo <noreply@tallyo.example>', 21),
+      mail('Your Lumora membership was changed', 'Clubdesk <noreply@clubdesk.example>', 19),
+      mail('Lumora membership closed', 'Clubdesk <noreply@clubdesk.example>', 19),
+      mail('Last Lumora payment received', 'Clubdesk <noreply@clubdesk.example>', 19),
+      mail('Money back for Lumora', 'Clubdesk <noreply@clubdesk.example>', 19),
+      mail('Lumora payment did not go through', 'Clubdesk <noreply@clubdesk.example>', 21),
       mail('We miss you. Take 20% off', 'Lumora <no-reply@lumora.example>', 22),
     ];
     const out = titles(latestOrder(ranked, undefined, q));
@@ -397,7 +397,7 @@ describe('prepareProposal (10 section 16.10)', () => {
     // one shared word (the shop's name) is not about the plan: the sale email and the refund keep their place after
     expect(out.slice(4)).toEqual(['Money back for Lumora', 'We miss you. Take 20% off']);
     // a question with one word of its own, or no title that holds two: the best three by date, as before
-    expect(titles(latestOrder(ranked, undefined, "What's my newest Lumora email?"))[0]).toBe('Your Lumora plan was changed');
+    expect(titles(latestOrder(ranked, undefined, "What's my newest Lumora email?"))[0]).toBe('Your Lumora membership was changed');
   });
 
   it('PP-20: progress events arrive in order, and every step-end matches a step-start', async () => {

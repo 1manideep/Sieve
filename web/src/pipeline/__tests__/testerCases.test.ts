@@ -104,16 +104,16 @@ describe('the tester cases (Nov 20)', () => {
   });
 
   it('"the latest" about a named thing with no sender: only the newest email whose title holds it is read (Nov 22)', async () => {
-    const tallyo = (id: string, title: string, ago: number, text: string) => record({ id: `gmail:${id}`, source: 'gmail', title, from: 'Tallyo <noreply@tallyo.example>', category: 'Money', date: T - ago * DAY, text });
-    const done = tallyo('plan-done', 'Last Lumora payment received', 3, 'We received your final payment of $21.40. Your payment plan is now completed.');
-    const updated = tallyo('plan-updated', 'Your Lumora plan was changed', 3.1, 'Your payment plan was updated after a refund.');
-    const failed = tallyo('plan-failed', 'Lumora payment did not go through', 1, 'Your payment to Lumora failed because it could not be processed.');
+    const clubdesk = (id: string, title: string, ago: number, text: string) => record({ id: `gmail:${id}`, source: 'gmail', title, from: 'Clubdesk <noreply@clubdesk.example>', category: 'Money', date: T - ago * DAY, text });
+    const done = clubdesk('club-done', 'Last Lumora payment received', 3, 'We received your last payment of $21.40. Your membership is paid up.');
+    const updated = clubdesk('club-updated', 'Your Lumora membership was changed', 3.1, 'Your membership payment was updated after a refund.');
+    const failed = clubdesk('club-failed', 'Lumora payment did not go through', 1, 'Your payment to Lumora failed because it could not be processed.');
     for (const r of [done, updated, failed]) idx.records.set(r.id, r);
     idx.search.mockResolvedValue([done, updated, failed].map((r) => idx.cand(r.id)));
     model('P1', 'The payment to Lumora did not go through.');
-    const p = await prepareProposal(input({ question: 'What did the most recent email about my Lumora payment plan say?' }));
-    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(['gmail:plan-failed']);
-    expect(p.item?.recordId).toBe('gmail:plan-failed');
+    const p = await prepareProposal(input({ question: 'What did the most recent email about my Lumora membership payment say?' }));
+    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(['gmail:club-failed']);
+    expect(p.item?.recordId).toBe('gmail:club-failed');
     expect(labels(p)).toContain('Read only the newest one, because that is the one the question asks about');
   });
 

@@ -190,11 +190,11 @@ describe('selectAndAnswer (10 section 16.7)', () => {
       expect(answerKind('When was I charged, and how much?')?.test('at 10:30')).toBe(true);
       expect(answerKind('Who signed the lease?')).toBeNull();
       // a question about what an item says names its subject with the same words: no amount or date is asked for
-      expect(answerKind('What did the most recent email about my Lumora payment plan say?')).toBeNull();
+      expect(answerKind('What did the most recent email about my Lumora membership payment say?')).toBeNull();
       expect(answerKind('What did my landlord say about the rent?')).toBeNull();
-      expect(answersKind('What did the email about my payment plan say?', 'Your payment did not go through.')).toBe(true);
+      expect(answersKind('What did the email about my membership payment say?', 'Your payment did not go through.')).toBe(true);
       // unless it says so outright
-      expect(answerKind('How much did the email about my payment plan say I owe?')?.test('$21.40')).toBe(true);
+      expect(answerKind('How much did the email about my membership payment say I owe?')?.test('$21.40')).toBe(true);
       expect(answerKind('What did Spokeworks say about when the plan ends?')?.test('January 9, 2027')).toBe(true);
       expect(answersKind('How much was the last payment?', 'It did not go through.')).toBe(false);
     });

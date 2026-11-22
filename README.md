@@ -335,6 +335,8 @@ With `VITE_USE_EMULATORS=true` in `web/.env.local`, the web app talks to the loc
 | `npm run check` | Typecheck, lint, tests and repository checks (the pre-push hook) |
 | `npm run check:all` | `check`, then rules, functions, both e2e suites and the bench self-tests |
 
+Sieve was also tested live on the developer's own personal Gmail. To keep that mail private, only counts from those rounds are published (on the site's How it works page), and every name, number and example in the code, the tests and the docs has been replaced with an invented one.
+
 ## Repo layout
 
 ```
