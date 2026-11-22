@@ -3,6 +3,7 @@
 import type { QueryHints } from '@sieve/shared';
 import { GMAIL_HYDRATE_TIMEOUT_MS, GMAIL_LIVE_FETCH_NEW_MAX, GMAIL_LIVE_MAX, GMAIL_LIVE_TIMEOUT_MS, GMAIL_QUERY_MAX_CHARS } from '../../index/config';
 import { removeRecords } from '../../index/consistency';
+import { asksLatest } from '../../index/cues';
 import type { SieveDb } from '../../index/db';
 import { ingestInternal } from '../../index/ingest';
 import { getRuntime } from '../../index/runtime';
@@ -27,7 +28,13 @@ function gmailDay(d: string, deltaDays: number): string {
   return `${dt.getFullYear()}/${String(dt.getMonth() + 1).padStart(2, '0')}/${String(dt.getDate()).padStart(2, '0')}`;
 }
 
-/** 20 section 10.5: rarest content words first (unknown first), from:, dates with one day of slack, terms quoted. */
+/**
+ * 20 section 10.5: rarest content words first (unknown first), from:, dates with one day of slack, terms quoted.
+ * "X's latest email" asks for the newest mail from that sender, whatever words the question uses for the ask, so the
+ * query is the sender alone and Gmail lists the newest first. And a query with a sender that finds nothing falls back
+ * to the sender alone, not to a word alone. Before, "ask from:x" found nothing in mail older than the index, the
+ * fallback dropped the sender, and the request ended with nothing found (Nov 22, 2026).
+ */
 export function buildGmailQuery(p: { corrected: string; hints: QueryHints }, df: (term: string) => number): { q: string; fallback: string } {
   const hints = p.hints;
   // exact identifiers (digits, phrases) are quoted; a capitalized name is an ordinary content word
@@ -47,12 +54,13 @@ export function buildGmailQuery(p: { corrected: string; hints: QueryHints }, df:
     return f === 0 ? -1 : f;
   };
   const content = words.map((w, i) => ({ w, i, f: rank(w) })).sort((a, b) => a.f - b.f || a.i - b.i).slice(0, 3).map((x) => x.w);
-  const tail: string[] = [];
+  const sender: string[] = [];
   if (hints.from) {
     const fw = cleanTerm(hints.from).split(/\s+/).filter(Boolean);
-    if (fw.length === 1 && !ROLE_WORDS.has((fw[0] ?? '').toLowerCase())) tail.push(`from:${(fw[0] ?? '').toLowerCase()}`);
-    else if (fw.length > 1) tail.push(`from:"${fw.join(' ')}"`);
+    if (fw.length === 1 && !ROLE_WORDS.has((fw[0] ?? '').toLowerCase())) sender.push(`from:${(fw[0] ?? '').toLowerCase()}`);
+    else if (fw.length > 1) sender.push(`from:"${fw.join(' ')}"`);
   }
+  const tail: string[] = [...sender];
   const dates: string[] = [];
   if (hints.after) dates.push(`after:${gmailDay(hints.after, -1)}`);
   if (hints.before) dates.push(`before:${gmailDay(hints.before, 1)}`);
@@ -63,14 +71,14 @@ export function buildGmailQuery(p: { corrected: string; hints: QueryHints }, df:
   tail.push(...quoted);
   const exclusions = '-in:chats -in:drafts';
   const build = (c: string[]) => [...c, ...tail, exclusions].filter(Boolean).join(' ');
-  let use = [...content];
+  let use = sender.length > 0 && asksLatest(p.corrected) ? [] : [...content];
   let q = build(use);
   while (q.length > GMAIL_QUERY_MAX_CHARS && use.length > 0) {
     use = use.slice(0, -1);
     q = build(use);
   }
   const first = content[0] ?? quoted[0] ?? '';
-  const fallback = [first, ...dates, exclusions].filter(Boolean).join(' ');
+  const fallback = (sender.length > 0 ? [...sender, ...dates, exclusions] : [first, ...dates, exclusions]).filter(Boolean).join(' ');
   return { q, fallback };
 }
 

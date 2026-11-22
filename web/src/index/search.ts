@@ -432,7 +432,9 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
   let livePromise: Promise<{ ids: string[]; report: NonNullable<SearchReport['live']> }> | null = null;
   if (gmailRow?.connected) {
     const live = await import('../sources/gmail/liveSearch');
-    livePromise = live.liveGmailSearch(db, { corrected: p.corrected, hints }, { signal: opts.signal, accept });
+    // a sender the question itself names is asked of Gmail too, as one the assistant sent would be
+    const liveHints = !hints.from && filter.sender ? { ...hints, from: filter.sender } : hints;
+    livePromise = live.liveGmailSearch(db, { corrected: p.corrected, hints: liveHints }, { signal: opts.signal, accept });
   }
 
   // The reranker's module loads beside this search and never holds it up (it is a lazy chunk, 20 section 6.3).

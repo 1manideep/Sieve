@@ -429,6 +429,28 @@ describe('live Gmail search (A-SR-11)', () => {
     ]);
   });
 
+  it('with a sender: "the latest" asks for the sender alone, and a query that finds nothing falls back to the sender (Nov 22)', () => {
+    const df = () => 1;
+    const build = (corrected: string, from: string) => buildGmailQuery({ corrected, hints: { from } }, df);
+    expect(build('What did Benji ask me in his latest email?', 'Benji')).toEqual({ q: 'from:benji -in:chats -in:drafts', fallback: 'from:benji -in:chats -in:drafts' });
+    expect(build('What did Benji say about the budget?', 'Benji')).toEqual({ q: 'budget from:benji -in:chats -in:drafts', fallback: 'from:benji -in:chats -in:drafts' });
+    expect(build('What did Northside Gym say about lockers?', 'Northside Gym').fallback).toBe('from:"Northside Gym" -in:chats -in:drafts');
+    // a role is not a sender's name: the word stays in the query, and the fallback is a word, as before
+    expect(build('What did my landlord say about the deposit?', 'landlord')).toEqual({ q: 'landlord deposit -in:chats -in:drafts', fallback: 'landlord -in:chats -in:drafts' });
+  });
+
+  it('finds the latest email from a sender whose mail is all older than the index (Nov 22)', async () => {
+    await connect();
+    gmail.add({ id: 'old0', subject: 'Lunch', from: 'Benji Okoro <benji@inbox.example>', text: 'Lunch was great. Same place next month?', internalDate: gmail.now - 320 * DAY }, { silent: true });
+    gmail.add({ id: 'old1', subject: 'Quick favour', from: 'Benji Okoro <benji@inbox.example>', text: 'Could you send me the slides from the offsite?', internalDate: gmail.now - 300 * DAY }, { silent: true });
+    expect(await db.records.get('gmail:old1')).toBeUndefined();
+    let report: SearchReport | undefined;
+    const res = await search(db, 'What did Benji ask me in his latest email?', { hints: { from: 'Benji' }, onReport: (r) => (report = r) });
+    expect(report?.live?.q).toBe('from:benji -in:chats -in:drafts');
+    expect(res.map((c) => c.recordId)).toContain('gmail:old1');
+    expect(report?.latest?.[0]).toBe('gmail:old1');
+  });
+
   it("adds Gmail's own hits and reports the characters sent", async () => {
     gmail.add({ id: 'l1', subject: 'Deposit question', from: 'Dana <dana@thistlewick-pm.example>', text: 'About the landlord deposit.' });
     await connect();
