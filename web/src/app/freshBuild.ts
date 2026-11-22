@@ -69,6 +69,16 @@ function noteAutoReload(now: number): boolean {
 export interface FreshBuildOptions {
   reload?: () => void;
   now?: () => number;
+  /** Is the on-device model already on this computer? Then a reload needs no click afterwards (the default asks Chrome). */
+  modelReady?: () => Promise<boolean>;
+}
+
+/** Chrome's own answer, without loading any of the model code: this module is part of the first load. */
+async function modelIsDownloaded(): Promise<boolean> {
+  const lm = (globalThis as { LanguageModel?: { availability?: (o: object) => Promise<string> } }).LanguageModel;
+  if (typeof lm?.availability !== 'function') return false;
+  const text = [{ type: 'text', languages: ['en'] }];
+  return (await lm.availability({ expectedInputs: text, expectedOutputs: text })) === 'available';
 }
 
 /** Listens for both signals until the returned function stops it. */
@@ -78,9 +88,21 @@ export function startFreshBuild(opts: FreshBuildOptions = {}): () => void {
   const current = entryScriptOf(document);
   let stale = false;
   // A dynamic import already failed, so this tab is broken for that code: it reloads when safe, even hidden. A tab
-  // that only learned of a new build reloads only while shown: after a reload the home base waits for a click in the
-  // tab before it prepares anything (homeBaseEngine.ts, the activation gate), so a hidden working tab stays as it is.
+  // that only learned of a new build reloads while shown, or hidden once the on-device model is known to be
+  // downloaded: then the home base needs no click after a reload (homeBaseEngine.ts, the activation gate). Without
+  // that, a hidden working tab stays as it is. A window behind another one counts as hidden, and it stayed on an old
+  // build for as long as the person read something else (Nov 21, 2026).
   let failed = false;
+  let clickFree = false;
+  const learnClickFree = () => {
+    void (opts.modelReady ?? modelIsDownloaded)().then(
+      (ok) => {
+        clickFree = ok;
+        if (ok && stale) tryReload();
+      },
+      () => undefined,
+    );
+  };
   let checking = false;
   let lastCheck = now();
   let toastId: string | undefined;
@@ -96,7 +118,7 @@ export function startFreshBuild(opts: FreshBuildOptions = {}): () => void {
   const shown = () => document.visibilityState === 'visible';
 
   function tryReload(): boolean {
-    if ((!failed && !shown()) || !navigator.onLine || !safeToReload() || !noteAutoReload(now())) return false;
+    if ((!failed && !clickFree && !shown()) || !navigator.onLine || !safeToReload() || !noteAutoReload(now())) return false;
     stop();
     reload();
     return true;
@@ -128,7 +150,10 @@ export function startFreshBuild(opts: FreshBuildOptions = {}): () => void {
       // "/" and not "/index.html": Hosting's cleanUrls answers /index.html with a redirect to "/" (firebase.json)
       const res = await fetch('/', { cache: 'no-store' });
       const next = res.ok ? entryScriptOf(new DOMParser().parseFromString(await res.text(), 'text/html')) : null;
-      if (next && next !== current) markStale(false);
+      if (next && next !== current) {
+        markStale(false);
+        if (!shown()) learnClickFree();
+      }
     } catch {
       // offline, blocked or cut off: the next check tries again
     } finally {

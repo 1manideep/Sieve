@@ -247,6 +247,16 @@ describe('the build check', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it('a new build seen while hidden, with the model already downloaded: the tab reloads, since no click is needed after', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, text: async () => page(NEW) })));
+    stop = startFreshBuild({ reload, modelReady: async () => true });
+    vi.advanceTimersByTime(CHECK_EVERY_MS);
+    await settle();
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
   it('a new build seen while hidden and busy: shown, the toast; idle and shown, the reload; hidden again, nothing', async () => {
     let visibility: DocumentVisibilityState = 'hidden';
     vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
