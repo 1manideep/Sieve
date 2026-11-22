@@ -58,6 +58,10 @@ const RERANK_MODES = (process.env.EVAL_RERANK ?? 'none').split(',').filter(Boole
 const SWEEP: Tuning[] = process.env.EVAL_SWEEP ? (JSON.parse(readFileSync(process.env.EVAL_SWEEP, 'utf8')) as Tuning[]) : [{ label: process.env.EVAL_LABEL ?? 'current' }];
 const ONLY_SET = process.env.EVAL_SET ?? 'both';
 const SPREAD_DAYS = Number(process.env.EVAL_SPREAD_DAYS ?? 75);
+// --extra: more emails and their questions from a file outside the repository (your own mail stays out of it).
+const EXTRA = process.env.EVAL_EXTRA ?? '';
+// --depth: how many candidates are asked for and scored, to see how far down a missed item sits (default: the app's pool).
+const DEPTH = Number(process.env.EVAL_DEPTH ?? 0) || CANDIDATE_POOL;
 const RERANK_LIMIT = Number(process.env.EVAL_RERANK_LIMIT ?? 20);
 
 // ---------- the embedder, with a disk cache keyed by the exact input text (the model and its settings are fixed)
@@ -185,6 +189,19 @@ async function addDistractors(db: SieveDb, path: string): Promise<number> {
   return n;
 }
 
+interface ExtraFile { items: { id: string; title: string; from: string; date: string; text?: string }[]; questions: Question[] }
+
+/** Emails from a file outside the repository, through the app's own ingest and queue, as the distractors are. */
+async function addExtra(db: SieveDb, path: string): Promise<ExtraFile> {
+  const extra = JSON.parse(readFileSync(path, 'utf8')) as ExtraFile;
+  for (const it of extra.items) {
+    await ingestInternal(db, { source: 'playground', sourceRef: it.id, kind: 'email', title: it.title, from: it.from, threadId: it.id, date: Date.parse(it.date), text: it.text ?? '' }, 'sample', { deferSave: true });
+  }
+  await peekQueue(db)?.whenIdle();
+  await getRuntime(db).keyword.flush();
+  return extra;
+}
+
 // ---------- asking the way prepareProposal asks
 
 type Ordering = (list: { rec: IndexRecord; cand: Candidate }[], filters: SearchReport['filters'], question: string) => { rec: IndexRecord; cand: Candidate }[];
@@ -214,11 +231,11 @@ async function ask(db: SieveDb, q: Question): Promise<{ ids: string[]; report?: 
     }
     if (p.corrected) lookup = p.corrected;
   }
-  const cands = await search(db, lookup, { ...(hints ? { hints } : {}), onReport: (r) => (report = r) });
+  const cands = await search(db, lookup, { ...(hints ? { hints } : {}), ...(DEPTH !== CANDIDATE_POOL ? { k: DEPTH } : {}), onReport: (r) => (report = r) });
   let list: { rec: IndexRecord; cand: Candidate }[] = [];
   for (const c of cands) {
     const rec = await getRecord(db, c.recordId);
-    if (rec && list.length < CANDIDATE_POOL) list.push({ rec, cand: c });
+    if (rec && list.length < DEPTH) list.push({ rec, cand: c });
   }
   if (asksLatest(lookup) && list.length > 1) list = (useBaselineLatest ? baselineLatest : helpers.latestOrder ?? baselineLatest)(list, report?.filters, lookup);
   // scored at 7 so recall at 5 and at 7 can be compared; the answer step reads the first SELECT_MAX_PASSAGES
@@ -303,6 +320,12 @@ describe('search eval', () => {
       ml.save();
       console.info(`added ${n} distractor emails`);
       await evalSet(db, `seed+${n}`, QUESTIONS.filter((q) => !q.seedOnly));
+    }
+    if (EXTRA) {
+      const extra = await addExtra(db, EXTRA);
+      ml.save();
+      console.info(`added ${extra.items.length} extra emails`);
+      await evalSet(db, `extra+${extra.items.length}`, extra.questions);
     }
   });
 });

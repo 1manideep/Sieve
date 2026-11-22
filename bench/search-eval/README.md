@@ -19,6 +19,7 @@ npm run eval:search -- --rerank none,model  # also with the app's reranker model
 npm run eval:search -- --rerank model --rerank-limit 12 --rerank-tokens 192   # as on one WASM thread
 npm run eval:search -- --rerank model --rerank-limit 20 --rerank-tokens 320   # as on WebGPU
 npm run eval:search -- --sweep my-grid.json # compare settings of SEARCH_TUNING (web/src/index/config.ts)
+npm run eval:search -- --extra my-mail.json --depth 50   # your own emails and questions, from a file outside the repo
 npm run eval:search -- --clean              # delete the temp folder with the downloads and caches
 ```
 
@@ -30,6 +31,12 @@ A sweep file is a list of settings, each applied on top of the values in `SEARCH
 ```json
 [{ "label": "rrf k 5", "tuning": { "rrfK": 5 } }, { "label": "rrf k 60", "tuning": { "rrfK": 60 } }]
 ```
+
+`--extra` adds emails of your own after the other sets and asks your questions of them, so a miss seen on real mail
+can be reproduced. The file is `{ "items": [{ "id", "title", "from", "date", "text" }], "questions": [{ "id", "type",
+"q", "answers": ["an item id"], "hints" }] }`, with `date` as an ISO time near the Playground clock. Keep it outside the
+repository. `--depth` asks for and scores that many candidates instead of the app's 7, to see how far down a missed
+item sits.
 
 ## What it needs
 

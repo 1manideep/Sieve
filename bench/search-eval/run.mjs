@@ -30,6 +30,9 @@ if (flag('help')) {
                        scores about 12 within its budget; default 20, as on WebGPU)
   --sweep <file.json>  a list of { label, tuning } to run against SEARCH_TUNING (web/src/index/config.ts)
   --label <name>       the name of this configuration in the table (default "current")
+  --extra <file.json>  more emails and questions of your own, { items: [{ id, title, from, date, text }], questions },
+                       added after the other sets; keep the file outside the repository
+  --depth <n>          ask for and score n candidates, to see how far down a missed item sits (default 7)
   --out <file.json>    where the per-question results go (default: last-run.json in the temp folder)
   --clean              delete the temp folder (${CACHE}) and stop`);
   process.exit(0);
@@ -71,6 +74,8 @@ const env = {
   EVAL_DISTRACTORS: distractors,
   EVAL_RERANK: value('rerank', 'none'),
   EVAL_LABEL: value('label', 'current'),
+  EVAL_EXTRA: value('extra', '') ? resolve(value('extra', '')) : '',
+  EVAL_DEPTH: value('depth', ''),
   EVAL_SWEEP: value('sweep', '') ? resolve(value('sweep', '')) : '',
   EVAL_RERANK_LIMIT: value('rerank-limit', '20'),
   ...(value('rerank-model', '') ? { RERANK_MODEL: value('rerank-model', '') } : {}),
