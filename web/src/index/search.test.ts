@@ -258,6 +258,27 @@ describe('search', () => {
     await db.records.bulkDelete(['gmail:pp-real', 'gmail:pp-near']);
   });
 
+  it('two emails a sender really sent on the asked day keep the day filter; with only a mention of the day it is dropped (Nov 22)', async () => {
+    const at = (m: number, d: number, h = 10) => new Date(2026, m - 1, d, h, 0).getTime();
+    const from = 'Maple Court <office@maplecourt.example>';
+    const mk = (ref: string, title: string, date: number, text: string) => ingest(db, { source: 'gmail', sourceRef: ref, kind: 'email', title, from, date, text }, 'sample');
+    await mk('mc-late', 'Friendly reminder: late fees begin tomorrow', at(11, 4), 'Rent for November is due. Late fees begin tomorrow.');
+    await mk('mc-cocoa', 'Hot cocoa in the clubhouse', at(11, 4, 17), 'Join us for hot cocoa this Thursday.');
+    await mk('mc-halloween', 'Happy Halloween and a friendly rent reminder', at(10, 31), 'Happy Halloween! A reminder that rent is due on November 1.');
+    await peekQueue(db)?.whenIdle();
+    const days = { after: '2026-11-04', before: '2026-11-04' };
+    let report: SearchReport | undefined;
+    const res = await search(db, 'What did my apartment complex remind me about on November 4?', { hints: { from: 'Maple Court', ...days }, now: at(11, 22), onReport: (r) => (report = r) });
+    expect(res.map((c) => c.recordId).sort()).toEqual(['gmail:mc-cocoa', 'gmail:mc-late']);
+    expect(report?.dateRelaxed).toBeUndefined();
+    // nothing from them is dated November 9: the days are doubted, and only rank
+    const other = { after: '2026-11-09', before: '2026-11-09' };
+    const loose = await search(db, 'What did my apartment complex remind me about on November 9?', { hints: { from: 'Maple Court', ...other }, now: at(11, 22), onReport: (r) => (report = r) });
+    expect(loose.length).toBe(3);
+    expect(report?.dateRelaxed).toEqual(other);
+    await db.records.bulkDelete(['gmail:mc-late', 'gmail:mc-cocoa', 'gmail:mc-halloween']);
+  });
+
   it('other words for the question find an item that shares none of the question\'s words (Nov 22)', async () => {
     const ids: string[] = [];
     for (let i = 0; i < 12; i++) {

@@ -75,6 +75,7 @@ export const LABELS = {
   wordsFound: (n: number) => `Thought of ${n} other ${n === 1 ? 'word' : 'words'} the item may use, and searched for ${n === 1 ? 'it' : 'them'} too`,
   wordsNone: 'Searched with the question as it is',
   newestState: 'Read only the newest of those, because the newest says how it stands now',
+  datedOnly: (left: number) => `Left out ${left === 1 ? '1 email that only mentions' : `${left} emails that only mention`} those days, because the question asks what was said then`,
   newestOnly: 'Read only the newest one, because that is the one the question asks about',
   kindOnly: (left: number) => `Left out ${left === 1 ? '1 item' : `${left} items`} with no amount or date in ${left === 1 ? 'it' : 'them'}, because the question asks for one`,
   kindMissing: 'The answer held no date or amount, though the question asks for one, so nothing is shared',

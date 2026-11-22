@@ -226,6 +226,13 @@ export function holdsTopic(topic: readonly string[], title: string, from: string
   return topic.filter((t) => have.has(t)).length > 1;
 }
 
+const SAID_RE = /\b(?:did\b.*\b(?:say|send|tell|remind|write|ask|notify|announce|email|message)|said|sent|told|reminded|wrote|asked|notified|announced|emailed|messaged)\b/i;
+
+/** "What did X remind me about on November 4?", "what was sent last Friday": the days are when the item was sent. */
+export function asksSaid(text: string): boolean {
+  return SAID_RE.test(text);
+}
+
 const DESCRIBED_RE = /\b(?:did|does|has|have)\s+((?:my|our)\s+[\p{L}' -]{2,40}?)\s+(say|said|send|sent|remind(?:ed)?|ask(?:ed)?|tell|told|email(?:ed)?|write|wrote|written|announced?|notif(?:y|ied)|mention(?:ed)?|want(?:ed)?|need(?:ed)?)\b/iu;
 /**
  * "What did my apartment complex remind me about on November 4?": the question says who the item is from only by

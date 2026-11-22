@@ -315,7 +315,16 @@ export async function search(db: SieveDb, question: string, opts: SearchOptions 
   }
   let dateRelaxed: SearchReport['dateRelaxed'];
   const f = report?.filters;
-  if (res.length < DATE_MIN_RESULTS && (f?.after || f?.before)) {
+  // Few results on those days is a reason to doubt the days, except when the request names the sender and one of the
+  // results is itself dated then: two emails that sender really sent that day are the answer's candidates. Dropping
+  // the days put an email of four days earlier in front of them, and it was answered from (Nov 22, 2026). With no
+  // sender, the few items of those days may have nothing to do with the question, and the days stay a guess.
+  const meta = getRuntime(db).meta;
+  const sentThen = (c: Candidate): boolean => {
+    const m = meta.get(c.recordId);
+    return !!m && !!f?.sender && inRange(iso(new Date(m.date)), f);
+  };
+  if (res.length < DATE_MIN_RESULTS && (f?.after || f?.before) && !res.some(sentThen)) {
     dateRelaxed = { ...(f.after ? { after: f.after } : {}), ...(f.before ? { before: f.before } : {}) };
     res = await once(current, true);
   }

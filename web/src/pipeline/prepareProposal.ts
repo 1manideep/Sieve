@@ -16,7 +16,8 @@ import {
   asksCount, asksLatest, asksSeveral, asksState, clockFor, flushUrgentEmbeds, getRecord, identifierTerms, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
   type HardFilter, type ParsedQuestion, type SearchReport, type SieveDb,
 } from '@/index';
-import { describesOnlySender, holdsTopic, topicTerms } from '@/index/cues';
+import { asksSaid, describesOnlySender, holdsTopic, topicTerms } from '@/index/cues';
+import { iso } from '@/index/dates';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
 import { isYesNoQuestion } from '@/privacy/steps/answerShape';
 import { errorLine, errorName } from '@/robust/errorLine';
@@ -531,6 +532,22 @@ async function prepare(run: Run): Promise<Proposal> {
     if (newestIsMeant(allowed, filters, lookup)) {
       allowed = allowed.slice(0, 1);
       run.code('retrieve', LABELS.newestOnly);
+    }
+  }
+
+  // 6a2. A named sender, days from the asker, and a question about what was said or sent then ("what did Maple Court
+  // remind me about on November 4"): the sender's emails dated on those days are the ones meant, so when some are,
+  // those that only mention such a day are not read. Only with a sender filter: without one, the emails of that day
+  // are from anyone, and the model answered from a postal digest (Nov 22, 2026).
+  const days = filters as HardFilter | undefined;
+  if (days?.sender && (days.after || days.before) && allowed.length > 1 && asksSaid(lookup)) {
+    const dated = allowed.filter((a) => {
+      const d = iso(new Date(a.rec.date));
+      return (!days.after || d >= days.after) && (!days.before || d <= days.before);
+    });
+    if (dated.length > 0 && dated.length < allowed.length) {
+      run.code('retrieve', LABELS.datedOnly(allowed.length - dated.length));
+      allowed = dated;
     }
   }
 

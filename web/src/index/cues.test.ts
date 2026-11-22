@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { asksCount, asksLatest, asksState, describesOnlySender, holdsTopic, identifierTerms, isRoleCue, knownSenderWords, senderCue, senderMatches, topicTerms } from './cues';
+import { asksCount, asksLatest, asksSaid, asksState, describesOnlySender, holdsTopic, identifierTerms, isRoleCue, knownSenderWords, senderCue, senderMatches, topicTerms } from './cues';
 import { loadDictionaryText } from './dictionary';
 
 beforeAll(() => {
@@ -92,6 +92,17 @@ describe('senderCue', () => {
 
   it('known sender words are not English words and not generic', () => {
     expect([...known].sort()).toEqual(['kestrelmoor', 'kestrelmoorbank', 'parcelmoor', 'parcelmoordelivery', 'strava']);
+  });
+});
+
+describe('asksSaid', () => {
+  it('what someone said, sent or reminded: the days in the question are when it was sent', () => {
+    for (const q of ['What did my apartment complex remind me about on November 4?', 'What did Kay say last Friday?', 'What was sent to me on Nov 4?', 'Who emailed me yesterday?']) {
+      expect(asksSaid(q), q).toBe(true);
+    }
+    for (const q of ['What time is my flight on December 4?', 'What does my lease say about the deposit due on November 4?', 'How much was the charge on Nov 15?']) {
+      expect(asksSaid(q), q).toBe(false);
+    }
   });
 });
 

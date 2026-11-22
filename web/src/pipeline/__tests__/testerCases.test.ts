@@ -251,6 +251,30 @@ describe('the tester cases (Nov 20)', () => {
     expect((idx.search.mock.calls[0][2] as { expand?: string[] }).expand).toBeUndefined();
   });
 
+  it('a named sender and what was said on a day: their emails of that day are read, not one that only mentions the day (Nov 22)', async () => {
+    const at = (m: number, d: number) => new Date(2026, m - 1, d, 10, 0).getTime();
+    const from = 'Maple Court <office@maplecourt.example>';
+    const late = record({ id: 'gmail:mc-late', source: 'gmail', title: 'Friendly reminder: late fees begin tomorrow', from, category: 'Home', date: at(11, 4), text: 'Rent for November is due. Late fees begin tomorrow.' });
+    const cocoa = record({ id: 'gmail:mc-cocoa', source: 'gmail', title: 'Hot cocoa in the clubhouse', from, category: 'Home', date: at(11, 4), text: 'Join us for hot cocoa this Thursday.' });
+    const halloween = record({ id: 'gmail:mc-halloween', source: 'gmail', title: 'Happy Halloween and a friendly rent reminder', from, category: 'Home', date: at(10, 31), text: 'Rent is due on November 1. Late fees begin on November 4.', mentionedDays: ['2026-11-01', '2026-11-04'] });
+    for (const r of [late, cocoa, halloween]) idx.records.set(r.id, r);
+    const found = [halloween, late, cocoa].map((r) => idx.cand(r.id));
+    const days = { after: '2026-11-04', before: '2026-11-04' };
+    const withFilters = (filters: object) => idx.search.mockImplementation(async (_db, _q, opts) => {
+      (opts as { onReport?: (r: object) => void }).onReport?.({ filters });
+      return found;
+    });
+    withFilters({ sender: 'Maple Court', ...days });
+    model('P1', 'Late fees begin tomorrow.');
+    const p = await prepareProposal(input({ question: 'What did Maple Court remind me about on November 4?', hints: { from: 'Maple Court', ...days } }));
+    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(['gmail:mc-late', 'gmail:mc-cocoa']);
+    expect(labels(p)).toContain('Left out 1 email that only mentions those days, because the question asks what was said then');
+    // with no sender filter the emails of that day are from anyone: all three are read, as before
+    withFilters(days);
+    await prepareProposal(input({ question: 'What did Maple Court remind me about on November 4?', hints: days }));
+    expect(hybrid.callsFor('select-answer').at(-1)?.meta?.recordIds).toHaveLength(3);
+  });
+
   it('days and a described sender, with nothing else to go by: unsupported before any search, whatever the index holds (Nov 22)', async () => {
     const days = { after: '2026-11-04', before: '2026-11-04' };
     const p = await prepareProposal(input({ question: 'What did my apartment complex remind me about on November 4?', hints: days }));
