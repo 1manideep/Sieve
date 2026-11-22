@@ -27,7 +27,7 @@ const FIELD_CHARS = 140;
 /**
  * When the person gave days and this item fits them, the prompt says so. Left to work it out, the model compared the
  * question's day with other days in the answer and threw right answers away ("what did they remind me about on
- * November 4" answered with "late fees begin November 5"): measured on the on-device model, Nov 21, 2026. An item
+ * March 3" answered with "the class is on March 4"): measured on the on-device model, Nov 21, 2026. An item
  * outside the days gets no line, and the model judges as before.
  */
 export function datesLine(record: IndexRecord, dates: VerifyOptions['dates']): string | null {

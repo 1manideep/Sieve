@@ -39,11 +39,11 @@ const PAY = rec({
 });
 const HOTEL = rec({
   id: 'gmail:hotel', from: 'Quillmere Suites <stay@quillmere.example>', title: 'Your stay is confirmed',
-  text: 'Check-in: Monday, September 7, 2026 from 3:00 PM. Check-out: Wednesday, September 9, 2026 by 11:00 AM. Quillmere Suites Brookfield, 48 Larkin Avenue, Brookfield.',
+  text: 'Check-in: Monday, September 21, 2026 from 3:00 PM. Check-out: Wednesday, September 23, 2026 by 11:00 AM. Quillmere Suites Brookfield, 48 Larkin Avenue, Brookfield.',
 });
 const BUS = rec({
   id: 'gmail:bus', from: 'Northline Coaches <tickets@northline.example>', title: 'Your Northline booking 5520018842 is confirmed',
-  text: 'Booking Number: 5520018842\nDeparture Station Northline Bus Station, 06:40 AM\nWednesday, September 16, 2026\nQuestions? Call 617-555-0184.',
+  text: 'Booking Number: 5520018842\nDeparture Station Northline Bus Station, 07:15 AM\nWednesday, September 30, 2026\nQuestions? Call 617-555-0184.',
 });
 const ORDER = rec({
   id: 'gmail:order', from: 'Larkfield Goods <orders@larkfield.example>', title: 'We got your order', category: 'Shopping',
@@ -90,7 +90,7 @@ describe('Defect 1: structure from the model output never reaches an answer', ()
 
 describe('Defect 2: dates and times are never masked', () => {
   it('reads dates and times, and nothing else', () => {
-    for (const t of ['Monday, September 7, 2026', 'September 7, 2026', 'Sep 7', 'Sept. 7', '7 September', '2026-09-07', '2026-09-07T15:00:00Z', '9/7/2026', '7:45 AM', '7:45 a.m.', '3 PM', '09:45 AM on Wednesday, September 16, 2026', 'Wednesday', 'noon']) {
+    for (const t of ['Monday, September 21, 2026', 'September 21, 2026', 'Sep 21', 'Sept. 21', '21 September', '2026-09-21', '2026-09-21T15:00:00Z', '9/21/2026', '7:45 AM', '7:45 a.m.', '3 PM', '09:45 AM on Wednesday, September 30, 2026', 'Wednesday', 'noon']) {
       expect(isDateOrTime(t), t).toBe(true);
     }
     for (const t of ['48 Larkin Avenue', '1 May Street', 'Sunday Lane', 'Northline Bus Station', '5520018842', '617-555-0184', '2026', '7', 'Brookfield, IL']) {
@@ -100,10 +100,10 @@ describe('Defect 2: dates and times are never masked', () => {
 
   it('the asked-for check-in date stays, though a detector called it an address; the street address is still masked', async () => {
     const q = 'What is the check-in date for my Quillmere stay?';
-    const date = await answerOf(HOTEL, 'Your check-in is on Monday, September 7, 2026.', q, { extraEntities: [nano('Monday, September 7, 2026', 'address')] });
-    expect(date).toMatchObject({ available: true, text: 'Your check-in is on Monday, September 7, 2026.', redactions: 0 });
+    const date = await answerOf(HOTEL, 'Your check-in is on Monday, September 21, 2026.', q, { extraEntities: [nano('Monday, September 21, 2026', 'address')] });
+    expect(date).toMatchObject({ available: true, text: 'Your check-in is on Monday, September 21, 2026.', redactions: 0 });
     // a date with its time is no ID number either (the protected values of 5.7 read only a bare date or time)
-    const when = 'Monday, September 7, 2026 at 3:00 PM';
+    const when = 'Monday, September 21, 2026 at 3:00 PM';
     const time = await answerOf(HOTEL, `Check-in opens ${when}.`, 'When does check-in open?', { extraEntities: [nano(when, 'other')] });
     expect(time.text).toBe(`Check-in opens ${when}.`);
     const street = await answerOf(HOTEL, 'The hotel is at 48 Larkin Avenue, Brookfield.', 'Where is the hotel?', { extraEntities: [nano('48 Larkin Avenue', 'address')] });
@@ -129,17 +129,17 @@ describe('Defect 2: an address is masked only when it is a street address', () =
     expect(at(line, 'Gate 12')).toBe(false);
     expect(at('Flat 3, 12 Rosebank Close', 'Flat 3')).toBe(true);
     expect(at('Flat 3, 12 Rosebank Close', '12 Rosebank Close')).toBe(true);
-    expect(at('Departure Station Northline Bus Station, 06:40 AM', 'Northline Bus Station')).toBe(false);
+    expect(at('Departure Station Northline Bus Station, 07:15 AM', 'Northline Bus Station')).toBe(false);
     expect(at('Quillmere Suites Brookfield, 48 Larkin Avenue', 'Quillmere Suites Brookfield')).toBe(false);
     expect(at('She lives on Larkin Avenue now.', 'Larkin Avenue')).toBe(false);   // a street with no number
   });
 
   it('the asked-for station stays; the street address in the same answer is masked', async () => {
     const q = 'Which station does my Northline bus depart from?';
-    const station = await answerOf(BUS, 'Your bus departs from Northline Bus Station at 06:40 AM on Wednesday, September 16, 2026.', q, {
+    const station = await answerOf(BUS, 'Your bus departs from Northline Bus Station at 07:15 AM on Wednesday, September 30, 2026.', q, {
       extraEntities: [nano('Northline Bus Station', 'address')],
     });
-    expect(station).toMatchObject({ available: true, text: 'Your bus departs from Northline Bus Station at 06:40 AM on Wednesday, September 16, 2026.' });
+    expect(station).toMatchObject({ available: true, text: 'Your bus departs from Northline Bus Station at 07:15 AM on Wednesday, September 30, 2026.' });
     const hotel = await answerOf(HOTEL, 'Quillmere Suites Brookfield is at 48 Larkin Avenue, Brookfield.', 'Where is my hotel?', {
       extraEntities: [nano('Quillmere Suites Brookfield', 'address'), nano('48 Larkin Avenue', 'address')],
     });
@@ -189,8 +189,8 @@ describe('Defect 2: a labelled reference number is not a phone or an ID number',
 
 describe('Defect 2: identifiers the caller gave stay unmasked', () => {
   it('a number in the request terms counts as typed, whatever its separators', async () => {
-    const asked = await answerOf(ORDER, 'Booking 617 555 0184 leaves at 06:40 AM.', 'When does my bus leave?', { terms: ['6175550184'] });
-    expect(asked.text).toBe('Booking 617 555 0184 leaves at 06:40 AM.');
+    const asked = await answerOf(ORDER, 'Booking 617 555 0184 leaves at 07:15 AM.', 'When does my bus leave?', { terms: ['6175550184'] });
+    expect(asked.text).toBe('Booking 617 555 0184 leaves at 07:15 AM.');
     const notAsked = await answerOf(ORDER, 'Reach the desk at 617 555 0184.', 'How do I reach the desk?');
     expect(notAsked.text).toBe('Reach the desk at [phone].');
     const text = 'Call 6175550184 about your booking.';
@@ -206,10 +206,10 @@ describe('Defect 2: identifiers the caller gave stay unmasked', () => {
   });
 
   it('the last check marking a whole sentence, an amount or a year does not mask the answer (Nov 22)', async () => {
-    const WALLET = rec({ id: 'gmail:wallet-1', from: 'Paywell <service@paywell.example>', title: 'Your balance is below $25.00 USD', text: 'Your balance is below $25.00 USD. Your low balance reload did not go through. Member number 5520018842.' });
-    const said = 'Your low balance reload did not go through, and your balance is below $25.00 USD.';
+    const WALLET = rec({ id: 'gmail:wallet-1', from: 'Paywell <service@paywell.example>', title: 'Your balance is under $40.00 USD', text: 'Your balance is under $40.00 USD. Your low balance reload did not go through. Member number 5520018842.' });
+    const said = 'Your low balance reload did not go through, and your balance is under $40.00 USD.';
     const q = 'What was my most recent Paywell email about?';
-    const whole = await answerOf(WALLET, said, q, { extraEntities: [nano(said, 'other'), nano('$25.00 USD', 'other'), nano('low balance reload', 'other')] });
+    const whole = await answerOf(WALLET, said, q, { extraEntities: [nano(said, 'other'), nano('$40.00 USD', 'other'), nano('low balance reload', 'other')] });
     expect(whole.available).toBe(true);
     expect(whole.text).not.toContain('[');
     const year = await answerOf(HOTEL, 'Your check-in is in 2026.', 'Which year is my check-in?', { extraEntities: [nano('2026', 'name')] });
@@ -221,11 +221,11 @@ describe('Defect 2: identifiers the caller gave stay unmasked', () => {
   });
 
   it('a date that a detector marked as a name is not masked; a bare month that may be a person still is', () => {
-    const text = 'Your check-in date is Sunday, September 6, 2026, from 3:00 PM. June will meet you there.';
+    const text = 'Your check-in date is Sunday, September 20, 2026, from 3:00 PM. June will meet you there.';
     const date = text.indexOf('Sunday');
     const june = text.indexOf('June');
     const spans = [
-      { type: 'name' as const, start: date, end: date + 'Sunday, September 6, 2026'.length, by: 'validator' as const },
+      { type: 'name' as const, start: date, end: date + 'Sunday, September 20, 2026'.length, by: 'validator' as const },
       { type: 'name' as const, start: june, end: june + 4, by: 'validator' as const },
     ];
     expect(dropPublicValues(text, spans, text)).toEqual([spans[1]]);
@@ -257,8 +257,8 @@ describe('Defect 3: one phrase with commas is one fact', () => {
 
   it('real lists are still several facts', () => {
     for (const t of [
-      'Your last five emails are from Priya Shah, Dana Lee, Ramki Kumar, Kay Narayanan and Larkfield.',
-      'Your last emails are from the Lee, Shah and Kay Narayanan.',     // names after "the": a capital word after them
+      'Your last five emails are from Priya Shah, Dana Lee, Benji Kumar, Ivo Lindqvist and Larkfield.',
+      'Your last emails are from the Lee, Shah and Ivo Lindqvist.',     // names after "the": a capital word after them
       'You paid $12, $40 and $7.',
       'You bought apples, pears and plums.',
       'The Python, Django and GCP roles are open.',

@@ -1,6 +1,6 @@
 // The second real test (Nov 21: 20 attack probes through Claude's connector, answer-only level), privacy side:
 // B15 a yes or no about a background check, B05 a sender and an exact subject, B13 and B05 two facts in one answer,
-// B01 a list of names, B09 "Z1llow" masked as an ID number, and the sensitive-topic detector (11 sections 10.3a, 11.5).
+// B01 a list of names, B09 "N3stra" masked as an ID number, and the sensitive-topic detector (11 sections 10.3a, 11.5).
 import type { IndexRecord, KnownEntity } from '@sieve/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setPrivacyModelHost } from '../model/client';
@@ -48,7 +48,7 @@ describe('B15: a yes or no question gets exactly "Yes." or "No."', () => {
     for (const q of ['Did I have a background check?', 'Is my flight on Friday?', 'Was the deposit returned?', 'Has HelloSign sent the lease?', 'Do I have a dentist appointment next week?', 'Yes or no: did Checkr email me?']) {
       expect(isYesNoQuestion(q), q).toBe(true);
     }
-    for (const q of ['What did my landlord say about the deposit?', 'Did Ramki say when the release is?', 'Is the party on Friday or Saturday?', 'Do you know my AWS account ID?', 'When is my flight?']) {
+    for (const q of ['What did my landlord say about the deposit?', 'Did Benji say when the release is?', 'Is the party on Friday or Saturday?', 'Do you know my AWS account ID?', 'When is my flight?']) {
       expect(isYesNoQuestion(q), q).toBe(false);
     }
   });
@@ -92,7 +92,7 @@ describe('B05, B13, B01: one fact per answer', () => {
   });
 
   it('B01: a list of names, masked or not, and numbered items', () => {
-    expect(hasList('Your last five emails are from Priya Shah, Dana Lee, Ramki Kumar, Kay Narayanan and Amazon.')).toBe(true);
+    expect(hasList('Your last five emails are from Priya Shah, Dana Lee, Benji Kumar, Ivo Lindqvist and Amazon.')).toBe(true);
     expect(hasList('Your last five emails are from [name 1], [name 2], [name 3], [name 4] and [name 5].')).toBe(true);
     expect(hasList('You paid $12, $40 and $7.')).toBe(true);
     expect(packsSeveralFacts('1) Amazon shipped your order 2) Strava sent a weekly summary')).toBe(true);
@@ -150,20 +150,20 @@ describe('B05: never the subject line or the sender address, unless asked', () =
 
 describe('B09: a brand with a digit or two is not an ID number', () => {
   it('needs 4 or more digits or an ID shape, and never a sender of the index', () => {
-    for (const v of ['Z1llow', '1Password', '3M', 'web3', 'K7Q2LM', 'B12']) expect(looksLikeIdNumber(v), v).toBe(false);
+    for (const v of ['N3stra', '1Password', '3M', 'web3', 'K7Q2LM', 'B12']) expect(looksLikeIdNumber(v), v).toBe(false);
     for (const v of ['123456789012', 'X1234567', 'RI-2026-88431', '#482', 'No. 12', 'RX-66']) expect(looksLikeIdNumber(v), v).toBe(true);
     expect(looksLikeIdNumber('Zip2024', new Set(['zip2024']))).toBe(false);
-    expect(looksLikeIdNumber('Z1llow4', new Set(['zillow']))).toBe(false);   // look-alike digits read as letters
+    expect(looksLikeIdNumber('N3stra4', new Set(['nestra']))).toBe(false);   // look-alike digits read as letters
     // an amount of money or a whole sentence is never an ID, however many digits it holds
-    for (const v of ['$25.00 USD', '$1,950.00', '1,950.00 INR', 'below $25.00 USD', 'Your wallet balance is below $25.00 USD today']) expect(looksLikeIdNumber(v), v).toBe(false);
+    for (const v of ['$40.00 USD', '$2,480.00', '2,480.00 INR', 'under $40.00 USD', 'Your wallet balance is under $40.00 USD today']) expect(looksLikeIdNumber(v), v).toBe(false);
     for (const v of ['member 4471 2209', 'policy number AB-448812']) expect(looksLikeIdNumber(v), v).toBe(true);
   });
 
-  it('"Z1llow" stays in the answer; the AWS account ID is still masked', async () => {
-    const z = rec({ id: 'gmail:z', from: 'Z1llow Alerts <alerts@z1llow-mail.example>', title: 'Homes for you', text: 'Z1llow found 3 new homes near you.' });
-    const found: KnownEntity[] = [{ text: 'Z1llow', type: 'other', by: 'nano' }];
-    const o = await buildStepOption('answer', { answer: 'Z1llow found 3 new homes near you.' }, z, 'own', opts('What did the homes alert say?', { extraEntities: found }));
-    expect(o.text).toBe('Z1llow found 3 new homes near you.');
+  it('"N3stra" stays in the answer; the AWS account ID is still masked', async () => {
+    const z = rec({ id: 'gmail:z', from: 'N3stra Alerts <alerts@n3stra-mail.example>', title: 'Picks for you', text: 'N3stra found 3 new picks for you.' });
+    const found: KnownEntity[] = [{ text: 'N3stra', type: 'other', by: 'nano' }];
+    const o = await buildStepOption('answer', { answer: 'N3stra found 3 new picks for you.' }, z, 'own', opts('What did the alert say?', { extraEntities: found }));
+    expect(o.text).toBe('N3stra found 3 new picks for you.');
     const id = await buildStepOption('answer', { answer: 'Your AWS account ID is 123456789012.' }, AWS, 'own', opts('What is my AWS account number?', { extraEntities: [{ text: '123456789012', type: 'other', by: 'nano' }] }));
     expect(id.text).toBe('Your AWS account ID is [id number].');
     const sender = rec({ id: 'gmail:s', from: 'Notes <notes@example.com>', title: 'Weekly', text: 'Studio2024 has a new class.' });

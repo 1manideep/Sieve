@@ -20,8 +20,8 @@ function fold(s: string): string {
 
 /**
  * A pet's insurance or vet. Health is the person's own health; mail about a pet was filed under Health by the model
- * ("If an item could be Health, choose Health") and so was never shared (Nov 21, 2026: "when does my dog's cover
- * end?" found nothing). Such mail is Personal, and it is the one thing moved out of Health.
+ * ("If an item could be Health, choose Health") and so was never shared (Nov 21, 2026: a question about
+ * it found nothing). Such mail is Personal, and it is the one thing moved out of Health.
  */
 const PET_CARE = /\b(pet (health |medical )?insurance|pet (wellness|care|health) plans?|veterinar\w+|vet (clinic|hospital|visit|appointment|bill)|animal (hospital|clinic)|trupanion|healthy paws|banfield|embrace pet|pets best|figo pet|lemonade pet)\b/i;
 
@@ -40,13 +40,13 @@ export const CODE_LABEL_RULES: [Category, RegExp[]][] = [
     // Nov 21, 2026 (measured on 300 labelled emails): what a bank, a card or a bill says about an account.
     /\b(invoice|(available |account )?balance|overdrawn|overdraft|declined|transactions?|budget|spend cap|auto[- ]?reload|direct deposit|account snapshot|credit score|billing statement|amount due|past due)\b/i,
     /:\s*\$\d[\d,]*(\.\d\d)?\s*usd\b/i,                       // "Apple Services: $9.99 USD"
-    // Nov 21, 2026: an investment order is Money, not a store order ("SIP order summary" was filed under Shopping).
+    // Nov 21, 2026: an investment order is Money, not a store order (one was filed under Shopping).
     // By what the mail says, not by the company's name: a broker's or a payment app's promotions stay newsletters.
     /\b(sip order|mutual funds?|brokerage|demat|dividends?|contract note|trade confirmation|payment plan|pay in 4|autopay|auto-pay)\b/i,
   ]],
   ['Travel', [
     /\b(flight|airline|air|boarding|check in now|booking reference|hotel|inn|reservation|rental car|car rental|itinerary|trip|passport|visa)\b/i,
-    // Nov 21, 2026: a bus or train booking is Travel ("Booking Confirmation #..." from a bus line was a newsletter).
+    // Nov 21, 2026: a bus or train booking is Travel (one was filed as a newsletter).
     /\b(booking (confirmation|confirmed|number)|boarding pass|departure station|(bus|train|rail|coach|ferry) (ticket|booking|station))\b/i,
   ]],
   ['Home', [/\b(rent|landlord|lease|apartment|unit \d+\w?|property management|maintenance request|electricity|power|water bill|gas bill|utility|utilities|package room|package locker|concierge|move-out|move-in|inspection|residents?|leasing office|your delivery was picked up)\b/i]],

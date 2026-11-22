@@ -40,7 +40,7 @@ export interface SearchReport {
 }
 
 /** Hard filters (20 section 10.2): an item that fails one never becomes a candidate. */
-/** `senderExact`: some sender in the index is spelled as the cue is, so a near spelling is another sender ("Payal" for "PayPal"). */
+/** `senderExact`: some sender in the index is spelled as the cue is, so a near spelling is another sender ("Kestral" for "Kestrel"). */
 export interface HardFilter { sender?: string; senderExact?: boolean; after?: string; before?: string; source?: QueryHints['source']; categories?: Category[] }
 
 /** A category hint that leaves fewer results than this is dropped, and the search runs again without it. */
@@ -61,7 +61,7 @@ export interface SearchOptions {
   live?: boolean; hydrate?: boolean; signal?: AbortSignal; now?: number; locale?: string;
   onReport?: (r: SearchReport) => void;
   /**
-   * Other words the answering item may use ("trash" for "garbage"), from the on-device model: what they find by
+   * Other words the answering item may use ("bike cage" for "bicycle storage"), from the on-device model: what they find by
    * keyword is one more list. Measured Nov 22, 2026 with bench/search-eval and the model's own words for all 70
    * questions, on the distractor set: the right item first for 81% of questions against 66%, in the best five for 93%
    * against 90% (paraphrases 86% against 79%); with the reranker, in the best five for 96% against 91%. The same
@@ -356,7 +356,7 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
   // A sender Sieve read from the question's own words ("my latest SIP order") that no item is from, while titles hold
   // the word: it names a thing, not a sender, so it only ranks. A name the index does not know at all ("my Delta
   // flight", with no mail from or about Delta) stays a filter and finds nothing, as it should. A sender the asking
-  // assistant sent is never dropped (Nov 21, 2026: the filter left "my latest SIP order" with no candidates).
+  // assistant sent is never dropped (Nov 21, 2026: the filter left a "my latest order" question with no candidates).
   let senderDropped: string | undefined;
   if (filter.sender && !opts.hints?.from?.trim() && !filter.sender.includes('@')) {
     const cue = filter.sender;
@@ -372,8 +372,8 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
       delete filter.sender;
     }
   }
-  // A sender spelled as the cue is: then only such senders fit, and a near spelling ("Payal" for "PayPal") is another
-  // sender. With no sender spelled that way the cue may be a typo ("Gymshrk"), and near spellings fit.
+  // A sender spelled as the cue is: then only such senders fit, and a near spelling ("Kestral" for "Kestrel") is another
+  // sender. With no sender spelled that way the cue may be a typo ("Northgar"), and near spellings fit.
   if (filter.sender) {
     const cue = filter.sender;
     for (const m of rt.meta.values()) {
@@ -480,8 +480,8 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
     liveList = live.ids.slice(0, GMAIL_LIVE_K);
   }
 
-  // "Ramki's latest email": the sender's newest items are a list of their own, so the newest one is there to pick (20 section 10.2).
-  // "The latest email about my Dashbite payment plan" names no sender: the newest items about that thing (holdsTopic)
+  // "Benji's latest email": the sender's newest items are a list of their own, so the newest one is there to pick (20 section 10.2).
+  // "The latest email about my Lumora payment plan" names no sender: the newest items about that thing (holdsTopic)
   // are the list. Without it a better keyword fit from two days earlier stood before the newest one (Nov 22, 2026).
   const topic = !filter.sender && asksLatest(p.corrected) ? topicTerms(p.corrected) : [];
   const latestList = asksLatest(p.corrected) && (filter.sender || topic.length > 1)

@@ -296,7 +296,7 @@ export const HOW_SECTIONS: readonly HowSection[] = [
               '2',
               'Think of other words',
               ON_DEVICE,
-              'Names four to six phrases the answering item may use, because an email often says "trash corrals" where the question says "garbage enclosures". Skipped when the question holds an exact number or the assistant gave dates.',
+              'Names four to six phrases the answering item may use, because an email often says "bike cage" where the question says "bicycle storage". Skipped when the question holds an exact number or the assistant gave dates.',
             ],
             ['3', 'Search', PLAIN_CODE, 'Searches the index by meaning and by keyword and merges the two lists. A second small model on the device reorders the best 20.'],
             [

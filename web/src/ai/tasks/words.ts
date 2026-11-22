@@ -1,4 +1,4 @@
-// searchWords: before the search, Gemini Nano names other words the answering item may use ("trash" for "garbage"),
+// searchWords: before the search, Gemini Nano names other words the answering item may use ("bike cage" for "bicycle storage"),
 // and the search adds what they find by keyword (web/src/index/search.ts, `expand`). On-device only: the question
 // never goes to the cloud for it, and without the on-device model, or past the time limit, the search runs as it is.
 import type { DataClass } from '@sieve/shared';

@@ -195,9 +195,9 @@ describe('search', () => {
   });
 
   it('a sender the question or the request names is a filter, not a boost (T06, T07, T10)', async () => {
-    // no HelloSign, Gymshark or Google email in the seed data: nothing, instead of the best match
+    // no HelloSign, Northgear or Google email in the seed data: nothing, instead of the best match
     expect(await search(db, 'Did HelloSign send me a document to sign?')).toEqual([]);
-    expect(await search(db, 'When did my latest Gymshark order ship?')).toEqual([]);
+    expect(await search(db, 'When did my latest Northgear order ship?')).toEqual([]);
     expect(await search(db, 'Show me my Google verification emails')).toEqual([]);
     const voltwren = await search(db, 'Where is my order?', { hints: { from: 'Voltwren' } });
     expect(voltwren.map((c) => c.recordId)).toEqual(['playground:pg-mail-22']);
@@ -218,7 +218,7 @@ describe('search', () => {
     // a sender the asking assistant sent stays a filter, whatever the titles hold
     expect(await search(db, 'How many units did my latest order buy?', { hints: { from: 'SIP' } })).toEqual([]);
     // a name nothing in the index knows still finds nothing
-    expect(await search(db, 'When did my latest Gymshark order ship?')).toEqual([]);
+    expect(await search(db, 'When did my latest Northgear order ship?')).toEqual([]);
     await db.records.delete('gmail:sip-1');
   });
 
@@ -231,15 +231,15 @@ describe('search', () => {
 
   it('the newest items about a named thing join the list when the question asks for the latest and names no sender (Nov 22)', async () => {
     const day = 86_400_000;
-    const from = 'Klaro <noreply@klaro.example>';
+    const from = 'Tallyo <noreply@tallyo.example>';
     const ids: string[] = [];
     for (let i = 0; i < 12; i++) {
       ids.push(`gmail:plan-${i}`);
-      await ingest(db, { source: 'gmail', sourceRef: `plan-${i}`, kind: 'email', title: `Updated payment plan for Dashbite, part ${i + 1}`, from, date: Date.now() - 3 * day - i * 60_000, text: `Your Dashbite payment plan was updated. Payment plan ${i + 1}: the next payment of your payment plan is due soon. See your payment plan in the app.` }, 'sample');
+      await ingest(db, { source: 'gmail', sourceRef: `plan-${i}`, kind: 'email', title: `Your Lumora plan was changed, part ${i + 1}`, from, date: Date.now() - 3 * day - i * 60_000, text: `Your Lumora payment plan was updated. Payment plan ${i + 1}: the next payment of your payment plan is due soon. See your payment plan in the app.` }, 'sample');
     }
     ids.push('gmail:plan-failed');
-    await ingest(db, { source: 'gmail', sourceRef: 'plan-failed', kind: 'email', title: 'Payment failed for Dashbite', from, date: Date.now() - day, text: 'We could not collect it from your card. Add money and try again.' }, 'sample');
-    const res = await search(db, 'What did the most recent email about my Dashbite payment plan say?', { k: 10 });
+    await ingest(db, { source: 'gmail', sourceRef: 'plan-failed', kind: 'email', title: 'Lumora payment did not go through', from, date: Date.now() - day, text: 'We could not collect it from your card. Add money and try again.' }, 'sample');
+    const res = await search(db, 'What did the most recent email about my Lumora payment plan say?', { k: 10 });
     expect(res.map((c) => c.recordId)).toContain('gmail:plan-failed');
     await db.records.bulkDelete(ids);
   });
@@ -260,39 +260,39 @@ describe('search', () => {
 
   it('two emails a sender really sent on the asked day keep the day filter; with only a mention of the day it is dropped (Nov 22)', async () => {
     const at = (m: number, d: number, h = 10) => new Date(2026, m - 1, d, h, 0).getTime();
-    const from = 'Maple Court <office@maplecourt.example>';
+    const from = 'Northside Gym <hello@northsidegym.example>';
     const mk = (ref: string, title: string, date: number, text: string) => ingest(db, { source: 'gmail', sourceRef: ref, kind: 'email', title, from, date, text }, 'sample');
-    await mk('mc-late', 'Friendly reminder: late fees begin tomorrow', at(11, 4), 'Rent for November is due. Late fees begin tomorrow.');
-    await mk('mc-cocoa', 'Hot cocoa in the clubhouse', at(11, 4, 17), 'Join us for hot cocoa this Thursday.');
-    await mk('mc-halloween', 'Happy Halloween and a friendly rent reminder', at(10, 31), 'Happy Halloween! A reminder that rent is due on November 1.');
+    await mk('ng-class', 'Reminder: your class is tomorrow', at(3, 3), 'Your spin class is tomorrow at 7 AM. Bring a towel.');
+    await mk('ng-lockers', 'New lockers in the changing room', at(3, 3, 17), 'We fitted new lockers this week.');
+    await mk('ng-renew', 'Happy holidays and a reminder to renew', at(2, 27), 'Happy holidays! A reminder that your membership renews on March 1.');
     await peekQueue(db)?.whenIdle();
-    const days = { after: '2026-11-04', before: '2026-11-04' };
+    const days = { after: '2026-03-03', before: '2026-03-03' };
     let report: SearchReport | undefined;
-    const res = await search(db, 'What did my apartment complex remind me about on November 4?', { hints: { from: 'Maple Court', ...days }, now: at(11, 22), onReport: (r) => (report = r) });
-    expect(res.map((c) => c.recordId).sort()).toEqual(['gmail:mc-cocoa', 'gmail:mc-late']);
+    const res = await search(db, 'What did my gym remind me about on March 3?', { hints: { from: 'Northside Gym', ...days }, now: at(3, 22), onReport: (r) => (report = r) });
+    expect(res.map((c) => c.recordId).sort()).toEqual(['gmail:ng-class', 'gmail:ng-lockers']);
     expect(report?.dateRelaxed).toBeUndefined();
-    // nothing from them is dated November 9: the days are doubted, and only rank
-    const other = { after: '2026-11-09', before: '2026-11-09' };
-    const loose = await search(db, 'What did my apartment complex remind me about on November 9?', { hints: { from: 'Maple Court', ...other }, now: at(11, 22), onReport: (r) => (report = r) });
+    // nothing from them is dated March 9: the days are doubted, and only rank
+    const other = { after: '2026-03-09', before: '2026-03-09' };
+    const loose = await search(db, 'What did my gym remind me about on March 9?', { hints: { from: 'Northside Gym', ...other }, now: at(3, 22), onReport: (r) => (report = r) });
     expect(loose.length).toBe(3);
     expect(report?.dateRelaxed).toEqual(other);
-    await db.records.bulkDelete(['gmail:mc-late', 'gmail:mc-cocoa', 'gmail:mc-halloween']);
+    await db.records.bulkDelete(['gmail:ng-class', 'gmail:ng-lockers', 'gmail:ng-renew']);
   });
 
   it('other words for the question find an item that shares none of the question\'s words (Nov 22)', async () => {
     const ids: string[] = [];
     for (let i = 0; i < 12; i++) {
       ids.push(`gmail:apt-${i}`);
-      await ingest(db, { source: 'gmail', sourceRef: `apt-${i}`, kind: 'email', title: `Maple Court Apartments: your application, part ${i + 1}`, from: 'Maple Court <office@maplecourt.example>', date: Date.now() - (20 + i) * 86_400_000, text: 'Your apartment application at our apartment complex is complete. New residents can start using the resident portal.' }, 'sample');
+      await ingest(db, { source: 'gmail', sourceRef: `apt-${i}`, kind: 'email', title: `Northwind House: your badge request, part ${i + 1}`, from: 'Northwind Facilities <facilities@northwind.example>', date: Date.now() - (20 + i) * 86_400_000, text: 'Your badge request for our office building is complete. New staff can start using the staff portal.' }, 'sample');
     }
-    ids.push('gmail:corrals');
-    await ingest(db, { source: 'gmail', sourceRef: 'corrals', kind: 'email', title: 'Trash corrals are not ready', from: 'office@maplecourt.example', date: Date.now() - 60 * 86_400_000, text: 'Please keep to the old dumpsters until we say the corrals are open.' }, 'sample');
+    ids.push('gmail:cage');
+    await ingest(db, { source: 'gmail', sourceRef: 'cage', kind: 'email', title: 'Bike cage is not open yet', from: 'facilities@northwind.example', date: Date.now() - 60 * 86_400_000, text: 'Please keep locking bikes at the old racks until we say the cage is open.' }, 'sample');
     ml.setStatus('embed', { state: 'loading' });   // keyword only, so the test does not hang on what the stand-in embedder makes of it
-    const q = 'Can I start using the new garbage enclosures at my apartment complex yet?';
+    const q = 'Can I start using the new bicycle storage at my office building yet?';
     const plain = await search(db, q, { k: 10 });
-    expect(plain.map((c) => c.recordId)).not.toContain('gmail:corrals');
-    const withWords = await search(db, q, { k: 10, expand: ['trash cans', 'dumpster', 'waste disposal'] });
-    expect(withWords.map((c) => c.recordId).slice(0, 5)).toContain('gmail:corrals');
+    expect(plain.map((c) => c.recordId)).not.toContain('gmail:cage');
+    const withWords = await search(db, q, { k: 10, expand: ['bike cage', 'bike racks', 'cycle parking'] });
+    expect(withWords.map((c) => c.recordId).slice(0, 5)).toContain('gmail:cage');
     ml.setStatus('embed', { state: 'ready', device: 'wasm' });
     await db.records.bulkDelete(ids);
   });

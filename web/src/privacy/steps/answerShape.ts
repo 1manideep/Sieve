@@ -17,7 +17,7 @@ const WH = /\b(?:what|what's|whats|when|where|which|who|whom|whose|why|how)\b/i;
 
 /**
  * "Did", "is", "was", "has", "do I have", or "yes or no" (11 section 10.3a). Not when it asks for a value inside
- * ("Did Ramki say when the release is?"), offers a choice ("Friday or Saturday?") or asks the AI to do something.
+ * ("Did Benji say when the release is?"), offers a choice ("Friday or Saturday?") or asks the AI to do something.
  */
 export function isYesNoQuestion(question: string): boolean {
   const q = question.trim();
@@ -227,7 +227,7 @@ const LEAD_IN = /(?:,?\s*(?:with|has|had|having|under|about)?\s*(?:the|a|its)?\s
  * Removes the subject line where the answer cites it: a run of 4 or more of its words in a row that stands in quotes
  * or after "with the subject", "titled" and the like. The same words used as the answer's own statement stay: the
  * fact a person asks for is often in the subject ("Your order has shipped", a role, a place, a booking number), and
- * taking those words out left "It departs from at 06:40 AM." or nothing at all (Nov 21, 2026 live test).
+ * taking those words out left "It departs from at 07:15 AM." or nothing at all (Nov 21, 2026 live test).
  */
 export function stripSubject(text: string, title: string | undefined): string {
   if (!title) return text;
@@ -261,7 +261,7 @@ export function stripSubject(text: string, title: string | undefined): string {
     let after = out.slice(r.end);
     before = before.replace(LEAD_IN, '');
     after = after.replace(/^\s*["'”’]/, '');
-    // "Your Zillow verification code is [code]." becomes "It is [code]."
+    // "Your Nestra verification code is [code]." becomes "It is [code]."
     if (!/[\p{L}\p{N}]/u.test(before)) {
       after = after.replace(/^[\s,;:]*(?:(?:and|but|so)\s+)?/i, '');
       if (/^\p{Ll}/u.test(after)) after = `it ${after}`;

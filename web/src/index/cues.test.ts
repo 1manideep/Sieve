@@ -13,31 +13,31 @@ describe('senderMatches', () => {
   it('compares the cue with the display name, the local part and the domain, word by word', () => {
     expect(senderMatches('Amazon', 'auto-confirm@amazon.com')).toBe(true);
     expect(senderMatches('Amazon', 'Amazon.in <order-update@amazon.in>')).toBe(true);
-    expect(senderMatches('Kay', 'Kay Narayanan <kay.n@gmail.com>')).toBe(true);
-    expect(senderMatches('kay narayanan', 'Kay Narayanan <kay.n@gmail.com>')).toBe(true);
-    expect(senderMatches('Good Dog', 'Bookings <hello@gooddog.example>')).toBe(true);
+    expect(senderMatches('Ivo', 'Ivo Lindqvist <ivo.l@gmail.com>')).toBe(true);
+    expect(senderMatches('ivo lindqvist', 'Ivo Lindqvist <ivo.l@gmail.com>')).toBe(true);
+    expect(senderMatches('Sunny Paws', 'Bookings <hello@sunnypaws.example>')).toBe(true);
     expect(senderMatches('GitHub', 'GitHub <noreply@github.com>')).toBe(true);
     expect(senderMatches('Strava', 'Strava <no-reply@strava.com>')).toBe(true);
-    expect(senderMatches('Ramki', 'Ramakrishna Iyer <ramki@inbox.example>')).toBe(true);
+    expect(senderMatches('Benji', 'Benedikt Aaltonen <benji@inbox.example>')).toBe(true);
     // the fuzzy rule for words of 5 or more letters
-    expect(senderMatches('Gymshrk', 'Gymshark <hello@gymshark.com>')).toBe(true);
+    expect(senderMatches('Northgar', 'Northgear <hello@northgear.example>')).toBe(true);
   });
 
   it('a sender that does not fit fails', () => {
-    expect(senderMatches('Google', 'Zillow <no-reply@zillow.com>')).toBe(false);
-    expect(senderMatches('Strava', 'Kay Narayanan <kay.n@gmail.com>')).toBe(false);
+    expect(senderMatches('Google', 'Nestra <no-reply@nestra.example>')).toBe(false);
+    expect(senderMatches('Strava', 'Ivo Lindqvist <ivo.l@gmail.com>')).toBe(false);
     expect(senderMatches('HelloSign', 'Dropbox Sign <noreply@mail.hellosign.com>')).toBe(true);
-    expect(senderMatches('Kay Narayanan', 'Kay Smith <kay@x.example>')).toBe(false);
-    expect(senderMatches('Kay', undefined)).toBe(false);
+    expect(senderMatches('Ivo Lindqvist', 'Ivo Smith <ivo@x.example>')).toBe(false);
+    expect(senderMatches('Ivo', undefined)).toBe(false);
     // an address with no display name: the name sits inside the part before the @ (Nov 22)
-    expect(senderMatches('The Quarry', 'thequarryuiuc@relay.example')).toBe(true);
+    expect(senderMatches('The Orchard', 'theorchardapts@relay.example')).toBe(true);
     expect(senderMatches('Maple Court', 'themaplecourtapts@relay.example')).toBe(true);
     expect(senderMatches('Chase', 'purchases@store.example')).toBe(false);   // five letters inside another word is not a name
     // exact: no near spelling; the name inside a bare address still fits
     expect(senderMatches('Kestrel', 'Kestral Pay <hello@kestral.example>')).toBe(true);
     expect(senderMatches('Kestrel', 'Kestral Pay <hello@kestral.example>', true)).toBe(false);
     expect(senderMatches('Kestrel', 'Kestrelmoor Bank <alerts@kestrelmoor.example>', true)).toBe(true);
-    expect(senderMatches('The Quarry', 'thequarryuiuc@relay.example', true)).toBe(true);
+    expect(senderMatches('The Orchard', 'theorchardapts@relay.example', true)).toBe(true);
   });
 
   it('an address cue must be the address or its domain', () => {
@@ -61,11 +61,11 @@ describe('senderCue', () => {
 
   it('finds the sender the tester named (T05, T06, T07, T10, T04)', () => {
     expect(senderCue('Did HelloSign send me a document to sign?')).toBe('HelloSign');
-    expect(senderCue('When did my latest Gymshark order ship?')).toBe('Gymshark');
+    expect(senderCue('When did my latest Northgear order ship?')).toBe('Northgear');
     expect(senderCue('Show me my Google verification emails')).toBe('Google');
-    expect(senderCue("What did Ramki's latest email say?")).toBe('Ramki');
+    expect(senderCue("What did Benji's latest email say?")).toBe('Benji');
     expect(senderCue('What was my latest GitHub email about?')).toBe('GitHub');
-    expect(senderCue('What did Kay say about the lease?')).toBe('Kay');
+    expect(senderCue('What did Ivo say about the lease?')).toBe('Ivo');
     expect(senderCue('emails from Dana in October')).toBe('Dana');
     expect(senderCue('Anything from Amazon.in this week?')).toBe('Amazon.in');
     expect(senderCue('what did strava say about my run', known)).toBe('strava');
@@ -97,10 +97,10 @@ describe('senderCue', () => {
 
 describe('asksSaid', () => {
   it('what someone said, sent or reminded: the days in the question are when it was sent', () => {
-    for (const q of ['What did my apartment complex remind me about on November 4?', 'What did Kay say last Friday?', 'What was sent to me on Nov 4?', 'Who emailed me yesterday?']) {
+    for (const q of ['What did my gym remind me about on March 3?', 'What did Ivo say last Friday?', 'What was sent to me on Mar 3?', 'Who emailed me yesterday?']) {
       expect(asksSaid(q), q).toBe(true);
     }
-    for (const q of ['What time is my flight on December 4?', 'What does my lease say about the deposit due on November 4?', 'How much was the charge on Nov 15?']) {
+    for (const q of ['What time is my flight on December 4?', 'What does my lease say about the deposit due on March 3?', 'How much was the charge on Nov 15?']) {
       expect(asksSaid(q), q).toBe(false);
     }
   });
@@ -108,13 +108,13 @@ describe('asksSaid', () => {
 
 describe('describesOnlySender', () => {
   it('a described sender and nothing else to find the item by (dates and numbers do not count)', () => {
-    for (const q of ['What did my apartment complex remind me about on November 4?', 'What did my landlord say on March 3?', 'What has our accountant sent me this Friday?']) {
+    for (const q of ['What did my gym remind me about on March 3?', 'What did my landlord say on March 3?', 'What has our accountant sent me this Friday?']) {
       expect(describesOnlySender(q), q).toBe(true);
     }
     for (const q of [
       'What did my landlord say about the deposit?',                // a thing to find it by
-      'What did Kestrelmoor remind me about on November 4?',        // a name, not a description
-      'What did the email say on November 4?',
+      'What did Kestrelmoor remind me about on March 3?',        // a name, not a description
+      'What did the email say on March 3?',
       'How much was my rent on November 1?',
     ]) {
       expect(describesOnlySender(q), q).toBe(false);
@@ -124,32 +124,32 @@ describe('describesOnlySender', () => {
 
 describe('topicTerms and holdsTopic', () => {
   it("the question's own words, without stop words and \"latest\"", () => {
-    expect(topicTerms('What did the most recent email about my Dashbite payment plan say?')).toEqual(['dashbite', 'payment', 'plan']);
+    expect(topicTerms('What did the most recent email about my Lumora payment plan say?')).toEqual(['lumora', 'payment', 'plan']);
     expect(topicTerms("What's the latest email from my bank?")).toEqual(['bank']);
   });
 
   it('an item is about the thing when its title or sender holds two of those words', () => {
-    const topic = topicTerms('the most recent email about my Dashbite payment plan');
-    expect(holdsTopic(topic, 'Payment failed for Dashbite', 'Klaro <noreply@klaro.example>')).toBe(true);
-    expect(holdsTopic(topic, 'Your payments are up to date', 'Dashbite <no-reply@dashbite.example>')).toBe(true);   // the sender counts, and "payments" is "payment"
-    expect(holdsTopic(topic, 'Long time no shop. Save 50%', 'Dashbite <no-reply@dashbite.example>')).toBe(false);
-    expect(holdsTopic(topic, 'Refund confirmation for Dashbite', 'Klaro <noreply@klaro.example>')).toBe(false);
+    const topic = topicTerms('the most recent email about my Lumora payment plan');
+    expect(holdsTopic(topic, 'Lumora payment did not go through', 'Tallyo <noreply@tallyo.example>')).toBe(true);
+    expect(holdsTopic(topic, 'Your payments are up to date', 'Lumora <no-reply@lumora.example>')).toBe(true);   // the sender counts, and "payments" is "payment"
+    expect(holdsTopic(topic, 'We miss you. Take 20% off', 'Lumora <no-reply@lumora.example>')).toBe(false);
+    expect(holdsTopic(topic, 'Money back for Lumora', 'Tallyo <noreply@tallyo.example>')).toBe(false);
     expect(holdsTopic(topicTerms('my latest bank email'), 'Bank statement from your bank', 'Bank <a@bank.example>')).toBe(false);   // one word of its own
   });
 });
 
 describe('asksLatest and asksCount', () => {
   it('latest, newest, most recent, and last not followed by a unit', () => {
-    for (const q of ["What's my latest bank balance?", 'the newest GitHub email', 'my most recent order', 'When did I last see the dentist?', "Ramki's last email"]) {
+    for (const q of ["What's my latest bank balance?", 'the newest GitHub email', 'my most recent order', 'When did I last see the dentist?', "Benji's last email"]) {
       expect(asksLatest(q), q).toBe(true);
     }
-    for (const q of ['What did Kay say last week?', 'the last day of my lease', 'my last two receipts', 'What is her last name?', 'last Friday']) {
+    for (const q of ['What did Ivo say last week?', 'the last day of my lease', 'my last two receipts', 'What is her last name?', 'last Friday']) {
       expect(asksLatest(q), q).toBe(false);
     }
   });
 
   it('counts of items, not amounts inside one item', () => {
-    for (const q of ['How many Strava emails did I get this month?', 'how many times did Kay email me', 'the number of orders from Amazon', 'Count my receipts from Uber', 'How often does Ramki email me?', 'how many runs did Strava log in October']) {
+    for (const q of ['How many Strava emails did I get this month?', 'how many times did Ivo email me', 'the number of orders from Amazon', 'Count my receipts from Uber', 'How often does Benji email me?', 'how many runs did Strava log in October']) {
       expect(asksCount(q), q).toBe(true);
     }
     for (const q of ['How many days of leave do I have left?', 'How much was my deposit?', 'How many times a day should I take it?', 'What did my landlord say about the deposit?']) {

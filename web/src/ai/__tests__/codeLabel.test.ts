@@ -52,7 +52,7 @@ describe('codeLabel', () => {
 
   it.each<[string, string, Category]>([
     ['alerts@kestrelmoor.example', 'Your account ending in (...2299) is overdrawn', 'Money'],
-    ['alerts@kestrelmoor.example', "Your account's available balance is below your $50.00 limit", 'Money'],
+    ['alerts@kestrelmoor.example', 'Low balance alert for your checking account', 'Money'],
     ['kestrelmoor@services.kestrelmoor.example', 'Your Kestrelmoor Card was declined', 'Money'],
     ['service@swapfern.example', 'Voltwren Services: $9.99 USD', 'Money'],
     ['cloud-noreply@voltwren.example', '50% of budget reached', 'Money'],

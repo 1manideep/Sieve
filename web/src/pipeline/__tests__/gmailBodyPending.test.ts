@@ -47,13 +47,13 @@ process.env.TZ = 'America/Chicago';
 
 const SETTINGS: Settings = { categoryRules: { ...DEFAULT_CATEGORY_RULES }, defaultStep: 'answer', cloudFallbackForOwnData: false, pushEnabled: false };
 const OUTSIDE = { kind: 'outside' as const, grantId: 'g1', aiName: 'Outside Assistant' };
-const QUESTION = 'How much was charged on Larkspur Supply receipt 2732-9756?';
+const QUESTION = 'How much was charged on Larkspur Supply receipt 5521-0098?';
 const SENDER = 'Larkspur Supply <receipts@larkspur.example>';
-const BODY = 'Thanks for your order from Larkspur Supply. Receipt 2732-9756. Amount charged: $48.20 to the card ending 4421. Reply to this email with any questions.';
+const BODY = 'Thanks for your order from Larkspur Supply. Receipt 5521-0098. Amount charged: $48.20 to the card ending 4421. Reply to this email with any questions.';
 // Gmail's preview of the same email, as the metadata step stores it
-const PREVIEW_NO_AMOUNT = 'Thanks for your order from Larkspur Supply. Receipt 2732-9756.';
-const PREVIEW_WITH_AMOUNT = 'Thanks for your order from Larkspur Supply. Receipt 2732-9756. Amount charged: $48.20';
-const PREVIEW_CUT = 'Thanks for your order from Larkspur Supply. Receipt 2732-9756. Amount charged: $48';
+const PREVIEW_NO_AMOUNT = 'Thanks for your order from Larkspur Supply. Receipt 5521-0098.';
+const PREVIEW_WITH_AMOUNT = 'Thanks for your order from Larkspur Supply. Receipt 5521-0098. Amount charged: $48.20';
+const PREVIEW_CUT = 'Thanks for your order from Larkspur Supply. Receipt 5521-0098. Amount charged: $48';
 const ID = 'gmail:rc1';
 
 let gmail: FakeGmail;
@@ -142,7 +142,7 @@ async function bodyWrittenElsewhere(): Promise<void> {
 function ask(over: Partial<PrepareInput> = {}): Promise<Proposal> {
   return prepareProposal({
     db, requestId: 'r1', question: QUESTION, requester: OUTSIDE, requestedStep: 'answer', maxStep: 'answer', settings: SETTINGS,
-    dataClass: 'own', allowedSources: ['gmail'], hints: { terms: ['2732-9756'] }, ...over,
+    dataClass: 'own', allowedSources: ['gmail'], hints: { terms: ['5521-0098'] }, ...over,
   });
 }
 

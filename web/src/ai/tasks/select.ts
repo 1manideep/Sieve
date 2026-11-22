@@ -107,7 +107,7 @@ export function answerKind(question: string): RegExp | null {
 
 /**
  * Does an answer hold the kind of fact the question asked for? Any number counts, a weekday or "tomorrow" for a date,
- * "free" or "nothing" for an amount: this only tells "November 26" and "$15.00" from "it starts on arrival day". True
+ * "free" or "nothing" for an amount: this only tells "January 9" and "$18.00" from "it starts on arrival day". True
  * for a question that asks for neither.
  */
 export function answersKind(question: string, answer: string): boolean {
@@ -428,7 +428,7 @@ export async function selectAndAnswer(
 
   // An answer the share-time checks would refuse for its shape (a list or several facts, or a long run copied from the
   // item) gets one more try with a line that says what to change. The second answer is taken as it comes: the checks
-  // after this call still decide. Before, "what did they say about the renovations" ended as unsupported in two test
+  // after this call still decide. Before, an open "what did they say about ..." question ended as unsupported in two test
   // runs of three because the first answer held several facts (Nov 22, 2026).
   let reminder: string | undefined;
   const run = () =>

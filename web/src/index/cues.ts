@@ -70,8 +70,8 @@ export function isRoleCue(cue: string): boolean {
 function wordMatches(w: string, token: string, exact = false): boolean {
   if (w === token) return true;
   if (w.length >= 4 && token.startsWith(w)) return true;
-  // An address with no display name holds the name inside one run of letters ("thequarryuiuc@relay.example" for
-  // "The Quarry"): a cue of six or more letters fits anywhere in it. Before, such a sender's mail never passed its own
+  // An address with no display name holds the name inside one run of letters ("theorchardapts@relay.example" for
+  // "The Orchard"): a cue of six or more letters fits anywhere in it. Before, such a sender's mail never passed its own
   // sender filter (Nov 22, 2026: 4 of about 35 emails did, the ones sent with a display name).
   if (w.length >= 6 && token.includes(w)) return true;
   return !exact && w.length >= 5 && token.length >= 5 && osaDistance(w, token, 1) <= 1;
@@ -79,9 +79,9 @@ function wordMatches(w: string, token: string, exact = false): boolean {
 
 /**
  * Whether an item from `from` fits the sender cue (20 section 10.2): word by word, case-insensitive, against the display
- * name, the address local part and the domain, so "Amazon" fits amazon.com and "Kay" fits "Kay Narayanan". Every cue
- * word must fit; "Good Dog" also fits gooddog.example as one word. An address cue must equal the address or its domain.
- * `exact`: no near spelling ("Gymshrk" for Gymshark); the search asks for it when some sender is spelled as the cue is.
+ * name, the address local part and the domain, so "Amazon" fits amazon.com and "Ivo" fits "Ivo Lindqvist". Every cue
+ * word must fit; "Sunny Paws" also fits sunnypaws.example as one word. An address cue must equal the address or its domain.
+ * `exact`: no near spelling ("Northgar" for Northgear); the search asks for it when some sender is spelled as the cue is.
  */
 export function senderMatches(cue: string, from: string | undefined, exact = false): boolean {
   if (!from) return false;
@@ -217,7 +217,7 @@ export function topicTerms(question: string): string[] {
 
 /**
  * Whether an item is about the thing a "latest" question names when no sender says so: its title or its sender holds
- * two of the question's words ("Payment failed for Dashbite" for "the most recent email about my Dashbite payment
+ * two of the question's words ("Lumora payment did not go through" for "the most recent email about my Lumora payment
  * plan"). One shared word is not enough: a shop's newest sale email holds the shop's name too.
  */
 export function holdsTopic(topic: readonly string[], title: string, from: string | undefined): boolean {
@@ -228,15 +228,15 @@ export function holdsTopic(topic: readonly string[], title: string, from: string
 
 const SAID_RE = /\b(?:did\b.*\b(?:say|send|tell|remind|write|ask|notify|announce|email|message)|said|sent|told|reminded|wrote|asked|notified|announced|emailed|messaged)\b/i;
 
-/** "What did X remind me about on November 4?", "what was sent last Friday": the days are when the item was sent. */
+/** "What did X remind me about on March 3?", "what was sent last Friday": the days are when the item was sent. */
 export function asksSaid(text: string): boolean {
   return SAID_RE.test(text);
 }
 
 const DESCRIBED_RE = /\b(?:did|does|has|have)\s+((?:my|our)\s+[\p{L}' -]{2,40}?)\s+(say|said|send|sent|remind(?:ed)?|ask(?:ed)?|tell|told|email(?:ed)?|write|wrote|written|announced?|notif(?:y|ied)|mention(?:ed)?|want(?:ed)?|need(?:ed)?)\b/iu;
 /**
- * "What did my apartment complex remind me about on November 4?": the question says who the item is from only by
- * describing them ("my apartment complex"), and holds no other word to find the item by. Dates and numbers do not
+ * "What did my gym remind me about on March 3?": the question says who the item is from only by
+ * describing them ("my gym"), and holds no other word to find the item by. Dates and numbers do not
  * count. Read from the question alone, never from what the index holds.
  */
 export function describesOnlySender(question: string): boolean {

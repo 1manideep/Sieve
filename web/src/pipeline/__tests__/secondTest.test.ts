@@ -196,10 +196,10 @@ describe('the second test (Nov 21)', () => {
 
   it('B09: the index sender words reach the build, so a sender is never an ID number', async () => {
     idx.search.mockResolvedValue([idx.cand(AMAZON.id)]);
-    idx.knownSendersOf.mockImplementation(() => new Set(['z1llow']));
+    idx.knownSendersOf.mockImplementation(() => new Set(['n3stra']));
     model('P1', 'Your Echo Dot arrives Friday.');
     await prepareProposal(input({ question: 'When does my Echo Dot arrive?' }));
     const opts = privacy.buildStepOption.mock.calls[0]![4] as { knownSenders?: Set<string> };
-    expect([...(opts.knownSenders ?? [])]).toEqual(['z1llow']);
+    expect([...(opts.knownSenders ?? [])]).toEqual(['n3stra']);
   });
 });

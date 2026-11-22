@@ -375,29 +375,29 @@ describe('prepareProposal (10 section 16.10)', () => {
     expect(idsOf(latestOrder(ranked, undefined))).toEqual(['work-a', 'work-b', 'work-c', 'digest']);
     expect(idsOf(latestOrder([at('older', 3), at('newer', 13), at('other', 1)], undefined))).toEqual(['newer', 'older', 'other']);
     // with a sender filter every candidate fits, so all of them go newest first, the newest five
-    const six = [3, 13, 1, 9, 12, 7].map((d) => at(`ramki-${d}`, d));
-    expect(idsOf(latestOrder(six, { sender: 'Ramki' }))).toEqual(['ramki-13', 'ramki-12', 'ramki-9', 'ramki-7', 'ramki-3']);
+    const six = [3, 13, 1, 9, 12, 7].map((d) => at(`benji-${d}`, d));
+    expect(idsOf(latestOrder(six, { sender: 'Benji' }))).toEqual(['benji-13', 'benji-12', 'benji-9', 'benji-7', 'benji-3']);
   });
 
   it('"the latest" about a named thing: the candidates whose title or sender holds two of its words go newest first (Nov 22)', () => {
     const mail = (title: string, from: string, day: number) => ({ rec: record({ id: `gmail:${title}`, title, from, date: Date.parse(`2026-11-${String(day).padStart(2, '0')}T09:00:00-06:00`) }) });
     const titles = (list: { rec: IndexRecord }[]) => list.map((x) => x.rec.title);
-    const q = 'What did the most recent email about my Dashbite payment plan say?';
+    const q = 'What did the most recent email about my Lumora payment plan say?';
     // the order search gave: the best keyword fits first, the newest one about the plan fifth, the shop's own sale email sixth
     const ranked = [
-      mail('Updated payment plan for Dashbite', 'Klaro <noreply@klaro.example>', 19),
-      mail('Payment plan canceled for Dashbite', 'Klaro <noreply@klaro.example>', 19),
-      mail('We got your final Dashbite payment', 'Klaro <noreply@klaro.example>', 19),
-      mail('Refund confirmation for Dashbite', 'Klaro <noreply@klaro.example>', 19),
-      mail('Payment failed for Dashbite', 'Klaro <noreply@klaro.example>', 21),
-      mail('Long time no shop. Save 50%', 'Dashbite <no-reply@dashbite.example>', 22),
+      mail('Your Lumora plan was changed', 'Tallyo <noreply@tallyo.example>', 19),
+      mail('Lumora plan closed', 'Tallyo <noreply@tallyo.example>', 19),
+      mail('Last Lumora payment received', 'Tallyo <noreply@tallyo.example>', 19),
+      mail('Money back for Lumora', 'Tallyo <noreply@tallyo.example>', 19),
+      mail('Lumora payment did not go through', 'Tallyo <noreply@tallyo.example>', 21),
+      mail('We miss you. Take 20% off', 'Lumora <no-reply@lumora.example>', 22),
     ];
     const out = titles(latestOrder(ranked, undefined, q));
-    expect(out[0]).toBe('Payment failed for Dashbite');
+    expect(out[0]).toBe('Lumora payment did not go through');
     // one shared word (the shop's name) is not about the plan: the sale email and the refund keep their place after
-    expect(out.slice(4)).toEqual(['Refund confirmation for Dashbite', 'Long time no shop. Save 50%']);
+    expect(out.slice(4)).toEqual(['Money back for Lumora', 'We miss you. Take 20% off']);
     // a question with one word of its own, or no title that holds two: the best three by date, as before
-    expect(titles(latestOrder(ranked, undefined, "What's my newest Dashbite email?"))[0]).toBe('Updated payment plan for Dashbite');
+    expect(titles(latestOrder(ranked, undefined, "What's my newest Lumora email?"))[0]).toBe('Your Lumora plan was changed');
   });
 
   it('PP-20: progress events arrive in order, and every step-end matches a step-start', async () => {

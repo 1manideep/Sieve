@@ -28,8 +28,8 @@ const BUS = record({
   category: 'Travel', date: T - 86_400_000,
   text: [
     'Booking Number: 5520018842',
-    'Departure Station Northline Bus Station, 06:40 AM',
-    'Wednesday, September 16, 2026',
+    'Departure Station Northline Bus Station, 07:15 AM',
+    'Wednesday, September 30, 2026',
     'Passenger: Dana Okafor',
     'Billing address: 214 Calder Street, Fernvale',
     'Questions? Call 617-555-0184.',
@@ -77,10 +77,10 @@ beforeEach(() => {
 
 describe('the live test (Nov 21): a booking email', () => {
   it('"Where does booking 5520018842 depart from?" with the number in the terms: ready, station and number readable', async () => {
-    model('Booking 5520018842 departs from Northline Bus Station at 06:40 AM.');
+    model('Booking 5520018842 departs from Northline Bus Station at 07:15 AM.');
     const p = await prepareProposal(input('Where does booking 5520018842 depart from?', { terms: ['5520018842'] }));
     expect(p.outcome).toBe('ready');
-    expect(option(p, 'answer')).toMatchObject({ available: true, text: 'Booking 5520018842 departs from Northline Bus Station at 06:40 AM.', redactions: 0 });
+    expect(option(p, 'answer')).toMatchObject({ available: true, text: 'Booking 5520018842 departs from Northline Bus Station at 07:15 AM.', redactions: 0 });
     expect(hybrid.callsFor('pii-check').length).toBeGreaterThan(0);
   });
 
@@ -96,7 +96,7 @@ describe('the live test (Nov 21): a booking email', () => {
     const p = await prepareProposal(input('What is my booking number?'));
     const full = option(p, 'full');
     expect(full.available).toBe(true);
-    for (const kept of ['Booking Number: 5520018842', 'Departure Station Northline Bus Station, 06:40 AM', 'Wednesday, September 16, 2026']) expect(full.text).toContain(kept);
+    for (const kept of ['Booking Number: 5520018842', 'Departure Station Northline Bus Station, 07:15 AM', 'Wednesday, September 30, 2026']) expect(full.text).toContain(kept);
     for (const masked of ['Passenger: [name]', 'Billing address: [address], Fernvale', 'Call [phone].']) expect(full.text).toContain(masked);
     for (const gone of ['Dana Okafor', '214 Calder Street', '617-555-0184']) expect(full.text).not.toContain(gone);
     expect(p.warnings.map((w) => w.kind)).toContain('pii-redacted');

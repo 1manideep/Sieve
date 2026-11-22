@@ -433,19 +433,19 @@ async function prepare(run: Run): Promise<Proposal> {
     return run.why('asks-several').finish('unsupported', { reason: UNAVAILABLE.oneFact });
   }
 
-  // 3b2. "What did my apartment complex remind me about on November 4?": the asker's days, a description of the
+  // 3b2. "What did my gym remind me about on March 3?": the asker's days, a description of the
   // sender, and nothing else to find the item by. Sieve cannot tell who that is, and the on-device model then answered
-  // from another sender's email of that day, which the second check let through (a postal digest, Nov 22, 2026). The
+  // from another sender's email of that day, which the second check let through (a daily digest, Nov 22, 2026). The
   // request alone decides this, never what the index holds, so the reply says nothing about the person's mail.
   if ((hints?.after || hints?.before) && !hints?.from && describesOnlySender(lookup)) {
     run.code('rule', LABELS.senderNotNamed);
     return run.why('sender-described-not-named').finish('unsupported', { reason: UNAVAILABLE.nameSender });
   }
 
-  // 3c. Other words for the search, from the on-device model: the item that answers often says "trash corrals"
-  // where the question says "garbage enclosures". Not when the question holds an exact number (the number finds its
+  // 3c. Other words for the search, from the on-device model: the item that answers often says "bike cage"
+  // where the question says "bicycle storage". Not when the question holds an exact number (the number finds its
   // item) or the asker gave the days (they already narrow the search; with more items found on those days the model
-  // answered "what did my landlord remind me about on November 4" from another sender's email of that day, Nov 22,
+  // answered "what did my gym remind me about on March 3" from another sender's email of that day, Nov 22,
   // 2026). Never a reason to stop: with no on-device model, a slow one or an unusable reply the search runs as it is.
   let expand: string[] = [];
   if (run.aborted) return run.stopped();
@@ -535,10 +535,10 @@ async function prepare(run: Run): Promise<Proposal> {
     }
   }
 
-  // 6a2. A named sender, days from the asker, and a question about what was said or sent then ("what did Maple Court
-  // remind me about on November 4"): the sender's emails dated on those days are the ones meant, so when some are,
+  // 6a2. A named sender, days from the asker, and a question about what was said or sent then ("what did Northside Gym
+  // remind me about on March 3"): the sender's emails dated on those days are the ones meant, so when some are,
   // those that only mention such a day are not read. Only with a sender filter: without one, the emails of that day
-  // are from anyone, and the model answered from a postal digest (Nov 22, 2026).
+  // are from anyone, and the model answered from another sender's daily digest (Nov 22, 2026).
   const days = filters as HardFilter | undefined;
   if (days?.sender && (days.after || days.before) && allowed.length > 1 && asksSaid(lookup)) {
     const dated = allowed.filter((a) => {
@@ -564,7 +564,7 @@ async function prepare(run: Run): Promise<Proposal> {
       run.code('retrieve', LABELS.identifierOnly(holders.length));
     }
     // Only the newest is read. Given several, newest first, the on-device model mostly answered from the newest but
-    // sometimes from an older one ("confirmed" for an order cancelled later that day, Nov 22, 2026), and the "listed
+    // sometimes from an older one (an order's earlier state, Nov 22, 2026), and the "listed
     // newest first" line made it pick the second passage.
     if (!latest && holders.length > 1 && asksState(lookup)) {
       allowed = [holders.reduce((a, b) => (b.rec.date > a.rec.date ? b : a))];
@@ -640,7 +640,7 @@ async function prepare(run: Run): Promise<Proposal> {
 
   // 9 to 12a. The one model call, and the freshness check with its one allowed re-run.
   // (A second pick after the second check says no was tried and taken out, Nov 21, 2026: on real mail it turned two
-  // "nothing" results into wrong answers, a postal digest for a landlord's reminder among them. The check lets about
+  // "nothing" results into wrong answers, another sender's digest among them. The check lets about
   // half of lookalike answers through, so the model's second choice is not worth sharing.)
   let reruns = 0;
   let list = allowed;
@@ -708,8 +708,8 @@ async function prepare(run: Run): Promise<Proposal> {
     const freshMs = Math.round(performance.now() - f0);
     const kind = pick.rec.kind;
     // "The latest" needs the mail as it is now. When Gmail cannot be asked (its access ran out, no connection), the
-    // newest email here may not be the newest there: an index that had missed a morning's mail answered "your balance
-    // is low" while a newer email had arrived (Nov 22, 2026). Nothing is prepared, and the result says why.
+    // newest email here may not be the newest there: an index that had missed a morning's mail answered from an older
+    // email while a newer one had arrived (Nov 22, 2026). Nothing is prepared, and the result says why.
     if (latest && pick.rec.source === 'gmail' && (fresh.status === 'unknown' || (fresh.status === 'changed' && fresh.unchecked))) {
       run.end(freshId, codeTrace('retrieve', LABELS.freshLatestUnchecked, freshMs));
       run.errorCode = 'mail-not-current';

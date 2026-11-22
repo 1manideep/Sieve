@@ -27,7 +27,7 @@ export interface SpanFilterOptions { senders?: ReadonlySet<string> }
 
 /**
  * Step 1: drop empty, out-of-range, protected (model and Nano), stopword, month-near-digit and very short name spans,
- * and model or Nano ID numbers that do not read as one ("Z1llow", 5.6 step 1).
+ * and model or Nano ID numbers that do not read as one ("N3stra", 5.6 step 1).
  */
 export function filterSpans(text: string, spans: readonly PiiSpan[], opts: SpanFilterOptions = {}): PiiSpan[] {
   return spans.filter((s) => {

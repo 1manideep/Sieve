@@ -186,16 +186,16 @@ describe('selectAndAnswer (10 section 16.7)', () => {
     it('knows a question about money, about a date, about both, and about neither', () => {
       expect(answerKind('What did the store charge me for last month?')?.test('Total: $4.99')).toBe(true);
       expect(answerKind('How much was the deposit?')?.test('It was received on March 3.')).toBe(false);
-      expect(answerKind('When does the cover run out?')?.test('It will expire on November 26, 2026.')).toBe(true);
+      expect(answerKind('When does the cover run out?')?.test('It will expire on January 9, 2027.')).toBe(true);
       expect(answerKind('When was I charged, and how much?')?.test('at 10:30')).toBe(true);
       expect(answerKind('Who signed the lease?')).toBeNull();
       // a question about what an item says names its subject with the same words: no amount or date is asked for
-      expect(answerKind('What did the most recent email about my Dashbite payment plan say?')).toBeNull();
+      expect(answerKind('What did the most recent email about my Lumora payment plan say?')).toBeNull();
       expect(answerKind('What did my landlord say about the rent?')).toBeNull();
       expect(answersKind('What did the email about my payment plan say?', 'Your payment did not go through.')).toBe(true);
       // unless it says so outright
-      expect(answerKind('How much did the email about my payment plan say I owe?')?.test('$13.08')).toBe(true);
-      expect(answerKind('What did Pawsure say about when the cover ends?')?.test('November 26, 2026')).toBe(true);
+      expect(answerKind('How much did the email about my payment plan say I owe?')?.test('$21.40')).toBe(true);
+      expect(answerKind('What did Spokeworks say about when the plan ends?')?.test('January 9, 2027')).toBe(true);
       expect(answersKind('How much was the last payment?', 'It did not go through.')).toBe(false);
     });
 
@@ -296,7 +296,7 @@ describe('selectAndAnswer (10 section 16.7)', () => {
 
 describe('search words (the on-device model names other words for the search)', () => {
   it('keeps short strings, at most six, and drops anything else', () => {
-    expect(parseWords({ words: [' trash  cans ', 'dumpster', 7, '', 'x', 'a'.repeat(41), 'waste disposal'] })).toEqual(['trash cans', 'dumpster', 'waste disposal']);
+    expect(parseWords({ words: [' bike  cage ', 'racks', 7, '', 'x', 'a'.repeat(41), 'cycle parking'] })).toEqual(['bike cage', 'racks', 'cycle parking']);
     expect(parseWords({ words: ['a1', 'b2', 'c3', 'd4', 'e5', 'f6', 'g7'] })).toHaveLength(6);
     expect(parseWords({ words: [] })).toEqual([]);
     expect(parseWords({ item: 'P1', answer: 'x' })).toBeNull();

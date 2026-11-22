@@ -17,7 +17,7 @@ const ANCHOR = new RegExp(
 /** Words that may stand next to one: a day of the month, a year, joining words, a time zone. */
 const ALONGSIDE = /^(?:\d{1,2}(?:st|nd|rd|th)?|(?:19|20)\d{2}|at|on|of|the|from|to|until|and|-|–|utc|gmt|[ecmp][sd]?t|bst|cet|cest|ist)$/;
 
-/** "Monday, September 7, 2026", "Sep 7", "2026-09-07", "7:45 AM", "09:45 AM on Wednesday": only date and time words. */
+/** "Monday, September 21, 2026", "Sep 21", "2026-09-21", "7:45 AM", "09:45 AM on Wednesday": only date and time words. */
 export function isDateOrTime(value: string): boolean {
   let anchor = false;
   for (const raw of value.toLowerCase().split(/[\s,;]+/)) {
@@ -103,7 +103,7 @@ export function dropPublicValues(text: string, spans: readonly PiiSpan[], itemTe
   return spans.filter((s) => {
     const value = text.slice(s.start, s.end);
     if (s.type !== 'name' && s.type !== 'dob' && s.type !== 'secret-code' && isDateOrTime(value)) return false;
-    // A date marked as a name ("Sunday, September 6, 2026" came out as "[name]", Nov 21, 2026). It needs a number in
+    // A date marked as a name ("Sunday, September 20, 2026" came out as "[name]", Nov 21, 2026). It needs a number in
     // it: a bare "April", "June" or "May" may be a person.
     if (s.type === 'name' && /\d/.test(value) && isDateOrTime(value)) return false;
     if (s.type === 'address') return isStreetAddress(text, s.start, s.end);

@@ -172,8 +172,8 @@ export async function buildStepOption(
     // 6. spans (plain code only): validators, one-time codes and sign-in links, names in "X sent you an email", plus
     // everything already known about this record and its sender (and, at share time, what Gemini Nano found in the
     // outgoing text). What the asker typed in the question is never masked; one-time codes always are.
-    // An ID number must read as one, and a sender of the index is never one ("Z1llow", "1Password", 5.6 step 1).
-    // The company sender's own name is never masked as a person's: in "Good Dog sent you" (every step), and in the
+    // An ID number must read as one, and a sender of the index is never one ("N3stra", "1Password", 5.6 step 1).
+    // The company sender's own name is never masked as a person's: in "Sunny Paws sent you" (every step), and in the
     // answer whatever found it (10.3a: organisation names stay, they are often the answer).
     // Dates, times, labelled reference numbers and places that are not a street address are not personal details
     // (publicValues.ts), and the identifiers the caller gave as terms count as typed.

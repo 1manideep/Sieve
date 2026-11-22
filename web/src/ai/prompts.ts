@@ -74,8 +74,8 @@ export const SELECT_SCHEMA = {
 export const SELECT_CLOUD_SCHEMA = { ...SELECT_SCHEMA, propertyOrdering: ['item', 'answer'] } as const;
 
 /**
- * Before the search: other words the item that answers may use. The item often says "trash corrals" where the question
- * says "garbage enclosures", and the small embedding model does not always bridge that. On-device only.
+ * Before the search: other words the item that answers may use. The item often says "bike cage" where the question
+ * says "bicycle storage", and the small embedding model does not always bridge that. On-device only.
  */
 export const WORDS_SYSTEM = `You help search a person's own email, files and photos. The item that answers a question often uses other words than the question does.
 You get one question. Reply with JSON only: "words" is a list of 4 to 6 short search phrases (1 to 3 words each) that the answering email or file would likely contain: synonyms and the usual wording of such items. Do not repeat the question's own words. Do not answer the question. Do not invent names, numbers or dates.`;

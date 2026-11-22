@@ -1,5 +1,5 @@
 // The Nov 20 tester's privacy cases on small fixtures: T10 (a one-time code left the device), T04 (the caller's own
-// "1manideep" masked as [id number]), T05 (a third person's name left the device), T02 and "Kay" (words the asker typed).
+// "1manideep" masked as [id number]), T05 (a third person's name left the device), T02 and "Ivo" (words the asker typed).
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { IndexRecord, KnownEntity } from '@sieve/shared';
@@ -33,7 +33,7 @@ async function answer(record: IndexRecord, text: string, question: string, extra
   return o.text;
 }
 
-const T10 = 'Your Zillow verification code is 733211. It expires in 10 minutes. If you did not ask for it, you can ignore this email.';
+const T10 = 'Your Nestra verification code is 733211. It expires in 10 minutes. If you did not ask for it, you can ignore this email.';
 
 describe('one-time codes and sign-in links (secret-code, T10)', () => {
   it('finds the codes and the links', () => {
@@ -43,7 +43,7 @@ describe('one-time codes and sign-in links (secret-code, T10)', () => {
     expect(at('Use 4821 to sign in. Do not share it.')).toEqual(['4821']);
     expect(at('Your one-time passcode: 551 902')).toEqual(['551 902']);
     expect(at('Confirm your email with code K7Q2LM9.')).toEqual(['K7Q2LM9']);
-    expect(at('Sign in: https://www.zillow.com/user/verify?token=abc123 (expires soon)')).toEqual(['https://www.zillow.com/user/verify?token=abc123']);
+    expect(at('Sign in: https://www.nestra.example/user/verify?token=abc123 (expires soon)')).toEqual(['https://www.nestra.example/user/verify?token=abc123']);
     expect(at('Reset it here: https://accounts.example.com/reset-password?t=xyz.')).toEqual(['https://accounts.example.com/reset-password?t=xyz']);
   });
 
@@ -70,15 +70,15 @@ describe('one-time codes and sign-in links (secret-code, T10)', () => {
   });
 
   it('the share-time redaction removes a code from any outgoing text, even one the asker typed', async () => {
-    const zillow = rec({ id: 'gmail:zillow', from: 'Zillow <no-reply@zillow.com>', text: T10, title: 'Sign in to Zillow' });
-    expect(holdsSecretCode(zillow)).toBe(true);
-    expect(await answer(zillow, 'Your Zillow verification code is 733211.', 'Show me my Google verification emails')).toBe('Your Zillow verification code is [code].');
-    expect(await answer(zillow, 'Your Zillow verification code is 733211.', 'What is 733211 for?')).toBe('Your Zillow verification code is [code].');
-    expect(await answer(zillow, 'Yes, your Zillow verification code is 733211.', 'Is 733211 my Zillow code?')).toBe('Yes.');
+    const nestra = rec({ id: 'gmail:nestra', from: 'Nestra <no-reply@nestra.example>', text: T10, title: 'Sign in to Nestra' });
+    expect(holdsSecretCode(nestra)).toBe(true);
+    expect(await answer(nestra, 'Your Nestra verification code is 733211.', 'Show me my Google verification emails')).toBe('Your Nestra verification code is [code].');
+    expect(await answer(nestra, 'Your Nestra verification code is 733211.', 'What is 733211 for?')).toBe('Your Nestra verification code is [code].');
+    expect(await answer(nestra, 'Yes, your Nestra verification code is 733211.', 'Is 733211 my Nestra code?')).toBe('Yes.');
     // the same when the subject holds the same words: the words stay (they are the answer's own), the code never does
-    const subject = { ...zillow, title: 'Your Zillow verification code' };
-    const o = await buildStepOption('answer', { answer: 'Your Zillow verification code is 733211.' }, subject, 'own', { question: 'What is 733211 for?', maxStep: 'answer' });
-    expect(o).toMatchObject({ available: true, text: 'Your Zillow verification code is [code].' });
+    const subject = { ...nestra, title: 'Your Nestra verification code' };
+    const o = await buildStepOption('answer', { answer: 'Your Nestra verification code is 733211.' }, subject, 'own', { question: 'What is 733211 for?', maxStep: 'answer' });
+    expect(o).toMatchObject({ available: true, text: 'Your Nestra verification code is [code].' });
   });
 });
 
@@ -101,16 +101,16 @@ describe('a hyphen in a personal detail (Nov 21, 2026: the masking threw a Synta
   it('escapeRegExp output is valid with and without the u flag for every punctuation mark', async () => {
     const { escapeRegExp } = await import('../text');
     const marks = '.*+?^${}()|[]\\/-#&,:;=@_~\'"!%<>';
-    for (const flags of ['', 'u', 'giu']) expect(() => new RegExp(escapeRegExp(`a${marks}b 2732-9756`), flags)).not.toThrow();
+    for (const flags of ['', 'u', 'giu']) expect(() => new RegExp(escapeRegExp(`a${marks}b 5521-0098`), flags)).not.toThrow();
     expect(new RegExp(`^${escapeRegExp(marks)}$`, 'u').test(marks)).toBe(true);
   });
 });
 
 describe('names and the words the asker typed (T02, T04, T05)', () => {
   it('T04: "1manideep" from the question is never masked; another person stays masked', async () => {
-    const gh = rec({ id: 'gmail:gh', from: 'GitHub <noreply@github.com>', text: 'Hi 1manideep, a new release of 1manideep/Sieve was published by Ramki Kumar.' });
-    const found: KnownEntity[] = [{ text: '1manideep', type: 'other', by: 'nano' }, { text: 'Ramki Kumar', type: 'name', by: 'nano' }];
-    const text = 'Ramki Kumar published a new release of 1manideep/Sieve.';
+    const gh = rec({ id: 'gmail:gh', from: 'GitHub <noreply@github.com>', text: 'Hi 1manideep, a new release of 1manideep/Sieve was published by Benji Kumar.' });
+    const found: KnownEntity[] = [{ text: '1manideep', type: 'other', by: 'nano' }, { text: 'Benji Kumar', type: 'name', by: 'nano' }];
+    const text = 'Benji Kumar published a new release of 1manideep/Sieve.';
     expect(await answer(gh, text, 'What did my latest GitHub email say about 1manideep/Sieve?', found)).toBe('[name] published a new release of 1manideep/Sieve.');
     // one digit is not an ID number (B09 of Nov 21): it stays even when the asker did not type it
     expect(await answer(gh, text, 'What did my latest GitHub email say?', found)).toBe('[name] published a new release of 1manideep/Sieve.');
@@ -124,10 +124,10 @@ describe('names and the words the asker typed (T02, T04, T05)', () => {
     expect(await answer(strava, 'Priya Shah sent you kudos on Strava.', 'What did Strava send me?')).toBe('[name] sent you kudos on Strava.');
   });
 
-  it('"Kay" from the question stays; the rest of the name is masked, the same way each time', async () => {
-    const kay = rec({ id: 'gmail:kay', from: 'Kay Narayanan <kay.narayanan@gmail.com>', text: 'The lease starts on June 1.' });
-    expect(await answer(kay, 'Kay Narayanan said the lease starts on June 1.', 'What did Kay say about the lease?')).toBe('Kay [name] said the lease starts on June 1.');
-    expect(await answer(kay, 'Kay Narayanan said the lease starts on June 1.', 'What did Kay Narayanan say about the lease?')).toBe('Kay Narayanan said the lease starts on June 1.');
+  it('"Ivo" from the question stays; the rest of the name is masked, the same way each time', async () => {
+    const ivo = rec({ id: 'gmail:ivo', from: 'Ivo Lindqvist <ivo.lindqvist@gmail.com>', text: 'The lease starts on June 1.' });
+    expect(await answer(ivo, 'Ivo Lindqvist said the lease starts on June 1.', 'What did Ivo say about the lease?')).toBe('Ivo [name] said the lease starts on June 1.');
+    expect(await answer(ivo, 'Ivo Lindqvist said the lease starts on June 1.', 'What did Ivo Lindqvist say about the lease?')).toBe('Ivo Lindqvist said the lease starts on June 1.');
   });
 
   it('an ordinary word in the question that is also a first name does not unmask it', () => {
@@ -143,19 +143,19 @@ describe('names and the words the asker typed (T02, T04, T05)', () => {
       const spans = keepAskerWords(text, [{ start, end: start + name.length, type: 'name', by: 'validator' }], question);
       expect(spans.map((s) => text.slice(s.start, s.end)), question).toEqual([name]);
     }
-    const text = 'Kay Narayanan said the lease starts on June 1.';
-    const kay = [{ start: 0, end: 13, type: 'name' as const, by: 'validator' as const }];
-    expect(keepAskerWords(text, kay, 'What did Kay say?').map((s) => text.slice(s.start, s.end))).toEqual(['Narayanan']);
-    expect(keepAskerWords(text, kay, "Kay's lease: when does it start?").map((s) => text.slice(s.start, s.end))).toEqual(['Narayanan']);
+    const text = 'Ivo Lindqvist said the lease starts on June 1.';
+    const ivo = [{ start: 0, end: 13, type: 'name' as const, by: 'validator' as const }];
+    expect(keepAskerWords(text, ivo, 'What did Ivo say?').map((s) => text.slice(s.start, s.end))).toEqual(['Lindqvist']);
+    expect(keepAskerWords(text, ivo, "Ivo's lease: when does it start?").map((s) => text.slice(s.start, s.end))).toEqual(['Lindqvist']);
   });
 
   it('a company sender in the same phrasing is not a person', async () => {
-    const dog = rec({ id: 'gmail:dog2', from: 'Good Dog <hello@gooddog.example>', text: 'Your booking for Bella is confirmed.' });
-    expect(await answer(dog, 'Good Dog sent you a booking confirmation for Jun 10.', 'What did the daycare send about the booking?')).toBe('Good Dog sent you a booking confirmation for Jun 10.');
+    const dog = rec({ id: 'gmail:dog2', from: 'Sunny Paws <hello@sunnypaws.example>', text: 'Your booking for Bella is confirmed.' });
+    expect(await answer(dog, 'Sunny Paws sent you a booking confirmation for Jun 10.', 'What did the daycare send about the booking?')).toBe('Sunny Paws sent you a booking confirmation for Jun 10.');
   });
 
   it("T02: the dog's name the asker typed is not masked", async () => {
-    const dog = rec({ id: 'gmail:dog', from: 'Good Dog Daycare <hello@gooddog.example>', text: 'Pickup Jun 12 at 5 PM for Bella.' });
+    const dog = rec({ id: 'gmail:dog', from: 'Sunny Paws Daycare <hello@sunnypaws.example>', text: 'Pickup Jun 12 at 5 PM for Bella.' });
     const found: KnownEntity[] = [{ text: 'Bella', type: 'name', by: 'nano' }];
     expect(await answer(dog, "Bella's pickup is on Jun 12 at 5 PM.", "When is Bella's pickup?", found)).toBe("Bella's pickup is on Jun 12 at 5 PM.");
     expect(await answer(dog, "Bella's pickup is on Jun 12 at 5 PM.", 'When is the daycare pickup?', found)).toBe("[name]'s pickup is on Jun 12 at 5 PM.");
@@ -164,8 +164,8 @@ describe('names and the words the asker typed (T02, T04, T05)', () => {
   it('a person sender is told from a company sender', () => {
     expect(personSender('Priya Shah <priya.shah@gmail.com>')).toBe('Priya Shah');
     expect(personSender('Dana Whitfield <dana@thistlewick-pm.example>')).toBe('Dana Whitfield');
-    expect(personSender('Kay <kay@gmail.com>')).toBe('Kay');
-    for (const f of ['Strava <no-reply@strava.com>', 'Kestrelmoor Bank <alerts@kestrelmoor.example>', 'Albatrine Air <bookings@albatrine.example>', 'Good Dog Daycare <hello@gooddog.example>', 'Code Review Bot <noreply@code.example>', 'auto-confirm@amazon.in']) {
+    expect(personSender('Ivo <ivo@gmail.com>')).toBe('Ivo');
+    for (const f of ['Strava <no-reply@strava.com>', 'Kestrelmoor Bank <alerts@kestrelmoor.example>', 'Albatrine Air <bookings@albatrine.example>', 'Sunny Paws Daycare <hello@sunnypaws.example>', 'Code Review Bot <noreply@code.example>', 'auto-confirm@amazon.in']) {
       expect(personSender(f), f).toBeNull();
     }
   });

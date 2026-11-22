@@ -1,6 +1,6 @@
 // Names and the asker's own words in outgoing text (11 section 10.2 step 6). Other people's names are masked
 // consistently, the sender's too when the sender is a person; what the asker typed in the question is never masked,
-// because the caller already knows it ("1manideep", "Kay", a repo name, an order id).
+// because the caller already knows it ("1manideep", "Ivo", a repo name, an order id).
 import type { IndexRecord, KnownEntity, PiiSpan } from '@sieve/shared';
 import { isStopwordOrCalendarWord } from '../pii/merge';
 import { GREETING_EXCLUDE, ORG_WORDS } from '../pii/validators/names';
@@ -55,7 +55,7 @@ export function senderWordsOf(record: Pick<IndexRecord, 'from'>, known?: Readonl
   return out;
 }
 
-/** "Good Dog sent you a booking": a company sender's own name is not a person's name, so it is not masked. */
+/** "Sunny Paws sent you a booking": a company sender's own name is not a person's name, so it is not masked. */
 export function notTheCompany(text: string, spans: readonly PiiSpan[], record: Pick<IndexRecord, 'from'>): PiiSpan[] {
   const name = senderName(record.from);
   if (!name || name.includes('@') || personSender(record.from)) return [...spans];
@@ -96,7 +96,7 @@ function askedNumbers(question: string): Set<string> {
 
 /**
  * Drops the spans the asker typed: a whole value in the question stays as it is, and so does a number with the same
- * digits; in a name, the words the asker typed stay and the rest is masked ("Kay [name]"). One-time codes are always
+ * digits; in a name, the words the asker typed stay and the rest is masked ("Ivo [name]"). One-time codes are always
  * masked.
  */
 export function keepAskerWords(text: string, spans: readonly PiiSpan[], question: string | undefined): PiiSpan[] {
