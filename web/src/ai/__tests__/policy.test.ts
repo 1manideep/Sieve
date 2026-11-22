@@ -35,6 +35,13 @@ describe('resolveRoute (10 section 16.2)', () => {
   it('PO-6: own labels never reach the cloud', () => {
     expect(route('label', 'own', 'ONLY_ON_DEVICE', 'unavailable', { cloud: true, consent: true })).toMatchObject({ ok: false, code: 'unavailable' });
   });
+  it('search-words never runs in the cloud, for any data: the question stays on the device (Nov 22)', () => {
+    expect(route('search-words', 'sample', 'PREFER_ON_DEVICE', 'no-api')).toMatchObject({ ok: false, code: 'unavailable' });
+    expect(route('search-words', 'own', 'ONLY_ON_DEVICE', 'no-api', { cloud: true, consent: true })).toMatchObject({ ok: false });
+    expect(route('search-words', 'own', 'ONLY_ON_DEVICE', 'available')).toEqual({ ok: true, mode: 'ONLY_ON_DEVICE' });
+    expect(route('search-words', 'sample', 'PREFER_ON_DEVICE', 'available')).toEqual({ ok: true, mode: 'ONLY_ON_DEVICE' });
+  });
+
   it('PO-7: pii-check never runs in the cloud, for any data', () => {
     expect(route('pii-check', 'sample', 'PREFER_ON_DEVICE', 'no-api')).toMatchObject({ ok: false, code: 'unavailable' });
   });

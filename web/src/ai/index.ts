@@ -11,6 +11,7 @@ export {
   type Passage, type PassageRange, type SelectOptions, type SelectValue,
 } from './tasks/select';
 export { verifyAnswer, verifyPrompt, type VerifyOptions, type VerifyValue } from './tasks/verify';
+export { searchWords, parseWords } from './tasks/words';
 export { captionPhoto } from './tasks/caption';
 export { draftReply, draftPrompt } from './tasks/draft';
 export { codeLabel, isBulkTab, isHealthStrong, isSystemSender, CODE_LABEL_RULES, HEALTH_STRONG } from './tasks/codeLabel';

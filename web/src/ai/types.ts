@@ -5,7 +5,7 @@ import type { SieveDb } from '@/index';
 export type { DataClass } from '@sieve/shared';
 
 export type PromptPart = { type: 'text'; text: string } | { type: 'image'; blob: Blob };
-export type Purpose = 'label' | 'select-answer' | 'verify-answer' | 'caption' | 'draft' | 'injection-check' | 'pii-check';
+export type Purpose = 'label' | 'select-answer' | 'verify-answer' | 'search-words' | 'caption' | 'draft' | 'injection-check' | 'pii-check';
 export type Priority = 'foreground' | 'background';
 
 /** Who may let own data reach the cloud, and where consent rows live (10 section 8). */

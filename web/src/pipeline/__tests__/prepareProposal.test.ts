@@ -415,9 +415,10 @@ describe('prepareProposal (10 section 16.10)', () => {
     const events: PipelineProgress[] = [];
     await run({ onProgress: (e) => events.push(e) });
     const short = events.map((e) => (e.type === 'answer-progress' ? 'answer' : `${e.type}:${e.type === 'step-start' ? e.kind : e.step.kind}`));
-    expect(short.slice(0, 3)).toEqual(['step-start:retrieve', 'step-end:retrieve', 'step-start:select']);
+    // the other search words, then the search, then the read
+    expect(short.slice(0, 5)).toEqual(['step-start:retrieve', 'step-end:retrieve', 'step-start:retrieve', 'step-end:retrieve', 'step-start:select']);
     const selectEnd = short.indexOf('step-end:select');
-    expect(short.slice(3, selectEnd)).toContain('answer');
+    expect(short.slice(5, selectEnd)).toContain('answer');
     const starts = new Set(events.flatMap((e) => (e.type === 'step-start' ? [e.id] : [])));
     for (const e of events) if (e.type === 'step-end') expect(starts.has(e.id)).toBe(true);
     expect(events.find((e) => e.type === 'step-start' && e.kind === 'select')).toMatchObject({ label: 'Reading 1 email on this device…', where: 'device' });

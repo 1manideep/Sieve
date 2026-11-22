@@ -3,7 +3,7 @@
 // another call's content (00 decision 3).
 import { IMAGE_CREATE_OPTIONS, MAX_BASE_SESSIONS, TEXT_CREATE_OPTIONS } from '../config';
 import { sessionKeyFor } from '../keys';
-import { CAPTION_SYSTEM, LABEL_SYSTEM, SELECT_SYSTEM, VERIFY_SYSTEM } from '../prompts';
+import { CAPTION_SYSTEM, LABEL_SYSTEM, SELECT_SYSTEM, VERIFY_SYSTEM, WORDS_SYSTEM } from '../prompts';
 import { getNanoState } from './availability';
 import { getLanguageModel, type LanguageModelSession } from './languageModel';
 
@@ -26,6 +26,7 @@ let useCounter = 0;
 export const FOREGROUND_FIRST: BaseSessionSpec[] = [
   { key: sessionKeyFor('select-answer', false, SELECT_SYSTEM), system: SELECT_SYSTEM, image: false },
   { key: sessionKeyFor('verify-answer', false, VERIFY_SYSTEM), system: VERIFY_SYSTEM, image: false },
+  { key: sessionKeyFor('search-words', false, WORDS_SYSTEM), system: WORDS_SYSTEM, image: false },
   { key: sessionKeyFor('label', false, LABEL_SYSTEM), system: LABEL_SYSTEM, image: false },
   { key: sessionKeyFor('caption', true, CAPTION_SYSTEM), system: CAPTION_SYSTEM, image: true },
 ];

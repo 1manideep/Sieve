@@ -54,6 +54,7 @@ export const SEARCH_TUNING = {
   keywordWeight: 0.5,
   exactKeywordWeight: 1,
   liveWeight: 0.5,
+  expandWeight: 0.75,
   boostScale: 8,
   maxPerThread: MAX_PER_THREAD,
   rerankBlend: 0.5,

@@ -59,6 +59,14 @@ export interface SearchOptions {
   k?: number; sources?: SourceKind[]; categories?: Category[]; hints?: QueryHints;
   live?: boolean; hydrate?: boolean; signal?: AbortSignal; now?: number; locale?: string;
   onReport?: (r: SearchReport) => void;
+  /**
+   * Other words the answering item may use ("trash" for "garbage"), from the on-device model: what they find by
+   * keyword is one more list. Measured Nov 22, 2026 with bench/search-eval and the model's own words for all 70
+   * questions, on the distractor set: the right item first for 81% of questions against 66%, in the best five for 93%
+   * against 90% (paraphrases 86% against 79%); with the reranker, in the best five for 96% against 91%. The same
+   * words as one more meaning list scored no better, so they are not embedded.
+   */
+  expand?: string[];
   /** The person's rule per category (default: DEFAULT_CATEGORY_RULES): the reranker reads a never item's title only. */
   ruleOf?: (category: Category) => CategoryRule;
 }
@@ -439,6 +447,8 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
   if (norm !== kwTexts[0]) kwTexts.push(norm);
   const query = [...kwTexts, ...(hints.terms ?? [])].join(' ');
   const keywordList = rt.keyword.search(query, (hit) => accept(String(hit.id))).slice(0, T.retrieveK).map((h) => String(h.id));
+  const expand = (opts.expand ?? []).join(' ');
+  const expandList = expand.trim() ? rt.keyword.search(expand, (hit) => accept(String(hit.id))).slice(0, T.retrieveK).map((h) => String(h.id)) : [];
   const keywordMs = Math.round(performance.now() - t1);
 
   // live Gmail ids, in Gmail's own order
@@ -465,6 +475,7 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
     { ids: keywordList, weight: exact ? T.exactKeywordWeight : T.keywordWeight },
     { ids: liveList, weight: T.liveWeight },
     { ids: latestList, weight: T.vectorWeight },
+    { ids: expandList, weight: T.expandWeight },
   ];
   const fused = new Map<string, number>();
   for (const l of lists) l.ids.forEach((id, i) => fused.set(id, (fused.get(id) ?? 0) + l.weight / (T.rrfK + i + 1)));

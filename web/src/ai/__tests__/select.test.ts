@@ -6,6 +6,7 @@ import { setLanguageModelForTests } from '../device/languageModel';
 import { setHybridForTests } from '../hybrid';
 import { SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
 import { answerKind, answersKind, bestWindow, deriveExcerpt, fitPassages, selectAndAnswer, selectPrompt } from '../tasks/select';
+import { parseWords } from '../tasks/words';
 import { createFakeHybrid, promptText, type FakeReply } from '../testing/fakeHybrid';
 import { installFakeLanguageModel } from '../testing/fakeLanguageModel';
 import { resetAiForTests } from '../testing/reset';
@@ -262,5 +263,15 @@ describe('selectAndAnswer (10 section 16.7)', () => {
     expect(res.ok && res.value.recordId).toBeNull();
     expect(res.trace).toMatchObject({ where: 'code', label: 'No items to read' });
     expect(fake.calls).toHaveLength(0);
+  });
+});
+
+describe('search words (the on-device model names other words for the search)', () => {
+  it('keeps short strings, at most six, and drops anything else', () => {
+    expect(parseWords({ words: [' trash  cans ', 'dumpster', 7, '', 'x', 'a'.repeat(41), 'waste disposal'] })).toEqual(['trash cans', 'dumpster', 'waste disposal']);
+    expect(parseWords({ words: ['a1', 'b2', 'c3', 'd4', 'e5', 'f6', 'g7'] })).toHaveLength(6);
+    expect(parseWords({ words: [] })).toEqual([]);
+    expect(parseWords({ item: 'P1', answer: 'x' })).toBeNull();
+    expect(parseWords(null)).toBeNull();
   });
 });

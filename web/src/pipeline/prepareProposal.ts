@@ -10,7 +10,7 @@ import type {
 } from '@sieve/shared';
 import {
   CANDIDATE_POOL, CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, answerKind, answersKind, codeTrace, deriveExcerpt, excerptBasis, fitPassages, getNanoAvailability, hasFreshConsent,
-  recordBody, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
+  recordBody, searchWords, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
 } from '@/ai';
 import {
   asksCount, asksLatest, asksSeveral, asksState, clockFor, flushUrgentEmbeds, getRecord, identifierTerms, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
@@ -432,6 +432,18 @@ async function prepare(run: Run): Promise<Proposal> {
     return run.why('asks-several').finish('unsupported', { reason: UNAVAILABLE.oneFact });
   }
 
+  // 3c. Other words for the search, from the on-device model: the item that answers often says "trash corrals"
+  // where the question says "garbage enclosures". Not when the question holds an exact number (the number finds its
+  // item). Never a reason to stop: with no on-device model, a slow one or an unusable reply the search runs as it is.
+  let expand: string[] = [];
+  if (run.aborted) return run.stopped();
+  if (identifierTerms(lookup, hints?.terms).length === 0) {
+    const wordsId = run.start('retrieve', RUNNING.words, 'device');
+    const w = await searchWords(lookup, input.dataClass, input.signal ? { signal: input.signal } : {});
+    if (w.ok) expand = w.value;
+    run.end(wordsId, { ...w.trace, label: expand.length > 0 ? LABELS.wordsFound(expand.length) : LABELS.wordsNone }, expand.length > 0);
+  }
+
   // 4. Retrieve.
   if (run.aborted) return run.stopped();
   const retrieveId = run.start('retrieve', RUNNING.retrieve, 'code');
@@ -459,6 +471,7 @@ async function prepare(run: Run): Promise<Proposal> {
       ...(input.allowedSources ? { sources: input.allowedSources } : {}),
       ...(searchHints ? { hints: searchHints } : {}),
       ...(input.signal ? { signal: input.signal } : {}),
+      ...(expand.length > 0 ? { expand } : {}),
       onReport: (r) => {
         filters = r.filters;
         categoryRelaxed = r.categoryRelaxed;

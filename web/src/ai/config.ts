@@ -51,7 +51,7 @@ export const IMAGE_JPEG_QUALITY = 0.85;
 export const AVAILABILITY_MAX_AGE_MS = 5000;
 export const CONSENT_MAX_AGE_MS = 10 * 60 * 1000;            // real data: a consent covers the request that asked for it
 export const BACKGROUND_RESUME_DELAY_MS = 1500;              // background waits this long after the last foreground call
-export const MAX_BASE_SESSIONS = 6;
+export const MAX_BASE_SESSIONS = 7;                            // one per system prompt in use (7 since the search-words task)
 export const SAMPLE_QUOTA_RETRY_MS = 2000;                   // 70 R-PLAT-16: one retry for sample-data select on quota
 
 /** Delays that unit tests may shorten. Production code reads them from here, never the constants directly. */
@@ -61,13 +61,13 @@ export const TIMING = {
 };
 
 export const TIMEOUT_MS: Record<Purpose, number> = {
-  'select-answer': 45000, 'verify-answer': 30000, label: 60000, caption: 60000, draft: 30000, 'injection-check': 30000, 'pii-check': 30000,
+  'select-answer': 45000, 'verify-answer': 30000, 'search-words': 6000, label: 60000, caption: 60000, draft: 30000, 'injection-check': 30000, 'pii-check': 30000,
 };
 export const MAX_OUTPUT_TOKENS: Record<Purpose, number> = {
-  'select-answer': 256, 'verify-answer': 128, label: 1200, caption: 128, draft: 600, 'injection-check': 256, 'pii-check': 1024,
+  'select-answer': 256, 'verify-answer': 128, 'search-words': 96, label: 1200, caption: 128, draft: 600, 'injection-check': 256, 'pii-check': 1024,
 };
 export const DEFAULT_PRIORITY: Record<Purpose, Priority> = {
-  'select-answer': 'foreground', 'verify-answer': 'foreground', draft: 'foreground', caption: 'background', label: 'background',
+  'select-answer': 'foreground', 'verify-answer': 'foreground', 'search-words': 'foreground', draft: 'foreground', caption: 'background', label: 'background',
   'injection-check': 'background', 'pii-check': 'background',
 };
 

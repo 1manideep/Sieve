@@ -218,6 +218,36 @@ describe('the tester cases (Nov 20)', () => {
     expect(hybrid.callsFor('select-answer').at(-1)?.meta?.recordIds).toEqual(['gmail:cover-promo', 'gmail:cover-welcome']);
   });
 
+  it('other words for the search come from the on-device model, before the search, and never for an exact number (Nov 22)', async () => {
+    idx.search.mockResolvedValue([idx.cand(GOOD_DOG.id)]);
+    model('P1', 'Pickup is on Jun 12 at 5 PM.');
+    hybrid.words = ['collection time', 'pick-up'];
+    const p = await prepareProposal(input({ question: 'When do I fetch Bella from daycare?' }));
+    expect(hybrid.wordCalls).toHaveLength(1);
+    expect(hybrid.wordCalls[0].spec.mode).toBe('ONLY_ON_DEVICE');
+    expect(promptText(hybrid.wordCalls[0].parts)).toBe('Question: When do I fetch Bella from daycare?');   // the question, and nothing of any item
+    expect((idx.search.mock.calls[0][2] as { expand?: string[] }).expand).toEqual(['collection time', 'pick-up']);
+    expect(labels(p)).toContain('Thought of 2 other words the item may use, and searched for them too');
+    // no words back: the search runs as it is, and the trace has no row for it
+    hybrid.words = [];
+    const plain = await prepareProposal(input({ question: 'When do I fetch Bella from daycare?' }));
+    expect((idx.search.mock.calls.at(-1)?.[2] as { expand?: string[] }).expand).toBeUndefined();
+    expect(labels(plain).some((l) => l.includes('other word'))).toBe(false);
+    // an exact number finds its item: the model is not asked
+    hybrid.words = ['anything'];
+    await prepareProposal(input({ question: 'Where does booking 3391976083 leave from?', hints: { terms: ['3391976083'] } }));
+    expect(hybrid.wordCalls).toHaveLength(2);
+  });
+
+  it('with no on-device model the search runs with the question as it is: the question never goes to the cloud for other words (Nov 22)', async () => {
+    setLanguageModelForTests(installFakeLanguageModel({ availability: { text: 'unavailable', image: 'unavailable' } }));
+    idx.search.mockResolvedValue([idx.cand(GOOD_DOG.id)]);
+    hybrid.words = ['collection time'];
+    await prepareProposal(input({ question: 'When do I fetch Bella from daycare?', dataClass: 'sample' }));
+    expect(hybrid.wordCalls).toHaveLength(0);
+    expect((idx.search.mock.calls[0][2] as { expand?: string[] }).expand).toBeUndefined();
+  });
+
   it('a second check that says no names the pick without its content (place, exact terms, numbers)', async () => {
     idx.search.mockResolvedValue([GOOD_DOG, ...RAMKI.slice(0, 2)].map((r) => idx.cand(r.id)));
     model('P1', 'Bella has a vet visit on Jun 12 at 5 PM.', false);

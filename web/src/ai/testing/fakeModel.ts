@@ -110,6 +110,8 @@ function reply(spec: ModelSpec, prompt: string, recordIds: string[], fault: stri
       return selectReply(prompt, recordIds, fault);
     case 'verify-answer':
       return verifyReply(prompt, fault);
+    case 'search-words':
+      return JSON.stringify({ words: [] });
     case 'caption':
       return JSON.stringify({ caption: FIXED_CAPTION });
     case 'draft': {

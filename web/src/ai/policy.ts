@@ -55,6 +55,8 @@ export function resolveRoute(input: {
   if (purpose === 'draft' && data !== 'approved') return { ok: false, code: 'cloud-not-allowed', message: POLICY_MESSAGES.draftNotApproved };
   if (purpose === 'draft') return { ok: true, mode: 'PREFER_IN_CLOUD' };
   if (purpose === 'pii-check') return ready ? { ok: true, mode: 'ONLY_ON_DEVICE' } : fail();
+  // the question never leaves the device to find other words for it: without the on-device model the search runs as it is
+  if (purpose === 'search-words') return ready ? { ok: true, mode: 'ONLY_ON_DEVICE' } : fail();
   // 10 section 12.3 step 12b: the check of the answer against the item never sends own data anywhere
   if (purpose === 'verify-answer' && data === 'own') return ready ? { ok: true, mode: 'ONLY_ON_DEVICE' } : fail();
   // Own data always takes rows 6 to 10 (the caller's requested mode cannot widen or narrow them).

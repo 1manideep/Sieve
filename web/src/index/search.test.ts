@@ -244,6 +244,24 @@ describe('search', () => {
     await db.records.bulkDelete(ids);
   });
 
+  it('other words for the question find an item that shares none of the question\'s words (Nov 22)', async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      ids.push(`gmail:apt-${i}`);
+      await ingest(db, { source: 'gmail', sourceRef: `apt-${i}`, kind: 'email', title: `Maple Court Apartments: your application, part ${i + 1}`, from: 'Maple Court <office@maplecourt.example>', date: Date.now() - (20 + i) * 86_400_000, text: 'Your apartment application at our apartment complex is complete. New residents can start using the resident portal.' }, 'sample');
+    }
+    ids.push('gmail:corrals');
+    await ingest(db, { source: 'gmail', sourceRef: 'corrals', kind: 'email', title: 'Trash corrals are not ready', from: 'office@maplecourt.example', date: Date.now() - 60 * 86_400_000, text: 'Please keep to the old dumpsters until we say the corrals are open.' }, 'sample');
+    ml.setStatus('embed', { state: 'loading' });   // keyword only, so the test does not hang on what the stand-in embedder makes of it
+    const q = 'Can I start using the new garbage enclosures at my apartment complex yet?';
+    const plain = await search(db, q, { k: 10 });
+    expect(plain.map((c) => c.recordId)).not.toContain('gmail:corrals');
+    const withWords = await search(db, q, { k: 10, expand: ['trash cans', 'dumpster', 'waste disposal'] });
+    expect(withWords.map((c) => c.recordId).slice(0, 5)).toContain('gmail:corrals');
+    ml.setStatus('embed', { state: 'ready', device: 'wasm' });
+    await db.records.bulkDelete(ids);
+  });
+
   it('A-SR-5: embedder not ready gives keyword results and says so', async () => {
     ml.setStatus('embed', { state: 'loading' });
     let report: SearchReport | undefined;

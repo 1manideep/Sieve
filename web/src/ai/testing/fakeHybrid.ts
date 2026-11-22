@@ -26,7 +26,14 @@ export type FakeHandler = (
 ) => FakeReply | Promise<FakeReply>;
 
 export interface FakeHybrid extends HybridCaller {
+  /**
+   * Every call but the search-words one, which reads only the question, before the search: the fake answers it
+   * itself, so a test's script of replies and its count of calls are about the calls that read items.
+   */
   calls: FakeCall[];
+  /** The search-words calls, and the words the fake replies with (none unless a test sets them). */
+  wordCalls: FakeCall[];
+  words: string[];
   /** Calls whose spec.purpose matches. */
   callsFor(purpose: ModelSpec['purpose']): FakeCall[];
 }
@@ -51,15 +58,22 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 
 export function createFakeHybrid(handler: FakeHandler): FakeHybrid {
   const calls: FakeCall[] = [];
+  const wordCalls: FakeCall[] = [];
   const record = (spec: ModelSpec, parts: SdkPart[], signal: AbortSignal, timeoutMs: number, streamed: boolean, meta?: CallMeta) => {
     const call: FakeCall = { spec, parts, signal, timeoutMs, streamed, meta, n: calls.length + 1 };
     calls.push(call);
     return call;
   };
-  return {
+  const fake: FakeHybrid = {
     calls,
-    callsFor: (purpose) => calls.filter((c) => c.spec.purpose === purpose),
+    wordCalls,
+    words: [],
+    callsFor: (purpose) => (purpose === 'search-words' ? wordCalls : calls.filter((c) => c.spec.purpose === purpose)),
     async generate(spec, parts, opts): Promise<ModelCallResult> {
+      if (spec.purpose === 'search-words') {
+        wordCalls.push({ spec, parts, signal: opts.signal, timeoutMs: opts.timeoutMs, streamed: false, meta: opts.meta, n: wordCalls.length + 1 });
+        return { text: JSON.stringify({ words: fake.words }), source: 'on_device' };
+      }
       const call = record(spec, parts, opts.signal, opts.timeoutMs, false, opts.meta);
       const reply = await handler(spec, parts, { signal: opts.signal, call });
       return { text: reply.text, source: reply.source };
@@ -76,6 +90,7 @@ export function createFakeHybrid(handler: FakeHandler): FakeHybrid {
       return { text: reply.text, source: reply.source };
     },
   };
+  return fake;
 }
 
 /** A handler that never settles until the call's signal aborts. */
