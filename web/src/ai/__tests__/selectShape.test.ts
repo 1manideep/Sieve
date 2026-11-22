@@ -4,7 +4,8 @@ import { setLanguageModelForTests } from '../device/languageModel';
 import { setHybridForTests } from '../hybrid';
 import { PROMPT_VERSIONS } from '../versions';
 import { SELECT_SYSTEM, VERIFY_SYSTEM } from '../prompts';
-import { excerptBasis, fitPassages, selectAndAnswer, selectPrompt } from '../tasks/select';
+import { excerptBasis, fitPassages, recordDay, selectAndAnswer, selectPrompt } from '../tasks/select';
+import { datesLine, verifyPrompt } from '../tasks/verify';
 import { createFakeHybrid } from '../testing/fakeHybrid';
 import { installFakeLanguageModel } from '../testing/fakeLanguageModel';
 import { resetAiForTests } from '../testing/reset';
@@ -27,7 +28,17 @@ describe('the select prompt and the answer shape', () => {
     expect(SELECT_SYSTEM).toContain('gets exactly "Yes." or "No."');
     expect(PROMPT_VERSIONS.select).toBe(3);
     expect(VERIFY_SYSTEM).toContain('A proposed answer of "Yes." or "No." is true only if the passage shows that answer to the question.');
-    expect(PROMPT_VERSIONS.verify).toBe(2);
+    expect(PROMPT_VERSIONS.verify).toBe(3);
+  });
+
+  it('the second check is told when the item fits the days the person means, and nothing when it does not', () => {
+    const rec = RECORDS.deposit;
+    const day = recordDay(rec);
+    const fits = verifyPrompt('What did my landlord say that day?', rec, 'x', 'y', TODAY, { after: day, before: day });
+    expect(fits).toContain(`The person means an item dated on ${day}. This item is dated ${day}, so its date fits: do not compare the question's date with other dates in the answer.`);
+    expect(datesLine(rec, { after: '1999-01-01', before: '1999-01-02' })).toBeNull();
+    expect(datesLine({ ...rec, mentionedDays: ['1999-01-02'] }, { after: '1999-01-01', before: '1999-01-02' })).toContain('from 1999-01-01 to 1999-01-02');
+    expect(verifyPrompt('When did I pay the deposit?', rec, 'x', 'y', TODAY)).not.toContain('The person means');
   });
 
   describe('a bare "Yes." still has its exact lines', () => {

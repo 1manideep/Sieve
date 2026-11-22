@@ -649,6 +649,7 @@ async function prepare(run: Run): Promise<Proposal> {
   const checked = await verifyAnswer(lookup, chosen, value.answer, chosenData, {
     ...(recomputeExcerpt || !value.passage ? {} : { passage: value.passage }),
     ...(input.signal ? { signal: input.signal } : {}),
+    ...(hints?.after || hints?.before ? { dates: { ...(hints.after ? { after: hints.after } : {}), ...(hints.before ? { before: hints.before } : {}) } } : {}),
     ownCloud,
     today,
   });

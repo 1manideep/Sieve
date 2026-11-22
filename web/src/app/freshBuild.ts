@@ -31,17 +31,22 @@ export function entryScriptOf(doc: ParentNode): string | null {
   return doc.querySelector('script[type=module][src]')?.getAttribute('src') ?? null;
 }
 
+/**
+ * Text the person has typed and not sent would be lost by a reload. A cursor resting in an empty box loses nothing:
+ * it kept a tab on the old build for an hour after one click into the question box (Nov 21, 2026).
+ */
 function typing(): boolean {
   const el = document.activeElement;
-  if (el instanceof HTMLInputElement) return !NOT_TYPED.has(el.type);
-  return el instanceof HTMLTextAreaElement || (el instanceof HTMLElement && el.isContentEditable);
+  if (el instanceof HTMLInputElement) return !NOT_TYPED.has(el.type) && el.value !== '';
+  if (el instanceof HTMLTextAreaElement) return el.value !== '';
+  return el instanceof HTMLElement && el.isContentEditable && (el.textContent ?? '').trim() !== '';
 }
 
 const busyEntries = (entries: Record<string, PendingEntry>) => Object.values(entries).some((e) => BUSY_REQUEST.includes(e.phase));
 
 /**
  * Safe to reload: no relay request in flight in the home base or the Playground, no in-app question running or
- * waiting for the person, and the person is not typing.
+ * waiting for the person, and no unsent text in the box the cursor is in.
  */
 export function safeToReload(): boolean {
   if (busyEntries(useHomeBase.getState().entries) || busyEntries(usePlaygroundRelay.getState().entries)) return false;

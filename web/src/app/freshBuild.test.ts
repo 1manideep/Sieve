@@ -103,9 +103,20 @@ describe('a failed dynamic import', () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 
+  it('a cursor resting in an empty box holds nothing back: the stale tab reloads', () => {
+    const box = document.createElement('textarea');
+    document.body.append(box);
+    box.focus();
+    stop = startFreshBuild({ reload });
+    failedImport();
+    expect(reload).toHaveBeenCalledTimes(1);
+    box.remove();
+  });
+
   it('while the person types: the toast only, its Reload reloads, and the automatic reload waits for a change after typing', () => {
     const input = document.createElement('input');
     document.body.append(input);
+    input.value = 'What did my landlord';
     input.focus();
     stop = startFreshBuild({ reload });
     failedImport();
@@ -203,6 +214,7 @@ describe('the build check', () => {
     vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
     const input = document.createElement('textarea');
     document.body.append(input);
+    input.value = 'half a question';
     input.focus();
     let t = 0;
     stop = startFreshBuild({ reload, now: () => t });
