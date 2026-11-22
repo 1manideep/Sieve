@@ -68,6 +68,8 @@ export const LABELS = {
     `Too little ${d.after && d.before ? (d.after === d.before ? `on ${d.after}` : `from ${d.after} to ${d.before}`) : d.after ? `from ${d.after} on` : `up to ${d.before}`}, so Sieve searched all dates and preferred those days`,
   sensitive: 'This touches a sensitive topic, so Sieve asks you first',
   newestFirst: 'Put the matches newest first, because the question asks for the latest',
+  identifierOnly: (n: number) => `Read only the ${n === 1 ? 'item' : `${n} items`} that ${n === 1 ? 'holds' : 'hold'} the exact number in the question`,
+  newestState: 'Put those newest first, because the newest says how it stands now',
   verifyYes: 'The item answers the question',
   verifyNo: 'The item does not answer the question',
   verifyFailed: "Couldn't check the answer against the item on this device",

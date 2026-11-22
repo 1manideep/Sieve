@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { asksCount, asksLatest, isRoleCue, knownSenderWords, senderCue, senderMatches } from './cues';
+import { asksCount, asksLatest, asksState, identifierTerms, isRoleCue, knownSenderWords, senderCue, senderMatches } from './cues';
 import { loadDictionaryText } from './dictionary';
 
 beforeAll(() => {
@@ -103,5 +103,24 @@ describe('asksLatest and asksCount', () => {
     for (const q of ['How many days of leave do I have left?', 'How much was my deposit?', 'How many times a day should I take it?', 'What did my landlord say about the deposit?']) {
       expect(asksCount(q), q).toBe(false);
     }
+  });
+});
+
+describe('identifiers and state questions', () => {
+  it('finds order, booking and receipt numbers, in the terms and in the question', () => {
+    expect(identifierTerms('Where does Lakeline booking 4471902288 depart from?', undefined)).toEqual(['4471902288']);
+    expect(identifierTerms('How much was charged on receipt 5521-0098?', ['5521-0098'])).toEqual(['5521-0098']);
+    expect(identifierTerms('What is the status of order #US20418833?', ['US20418833'])).toEqual(['us20418833']);
+  });
+
+  it('never takes a date, a time, an amount or a short number for an identifier', () => {
+    expect(identifierTerms('What did I pay on 2026-11-01 at 10:30, was it $1,150.00 or 1150?', undefined)).toEqual([]);
+    expect(identifierTerms('What happened on 11/04/2026 in room 204?', ['Kestrelmoor'])).toEqual([]);
+  });
+
+  it('knows a question about how a thing stands now', () => {
+    expect(asksState('What is the status of order US20418833?')).toBe(true);
+    expect(asksState('Has order US20418833 shipped yet?')).toBe(true);
+    expect(asksState('How much was order US20418833?')).toBe(false);
   });
 });

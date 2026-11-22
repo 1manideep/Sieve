@@ -159,6 +159,8 @@ export async function startGoogleSession(user: SessionUser): Promise<void> {
     currentPath,
     reauth,
     hasBeenActive: () => (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation?.hasBeenActive,
+    // a lazy import: the model's code stays out of what loads right after sign-in
+    modelReady: async () => (await (await import('@/ai/device/availability')).getNanoAvailability()).text === 'available',
     isHidden: () => document.visibilityState === 'hidden',
     online: () => navigator.onLine,
     onWake: (fn) => onWake(() => fn()),

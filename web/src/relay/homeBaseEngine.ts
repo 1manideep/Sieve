@@ -85,6 +85,7 @@ export interface EngineDeps {
   currentPath?(): string;
   reauth?(): Promise<boolean>;
   hasBeenActive?(): boolean | undefined;               // navigator.userActivation?.hasBeenActive
+  modelReady?(): Promise<boolean>;                     // the on-device model is already on this computer: starting it needs no click
   isHidden?(): boolean;
   online?(): boolean;
   onWake?(fn: () => void): () => void;
@@ -634,8 +635,22 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
     pumping = true;
     try {
       for (let e = nextToPrepare(); e && !stopped; e = nextToPrepare()) {
-        // Activation gate: Chrome lets the on-device model start only after a click in this tab.
-        if (deps.hasBeenActive?.() === false) {
+        // Activation gate: Chrome lets the on-device model download only after a click in this tab. A model that is
+        // already on this computer starts without one, so a reload (the person's, or the automatic one after an
+        // update) does not leave requests waiting for a click nobody knows to make.
+        let gated = deps.hasBeenActive?.() === false;
+        if (gated) {
+          let ready = false;
+          try {
+            ready = (await deps.modelReady?.()) === true;
+          } catch {
+            ready = false;
+          }
+          if (stopped) break;
+          if (nextToPrepare() !== e) continue;
+          gated = !ready && deps.hasBeenActive?.() === false;
+        }
+        if (gated) {
           waitingForClick = true;
           for (const w of ordered().filter((x) => x.phase === 'preparing' && !runtime.get(x.requestId)?.ctl)) {
             rt(w.requestId).waiting = 'click';

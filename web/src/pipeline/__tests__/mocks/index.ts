@@ -4,7 +4,7 @@ import type { Candidate, IndexRecord, QueryHints } from '@sieve/shared';
 import type { IngestQueue, SieveDb } from '@/index';
 
 export type { IngestQueue, SieveDb, HardFilter } from '@/index';
-export { asksCount, asksLatest, asksSeveral } from '@/index/cues';
+export { asksCount, asksLatest, asksSeveral, asksState, identifierTerms } from '@/index/cues';
 
 export const records = new Map<string, IndexRecord>();
 

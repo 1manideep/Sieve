@@ -208,6 +208,20 @@ describe('search', () => {
     expect(report?.filters).toBeUndefined();
   });
 
+  it('a sender read from the question that no item is from, but titles hold, only ranks ("my latest SIP order")', async () => {
+    await ingest(db, { source: 'gmail', sourceRef: 'sip-1', kind: 'email', title: 'SIP order summary', from: 'Kestrel Broking <noreply@mailer.kestrelbroking.example>', date: Date.now(), text: 'Your SIP order has been executed. Instrument: NIFTYBEES. Quantity: 12.' }, 'own');
+    let report: SearchReport | undefined;
+    const res = await search(db, 'How many NIFTYBEES units did my latest SIP order buy?', { onReport: (r) => (report = r) });
+    expect(res.map((c) => c.recordId)).toContain('gmail:sip-1');
+    expect(report?.senderDropped).toBe('SIP');
+    expect(report?.filters?.sender).toBeUndefined();
+    // a sender the asking assistant sent stays a filter, whatever the titles hold
+    expect(await search(db, 'How many units did my latest order buy?', { hints: { from: 'SIP' } })).toEqual([]);
+    // a name nothing in the index knows still finds nothing
+    expect(await search(db, 'When did my latest Gymshark order ship?')).toEqual([]);
+    await db.records.delete('gmail:sip-1');
+  });
+
   it("the sender's newest items join the list when the question asks for the latest (T04)", async () => {
     const res = await search(db, "What did Kestrelmoor's latest email say?");
     const ids = res.map((c) => c.recordId);

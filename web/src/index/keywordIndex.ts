@@ -89,6 +89,12 @@ export class KeywordIndex {
     return this.ms.search(query, { ...KEYWORD_SEARCH, filter: filter as ((r: SearchResult) => boolean) | undefined }) as KeywordHit[];
   }
 
+  /** Is there a title that holds all of these words, as whole words? */
+  inTitles(words: string): boolean {
+    if (!words.trim()) return false;
+    return this.ms.search(words, { fields: ['title'], combineWith: 'AND', prefix: false, fuzzy: false }).length > 0;
+  }
+
   /** Load the snapshot; false when it is missing, corrupt or from other code (caller rebuilds). */
   async load(): Promise<boolean> {
     const row = await this.db.search.get('minisearch');

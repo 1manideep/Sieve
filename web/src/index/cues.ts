@@ -205,6 +205,32 @@ export function asksLatest(text: string): boolean {
   return LATEST_RE.test(text) || LAST_RE.test(text);
 }
 
+const STATE_RE = /\b(?:status|update on|any (?:update|news)|where is|where's|what happened (?:to|with)|still|yet|currently|right now|so far)\b/i;
+
+/** "What is the status of order X?", "Has X shipped yet?": the newest item about X says how it stands now. */
+export function asksState(text: string): boolean {
+  return STATE_RE.test(text);
+}
+
+const ID_TOKEN = /#?[\p{L}\p{N}]+(?:[-_./][\p{L}\p{N}]+)*/gu;
+const DATE_LIKE = /^(?:\d{4}[-./]\d{1,2}[-./]\d{1,2}|\d{1,2}[-./]\d{1,2}[-./]\d{2,4}|\d{1,2}[-./]\d{1,2})$/;
+
+/**
+ * The exact identifiers a question carries: an order, booking, receipt or invoice number, from the asker's own terms
+ * and from the question's words. At least five characters with four digits among them; never a date, a time or an
+ * amount of money. Lower case, without a leading "#".
+ */
+export function identifierTerms(question: string, terms: readonly string[] | undefined): string[] {
+  const text = question.replace(/\$\s?\d[\d,]*(?:\.\d+)?/g, ' ').replace(/\b\d{1,2}:\d{2}\b/g, ' ');
+  const out: string[] = [];
+  for (const raw of [...(terms ?? []), ...(text.match(ID_TOKEN) ?? [])]) {
+    const t = raw.trim().replace(/^#/, '').replace(/[.]+$/, '').toLowerCase();
+    if (t.length < 5 || (t.match(/\d/g) ?? []).length < 4 || DATE_LIKE.test(t) || /\s/.test(t)) continue;
+    if (!out.includes(t)) out.push(t);
+  }
+  return out.slice(0, 5);
+}
+
 const ITEMS =
   'emails?|e-mails?|mails?|messages?|texts?|orders?|receipts?|invoices?|photos?|pictures?|pics?|images?|screenshots?|files?|documents?|docs?|notes?|notifications?|newsletters?|alerts?|statements?|bills?|deliveries|packages?|parcels?|shipments?|replies|threads?|senders?|subscriptions?|transactions?|charges?|runs?|rides?|workouts?|activities|times';
 const COUNT_RES: RegExp[] = [

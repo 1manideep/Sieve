@@ -433,6 +433,28 @@ describe('home base engine: requests', () => {
     expect(h.state.entries!.req1.phase).toBe('awaiting-person');
   });
 
+  it('a model that is already downloaded needs no click: a request after a reload is prepared at once', async () => {
+    const h = await activeHarness({ hasBeenActive: () => false, modelReady: async () => true });
+    h.push([request()]);
+    await flush();
+    expect(h.prepare).toHaveBeenCalledTimes(1);
+    expect(h.state.waitingForClick).toBeFalsy();
+    expect(h.state.entries!.req1.phase).toBe('awaiting-person');
+  });
+
+  it('a model that still has to download keeps the click gate, also when the check fails', async () => {
+    const h = await activeHarness({ hasBeenActive: () => false, modelReady: async () => false });
+    h.push([request()]);
+    await flush();
+    expect(h.prepare).not.toHaveBeenCalled();
+    expect(h.state.waitingForClick).toBe(true);
+    const f = await activeHarness({ hasBeenActive: () => false, modelReady: () => Promise.reject(new Error('no api')) });
+    f.push([request()]);
+    await flush();
+    expect(f.prepare).not.toHaveBeenCalled();
+    expect(f.state.waitingForClick).toBe(true);
+  });
+
   it('a timeout in a hidden tab waits for the tab, then retries once (70 R-PLAT-01)', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     let hidden = true;

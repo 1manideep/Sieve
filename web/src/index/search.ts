@@ -32,6 +32,7 @@ export interface SearchReport {
   hydrated?: { fetched: number; skipped: number };
   repaired: number;                     // orphan hits dropped (20 section 5.7)
   filters?: HardFilter;                 // the sender and dates every candidate had to fit (10.2)
+  senderDropped?: string;               // a sender read from the question's words that no item is from, but titles hold: it only ranks
   categoryRelaxed?: Category[];         // a category hint left too few results, so the search ran again without it
   dateRelaxed?: { after?: string; before?: string };   // a date filter left too few results: run again, the dates only ranking
   fusion?: { vector: number; keyword: number; live: number; pool: number };   // list lengths fused, and the records after them
@@ -334,6 +335,25 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
     delete filter.after;
     delete filter.before;
   }
+  // A sender Sieve read from the question's own words ("my latest SIP order") that no item is from, while titles hold
+  // the word: it names a thing, not a sender, so it only ranks. A name the index does not know at all ("my Delta
+  // flight", with no mail from or about Delta) stays a filter and finds nothing, as it should. A sender the asking
+  // assistant sent is never dropped (Nov 21, 2026: the filter left "my latest SIP order" with no candidates).
+  let senderDropped: string | undefined;
+  if (filter.sender && !opts.hints?.from?.trim() && !filter.sender.includes('@')) {
+    const cue = filter.sender;
+    let known = false;
+    for (const m of rt.meta.values()) {
+      if (senderMatches(cue, m.from)) {
+        known = true;
+        break;
+      }
+    }
+    if (!known && rt.keyword.inTitles(cue)) {
+      senderDropped = cue;
+      delete filter.sender;
+    }
+  }
   const filtered = Object.keys(filter).length > 0;
   const k = opts.k ?? VECTOR_K + KEYWORD_SAFETY_K;
 
@@ -354,6 +374,7 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
   const report: SearchReport = { scope: { records: scopeCount, byKind }, hints, vector: { ran: false, ms: 0 }, keyword: { ms: 0, added: 0 }, repaired: 0 };
   if (p.corrected !== p.normalized) report.searchedFor = p.corrected;
   if (filtered) report.filters = filter;
+  if (senderDropped) report.senderDropped = senderDropped;
 
   // live Gmail search starts now and is merged at the end (20 section 10.5)
   // a question limited to files or photos never asks Gmail (nothing it finds could pass)

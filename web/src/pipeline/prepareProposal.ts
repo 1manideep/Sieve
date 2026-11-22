@@ -13,7 +13,7 @@ import {
   recordBody, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
 } from '@/ai';
 import {
-  asksCount, asksLatest, asksSeveral, clockFor, flushUrgentEmbeds, getRecord, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
+  asksCount, asksLatest, asksSeveral, asksState, clockFor, flushUrgentEmbeds, getRecord, identifierTerms, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
   type HardFilter, type ParsedQuestion, type SearchReport, type SieveDb,
 } from '@/index';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
@@ -264,6 +264,27 @@ export function inAppHints(p: ParsedQuestion): QueryHints {
  */
 const SCREEN_SPARES = 3;
 
+/** The item's title or text holds one of these identifiers (lower case), as written. */
+export function holdsIdentifier(rec: IndexRecord, ids: readonly string[]): boolean {
+  const body = `${rec.title} ${rec.kind === 'photo' ? (rec.caption ?? '') : (rec.text ?? rec.preview ?? '')}`.toLowerCase();
+  return ids.some((t) => body.includes(t));
+}
+
+/**
+ * A few facts about a pick that say nothing of its content, for the reason code of a run that shared nothing: its
+ * place among the candidates the model read ("r2of5"), whether it holds the asker's exact terms ("t1", "t0", or "tx"
+ * with none sent), and whether every number in the answer is in the item ("g1", "g0", or "gx" with no number).
+ */
+export function pickCode(list: { rec: IndexRecord }[], chosen: IndexRecord, hints: QueryHints | undefined, answer: string): string {
+  const at = list.findIndex((a) => a.rec.id === chosen.id);
+  const body = `${chosen.title} ${chosen.kind === 'photo' ? (chosen.caption ?? '') : (chosen.text ?? chosen.preview ?? '')}`.toLowerCase();
+  const terms = (hints?.terms ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean);
+  const t = terms.length === 0 ? 'x' : terms.every((x) => body.includes(x)) ? '1' : '0';
+  const numbers = answer.toLowerCase().match(/\d[\d,.:/-]*\d|\d/g) ?? [];
+  const g = numbers.length === 0 ? 'x' : numbers.every((n) => body.includes(n)) ? '1' : '0';
+  return `r${at + 1}of${list.length}-t${t}-g${g}`;
+}
+
 /**
  * How many of the best candidates "the latest" puts newest first, when no sender filter says which items fit. Search
  * already favors recent items for such questions (BOOST.latest), so the best few are the ones that match; sorting the
@@ -454,6 +475,26 @@ async function prepare(run: Run): Promise<Proposal> {
     run.code('retrieve', LABELS.newestFirst);
   }
 
+  // 6b. An exact identifier in the question (an order, booking or receipt number): the candidates that hold it are the
+  // only ones about that thing, so only they are read. Without this the model answered from another booking by the
+  // same sender and the second check threw the answer away (Nov 21, 2026). And for the state of that thing ("the
+  // status of order US123", "has it shipped yet") its newest item says how it stands now, so they go newest first: a
+  // confirmation answered for an order that was cancelled later the same day.
+  const ids = identifierTerms(lookup, hints?.terms);
+  if (ids.length > 0 && allowed.length > 1) {
+    const holders = allowed.filter((a) => holdsIdentifier(a.rec, ids));
+    if (holders.length > 0 && holders.length < allowed.length) {
+      allowed = holders;
+      run.code('retrieve', LABELS.identifierOnly(holders.length));
+    }
+    // Only the order changes: measured on the on-device model (Nov 21, 2026), it then reads the newest first and
+    // answers from it, while the "listed newest first" line made it pick the second passage.
+    if (!latest && holders.length > 1 && asksState(lookup)) {
+      allowed = [...holders].sort((a, b) => b.rec.date - a.rec.date);
+      run.code('retrieve', LABELS.newestState);
+    }
+  }
+
   // 7. Data class and the own-data cloud policy.
   const ownCloud: OwnCloudPolicy = {
     allowed: input.dataClass === 'sample' ? true : input.settings.cloudFallbackForOwnData,
@@ -550,7 +591,7 @@ async function prepare(run: Run): Promise<Proposal> {
       return run.finish('error');
     }
     if (res.trace.where === 'cloud') run.warn(callData === 'sample' ? WARNINGS.sampleDataCloud() : WARNINGS.cloudFallback());
-    if (res.value.recordId === null) return run.why('model-picked-none').blockedOrNoMatch(neverBlocked);
+    if (res.value.recordId === null) return run.why(`model-picked-none-of${list.length}`).blockedOrNoMatch(neverBlocked);
 
     const pick = list.find((a) => a.rec.id === res.value.recordId);
     if (!pick) {
@@ -617,7 +658,7 @@ async function prepare(run: Run): Promise<Proposal> {
     run.warn(WARNINGS.unchecked());
   } else {
     run.end(verifyId, { ...checked.trace, label: checked.value.answers ? LABELS.verifyYes : LABELS.verifyNo });
-    if (!checked.value.answers) return run.why('second-check-said-no').finish('no-match');
+    if (!checked.value.answers) return run.why(`second-check-no-${pickCode(list, chosen, hints, value.answer)}`).finish('no-match');
   }
 
   // 13. The excerpt, chosen by plain code.

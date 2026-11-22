@@ -4,7 +4,7 @@
 export { SieveDb, openDb } from './db';
 export { search, duplicatesOf, hardFilterOf, kindFits, knownSendersOf, passesFilter } from './search';
 export type { SearchReport, SearchOptions, HardFilter } from './search';
-export { asksCount, asksLatest, asksSeveral, isRoleCue, senderCue, senderMatches, senderTokens, sourceCue } from './cues';
+export { asksCount, asksLatest, asksSeveral, asksState, identifierTerms, isRoleCue, senderCue, senderMatches, senderTokens, sourceCue } from './cues';
 export { parseQuestion } from './parseQuestion';
 export type { ParsedQuestion } from './parseQuestion';
 export { getRecord, ingest, ingestInternal, IngestError } from './ingest';
