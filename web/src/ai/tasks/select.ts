@@ -17,11 +17,12 @@ import {
 } from '../config';
 import { extractFacts, normFact, normalizedFacts } from '../facts';
 import { partialJsonString } from '../json';
-import { SELECT_CLOUD_SCHEMA, SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
+import { RESHAPE_REMINDER, RETRY_REMINDER, SELECT_CLOUD_SCHEMA, SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
 import { runModel } from '../runModel';
 import { cleanModelSentence, collapseWhitespace, escapeDelimiters, localDay, promptField, sentences, stems, type Range } from '../text';
 import { codeTrace } from '../trace';
-import { isYesNoQuestion, leaksStructure } from '../../privacy/steps/answerShape';
+import { isYesNoQuestion, leaksStructure, shapeAnswer } from '../../privacy/steps/answerShape';
+import { copiesTooMuch } from '../../privacy/steps/invariants';
 import type { OwnCloudPolicy, RunModelResult } from '../types';
 
 export { SELECT_CLOUD_SCHEMA, SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
@@ -425,6 +426,11 @@ export async function selectAndAnswer(
       }
     : undefined;
 
+  // An answer the share-time checks would refuse for its shape (a list or several facts, or a long run copied from the
+  // item) gets one more try with a line that says what to change. The second answer is taken as it comes: the checks
+  // after this call still decide. Before, "what did they say about the renovations" ended as unsupported in two test
+  // runs of three because the first answer held several facts (Nov 22, 2026).
+  let reminder: string | undefined;
   const run = () =>
     runModel<RawSelect>({
       purpose: 'select-answer',
@@ -440,14 +446,25 @@ export async function selectAndAnswer(
       priority: 'foreground',
       dataChars,
       onText,
-      validate: (v) => {
+      validate: (v, attempt) => {
         const { item, answer } = v as RawSelect;
         if (item === 'none') return v;
         const k = /^P(\d+)$/.exec(item);
         if (!k || Number(k[1]) < 1 || Number(k[1]) > passages.length) return null;
         // JSON or a fence inside the answer ("...21st.}]") is bad output: retried once, never trimmed into a sentence
-        return answer.trim() && !leaksStructure(answer) ? v : null;
+        reminder = undefined;
+        if (!answer.trim() || leaksStructure(answer)) return null;
+        if (attempt === 1) {
+          const rec = (passages[Number(k[1]) - 1] as Passage).record;
+          const shape = shapeAnswer(answer, rec, question, () => false);
+          if ((!shape.ok && shape.reason === 'one-fact') || copiesTooMuch(answer, recordBody(rec))) {
+            reminder = RESHAPE_REMINDER;
+            return null;
+          }
+        }
+        return v;
       },
+      retryReminder: () => reminder ?? RETRY_REMINDER,
     });
 
   let res = await run();

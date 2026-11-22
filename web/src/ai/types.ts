@@ -30,7 +30,9 @@ export interface RunModelArgs {
   priority?: Priority;                    // default DEFAULT_PRIORITY[purpose]
   ownCloud?: OwnCloudPolicy;              // absent: own data is device-only
   dataChars?: number;                     // characters of the person's content in the prompt; default: all prompt text
-  validate?: (value: unknown) => unknown; // semantic check after the schema check; null means invalid, any other value replaces it
+  validate?: (value: unknown, attempt: number) => unknown; // semantic check after the schema check; null means invalid, any other value replaces it; attempt is 1 or 2
+  /** The line added to the prompt for the one retry after an invalid reply; the format reminder when not given. */
+  retryReminder?: () => string;
   skipSchemaCheck?: boolean;              // JSON is still parsed, but only `validate` judges it (labels keep the valid entries)
   onText?: (soFar: string) => void;       // set: stream the response
   label?: string;                         // trace label on success

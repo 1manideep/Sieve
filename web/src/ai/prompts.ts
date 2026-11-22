@@ -133,4 +133,7 @@ Rules:
 
 export const DEFAULT_DRAFT_INSTRUCTION = 'Draft a short, polite reply.';
 
+/** The one retry for an answer that could not be shared as it was: several facts, or the passage's own wording. */
+export const RESHAPE_REMINDER = 'Your last answer cannot be shared: it held more than one fact, or it copied the wording of the passage. Reply again with JSON only. "answer" is one short sentence in your own words, with one fact.';
+
 export const RETRY_REMINDER = 'Your last reply did not match the required JSON format. Reply again with JSON only, exactly as described.';

@@ -73,21 +73,21 @@ function raceAbort<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-function withReminder(parts: SdkPart[]): SdkPart[] {
+function withReminder(parts: SdkPart[], reminder: string = RETRY_REMINDER): SdkPart[] {
   const out = [...parts];
   for (let i = out.length - 1; i >= 0; i -= 1) {
     const p = out[i];
     if ('text' in p) {
-      out[i] = { text: `${p.text}\n\n${RETRY_REMINDER}` };
+      out[i] = { text: `${p.text}\n\n${reminder}` };
       return out;
     }
   }
-  return [...out, { text: RETRY_REMINDER }];
+  return [...out, { text: reminder }];
 }
 
 type Parsed = { ok: true; value: unknown } | { ok: false };
 
-function parse(text: string, args: RunModelArgs): Parsed {
+function parse(text: string, args: RunModelArgs, attempt = 1): Parsed {
   let value: unknown;
   if (!args.schema) {
     value = text.trim();
@@ -103,7 +103,7 @@ function parse(text: string, args: RunModelArgs): Parsed {
   if (args.validate) {
     let checked: unknown;
     try {
-      checked = args.validate(value);
+      checked = args.validate(value, attempt);
     } catch {
       return { ok: false };
     }
@@ -266,14 +266,14 @@ export async function runModel<T>(args: RunModelArgs): Promise<RunModelResult<T>
         error = { code: 'cloud-not-allowed', message: 'Sieve stopped: the SDK reported a cloud run for an on-device-only step.' };
         break;
       }
-      const parsed = parse(result.text, args);
+      const parsed = parse(result.text, args, tries);
       if (parsed.ok) {
         value = parsed.value;
         done = true;
         break;
       }
       if (tries < maxTries) {
-        callParts = withReminder(parts);
+        callParts = withReminder(parts, args.retryReminder?.());
         continue;
       }
       error = { code: 'bad-output', message: 'The model gave no usable answer.' };

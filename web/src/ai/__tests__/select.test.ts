@@ -106,6 +106,34 @@ describe('selectAndAnswer (10 section 16.7)', () => {
     expect(quoted.calls).toHaveLength(1);
   });
 
+  it('Nov 22: an answer with several facts, or one copied from the item, gets one more try that says what to change', async () => {
+    // a list first, then one sentence: the sentence is the answer, and the second prompt carries the reshaping line
+    const fake = useReplies(reply('P1', 'It says three things: 1. the deposit was $1,200 2. it was paid on March 3 3. it will be returned.'), reply('P1', 'Your deposit was $1,200.'));
+    const res = await selectAndAnswer('What did my landlord say about the deposit?', [RECORDS.deposit], 'sample', { today: TODAY });
+    expect(res.ok && res.value.answer).toBe('Your deposit was $1,200.');
+    expect(fake.calls).toHaveLength(2);
+    expect(promptText(fake.calls[1].parts)).toContain('in your own words, with one fact');
+    expect(promptText(fake.calls[0].parts)).not.toContain('in your own words');
+
+    // a long run of the item's own words first: the same one more try
+    const copied = BODIES.deposit.split(/\s+/).slice(0, 16).join(' ');
+    const again = useReplies(reply('P1', copied), reply('P1', 'Your deposit was $1,200.'));
+    const second = await selectAndAnswer('What did my landlord say about the deposit?', [RECORDS.deposit], 'sample', { today: TODAY });
+    expect(second.ok && second.value.answer).toBe('Your deposit was $1,200.');
+    expect(again.calls).toHaveLength(2);
+
+    // still a list on the second try: taken as it comes (the checks after this call decide), never a third call
+    const stuck = useReplies(reply('P1', 'It says three things: 1. the deposit was $1,200 2. it was paid on March 3 3. it will be returned.'));
+    const third = await selectAndAnswer('What did my landlord say about the deposit?', [RECORDS.deposit], 'sample', { today: TODAY });
+    expect(third.ok).toBe(true);
+    expect(stuck.calls).toHaveLength(2);
+
+    // one plain sentence: no second call
+    const plain = useReplies(reply('P1', 'Your deposit was $1,200, paid on March 3.'));
+    await selectAndAnswer('What did my landlord say about the deposit?', [RECORDS.deposit], 'sample', { today: TODAY });
+    expect(plain.calls).toHaveLength(1);
+  });
+
   it('SE-7: "none" gives no record and no answer', async () => {
     useReplies(reply('none', ''));
     const res = await selectAndAnswer('What is my wifi password?', [RECORDS.missing], 'sample');
