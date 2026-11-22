@@ -1,0 +1,24 @@
+rules_version = '2';
+
+// Cloud Storage holds one thing: a file a person approved for one request, for the few minutes its link works
+// (functions/sieve/files.py). The owner writes it once, at most 20 MB, under their own id and the request's id.
+// Nobody reads it through these rules: the relay streams it with the Admin SDK, and deletes it when the link ends.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /handoffs/{uid}/{requestId}/{object} {
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && requestId.matches('^[A-Za-z0-9]{20}$')
+        && object.matches('^[A-Za-z0-9_-]{16,64}$')
+        && request.resource.size > 0
+        && request.resource.size <= 20 * 1024 * 1024;
+      // taking it back before the link ends (decline after approve, sign-out, delete account)
+      allow delete: if request.auth != null && request.auth.uid == uid;
+      allow get, list, update: if false;
+    }
+    match /{rest=**} {
+      allow read, write: if false;
+    }
+  }
+}
