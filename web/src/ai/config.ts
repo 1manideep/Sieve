@@ -24,7 +24,10 @@ export const SELECT_TARGET_TOKENS = 2500;                    // soft target for 
 export const SELECT_MAX_PASSAGES = 5;
 /** The candidates kept before they are put in order (the latest first, an exact number's items only): VECTOR_K + KEYWORD_SAFETY_K. The best SELECT_MAX_PASSAGES of them are read. */
 export const CANDIDATE_POOL = 7;
-export const PASSAGE_CONTEXT_CHARS = 300;                    // extra sentences around a chunk, each side, when the budget allows
+// A passage is the chunk that matched plus the sentences around it, shared out evenly over the passages. Reading
+// everything is no way out: five long emails read 2,000 characters each made a 9,000-character prompt that took the
+// on-device model 23 s (Nov 21, 2026), against 4 s at 6,000.
+export const PASSAGE_CONTEXT_CHARS = 600;                    // extra sentences around a chunk, each side, when the budget allows
 export const PASSAGE_MAX_CHARS = 1600;
 export const PASSAGE_MIN_CHARS = 400;
 export const PASSAGE_WINDOW_CHARS = 1000;                    // bestWindow size when no vector chunk is known (10.3)

@@ -74,15 +74,41 @@ function clampRange(range: PassageRange, length: number): PassageRange {
   return { start, end };
 }
 
-/** The run of consecutive sentences (at most maxChars) holding the most question stems; ties go to the earliest. */
-export function bestWindow(text: string, question: string, maxChars: number): PassageRange {
+const MONEY_ASKED = /\b(?:how much|charged?|charges?|costs?|price[ds]?|paid|pay|payment|amount|total|fees?|refund(?:ed)?|bill(?:ed)?|balance|rent|owed?|worth|salary)\b/i;
+const DATE_ASKED = /\b(?:when|what (?:date|day|time)|which (?:date|day)|how long|deadline|due|expir\w*|runs? out|until|check-?in|check-?out|deliver\w*|arriv\w*|depart\w*|leav\w+)\b/i;
+const MONEY_HELD = /(?:[$€£₹]|\b(?:USD|EUR|GBP|INR|Rs\.?)\s?)\s?\d|\b\d[\d,]*\.\d{2}\b/;
+const DATE_HELD =
+  /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\.?\s+\d{1,2}\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\b|\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b|\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}:\d{2}\b|\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\b/i;
+
+/**
+ * The kind of fact a question asks for, as a test on text: an amount of money ("how much", "charged"), or a date or
+ * time ("when", "expires", "check-in"). Null when the question asks for neither. The passage of an item should hold a
+ * fact of that kind: a receipt's matched chunk was its header, the price line sat just past it, and the model
+ * answered with an amount from another item (6 of 6 on the on-device model, Nov 21, 2026).
+ */
+export function answerKind(question: string): RegExp | null {
+  const money = MONEY_ASKED.test(question);
+  const date = DATE_ASKED.test(question);
+  if (money && date) return new RegExp(`${MONEY_HELD.source}|${DATE_HELD.source}`, 'i');
+  return money ? MONEY_HELD : date ? DATE_HELD : null;
+}
+
+/** A sentence that holds the kind of fact asked for counts like this many question words. */
+const KIND_BONUS = 2;
+
+/**
+ * The run of consecutive sentences (at most maxChars) holding the most question stems; ties go to the earliest.
+ * `wants`: a sentence it matches (answerKind) counts for more.
+ */
+export function bestWindow(text: string, question: string, maxChars: number, wants?: RegExp | null): PassageRange {
   if (text.length <= maxChars) return { start: 0, end: text.length };
   const ss = sentences(text);
   if (ss.length === 0) return { start: 0, end: maxChars };
   const q = stems(question);
   const score = ss.map((s) => {
-    const sentenceStems = stems(text.slice(s.start, s.end));
-    let n = 0;
+    const sentence = text.slice(s.start, s.end);
+    const sentenceStems = stems(sentence);
+    let n = wants?.test(sentence) ? KIND_BONUS : 0;
     for (const w of q) if (sentenceStems.has(w)) n += 1;
     return n;
   });
@@ -197,12 +223,18 @@ export function fitPassages(
   });
 
   // Cores.
+  const wants = answerKind(question);
   let passages: Passage[] = kept.map((record) => {
     const { body, ss } = info(record);
     if (record.kind === 'photo') return make(record, { start: 0, end: body.length });
     const given = ranges[record.id];
-    let core = given ? clampRange(given, body.length) : bestWindow(body, question, PASSAGE_WINDOW_CHARS);
-    if (core.end <= core.start) core = bestWindow(body, question, PASSAGE_WINDOW_CHARS);
+    let core = given ? clampRange(given, body.length) : bestWindow(body, question, PASSAGE_WINDOW_CHARS, wants);
+    if (core.end <= core.start) core = bestWindow(body, question, PASSAGE_WINDOW_CHARS, wants);
+    // The chunk that matched holds no fact of the kind asked for, and the item does elsewhere: read that part instead.
+    else if (given && wants && !wants.test(body.slice(core.start, core.end)) && wants.test(body)) {
+      const typed = bestWindow(body, question, PASSAGE_WINDOW_CHARS, wants);
+      if (wants.test(body.slice(typed.start, typed.end))) core = typed;
+    }
     core = snapToSentences(body, core, ss);
     core = capAtSentence(body, core, PASSAGE_MAX_CHARS, ss);
     return make(record, core);
@@ -221,29 +253,29 @@ export function fitPassages(
     passages = [make(p.record, range)];
   }
 
-  // Context: widen each core in rank order by whole sentences while the estimate stays under the soft target.
-  for (let i = 0; i < passages.length; i += 1) {
-    const p = passages[i];
-    if (p.record.kind === 'photo') continue;
-    const { ss } = info(p.record);
-    const core = p.range;
-    let range = core;
-    const tryRange = (next: PassageRange): boolean => {
-      if (next.end - next.start > PASSAGE_MAX_CHARS) return false;
-      if (core.start - next.start > PASSAGE_CONTEXT_CHARS || next.end - core.end > PASSAGE_CONTEXT_CHARS) return false;
-      const candidate = passages.map((q, k) => (k === i ? make(q.record, next) : q));
-      if (estimate(question, candidate, opts) >= SELECT_TARGET_TOKENS) return false;
-      range = next;
-      passages = candidate;
-      return true;
-    };
-    for (;;) {
-      const prev = [...ss].reverse().find((s) => s.end <= range.start);
-      if (!prev || !tryRange({ start: prev.start, end: range.end })) break;
-    }
-    for (;;) {
-      const next = ss.find((s) => s.start >= range.end);
-      if (!next || !tryRange({ start: range.start, end: next.end })) break;
+  // Context: widen the cores by whole sentences while the estimate stays under the soft target. One sentence after
+  // and one before per passage in each round, in rank order, so the room is shared: widening the first passage to the
+  // full left the fourth with its core only, and the model picks from any place in the list.
+  const cores = passages.map((p) => p.range);
+  const done = passages.map((p) => p.record.kind === 'photo');
+  const tryRange = (i: number, next: PassageRange): boolean => {
+    const core = cores[i];
+    if (next.end - next.start > PASSAGE_MAX_CHARS) return false;
+    if (core.start - next.start > PASSAGE_CONTEXT_CHARS || next.end - core.end > PASSAGE_CONTEXT_CHARS) return false;
+    const candidate = passages.map((q, k) => (k === i ? make(q.record, next) : q));
+    if (estimate(question, candidate, opts) >= SELECT_TARGET_TOKENS) return false;
+    passages = candidate;
+    return true;
+  };
+  while (done.some((d) => !d)) {
+    for (let i = 0; i < passages.length; i += 1) {
+      if (done[i]) continue;
+      const { ss } = info(passages[i].record);
+      const after = ss.find((s) => s.start >= passages[i].range.end);
+      const grewAfter = !!after && tryRange(i, { start: passages[i].range.start, end: after.end });
+      const before = [...ss].reverse().find((s) => s.end <= passages[i].range.start);
+      const grewBefore = !!before && tryRange(i, { start: before.start, end: passages[i].range.end });
+      if (!grewAfter && !grewBefore) done[i] = true;
     }
   }
   return passages;

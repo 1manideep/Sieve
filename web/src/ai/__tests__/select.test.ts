@@ -5,7 +5,7 @@ import { SELECT_TARGET_TOKENS, TIMING } from '../config';
 import { setLanguageModelForTests } from '../device/languageModel';
 import { setHybridForTests } from '../hybrid';
 import { SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
-import { deriveExcerpt, fitPassages, selectAndAnswer, selectPrompt } from '../tasks/select';
+import { answerKind, bestWindow, deriveExcerpt, fitPassages, selectAndAnswer, selectPrompt } from '../tasks/select';
 import { createFakeHybrid, promptText, type FakeReply } from '../testing/fakeHybrid';
 import { installFakeLanguageModel } from '../testing/fakeLanguageModel';
 import { resetAiForTests } from '../testing/reset';
@@ -144,6 +144,50 @@ describe('selectAndAnswer (10 section 16.7)', () => {
     expect(passages.map((p) => p.record.id)).toEqual(records.slice(0, 5).map((r) => r.id));
     for (const p of passages) expect(p.range.start).toBeLessThanOrEqual(1000);
     expect(estimate(selectPrompt('something', passages, { today: TODAY }))).toBeLessThan(SELECT_TARGET_TOKENS);
+  });
+
+  describe('the passage holds the kind of fact the question asks for', () => {
+    const FILL = 'You can manage your subscriptions and see your order history in your account at any time. Keep this email for your records. ';
+    const receipt = record({
+      id: 'playground:receipt', title: 'Your order receipt',
+      text: `Thank you for your purchase. Order number PS-3391. ${FILL.repeat(8)}Item: CloudNotes Premium. Price: $4.99 a month. Total: $4.99. ${FILL.repeat(8)}`,
+    });
+    const price = receipt.text!.indexOf('Total: $4.99');
+
+    it('knows a question about money, about a date, about both, and about neither', () => {
+      expect(answerKind('What did the store charge me for last month?')?.test('Total: $4.99')).toBe(true);
+      expect(answerKind('How much was the deposit?')?.test('It was received on March 3.')).toBe(false);
+      expect(answerKind('When does the cover run out?')?.test('It will expire on November 26, 2026.')).toBe(true);
+      expect(answerKind('When was I charged, and how much?')?.test('at 10:30')).toBe(true);
+      expect(answerKind('Who signed the lease?')).toBeNull();
+    });
+
+    it('the best window counts a sentence with an amount for more when an amount is asked for', () => {
+      const plain = bestWindow(receipt.text!, 'What did the store charge me for?', 400);
+      const typed = bestWindow(receipt.text!, 'What did the store charge me for?', 400, answerKind('What did the store charge me for?'));
+      expect(plain.start).toBe(0);                                    // no question word stands out: the earliest wins
+      expect(typed.start).toBeLessThanOrEqual(price);
+      expect(typed.end).toBeGreaterThan(price);
+    });
+
+    it('a matched chunk with no amount gives way to the part of the item that has one', () => {
+      const header = { start: 0, end: 300 };
+      const q = 'What did the store charge me for last month?';
+      const [p] = fitPassages(q, [receipt], { [receipt.id]: header }, { today: TODAY });
+      expect(p.text).toContain('Total: $4.99');
+      // a question that asks for no amount or date keeps the chunk that matched
+      const [same] = fitPassages('What is my order number?', [receipt], { [receipt.id]: header }, { today: TODAY });
+      expect(same.range.start).toBe(0);
+      expect(same.text).toContain('Order number PS-3391');
+    });
+
+    it('the room is shared: five long items each get about the same, not the first one everything', () => {
+      const long = Array.from({ length: 5 }, (_, i) => record({ id: `playground:long${i}`, title: `Item ${i}`, text: `Note ${i}. ${FILL.repeat(40)}` }));
+      const ranges = Object.fromEntries(long.map((r) => [r.id, { start: 0, end: 500 }]));
+      const sizes = fitPassages('Where is my order history?', long, ranges, { today: TODAY }).map((p) => p.range.end - p.range.start);
+      expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThan(260);
+      expect(Math.min(...sizes)).toBeGreaterThan(700);
+    });
   });
 
   it('SE-10: the streamed answer text is shown as it grows, never the JSON', async () => {
