@@ -16,6 +16,8 @@ import {
   asksCount, asksLatest, asksSeveral, asksState, clockFor, flushUrgentEmbeds, getRecord, identifierTerms, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
   type HardFilter, type ParsedQuestion, type SearchReport, type SieveDb,
 } from '@/index';
+import { asksSaid, holdsTopic, topicTerms } from '@/index/cues';
+import { iso } from '@/index/dates';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
 import { isYesNoQuestion } from '@/privacy/steps/answerShape';
 import { errorLine, errorName } from '@/robust/errorLine';
@@ -305,11 +307,16 @@ export const LATEST_RELEVANT = 3;
 
 /**
  * "The latest" (12.3 step 6a). With a sender filter every candidate fits ("Kestrelmoor's latest email"): newest first,
- * the newest VECTOR_K. Otherwise only the best LATEST_RELEVANT go newest first, and the rest keep their rank after them.
+ * the newest VECTOR_K. With no sender, the candidates whose title or sender holds two of the question's words are the
+ * ones about that thing (holdsTopic): they go newest first, before the rest. When none does, only the best
+ * LATEST_RELEVANT go newest first, and the rest keep their rank after them.
  */
-export function latestOrder<T extends { rec: IndexRecord }>(list: T[], filters: HardFilter | undefined): T[] {
+export function latestOrder<T extends { rec: IndexRecord }>(list: T[], filters: HardFilter | undefined, question = ''): T[] {
   const newest = (a: T, b: T) => b.rec.date - a.rec.date;
   if (filters?.sender) return [...list].sort(newest).slice(0, VECTOR_K);
+  const topic = topicTerms(question);
+  const about = list.filter((a) => holdsTopic(topic, a.rec.title, a.rec.from));
+  if (about.length > 0) return [...about.sort(newest), ...list.filter((a) => !about.includes(a))];
   return [...list.slice(0, LATEST_RELEVANT).sort(newest), ...list.slice(LATEST_RELEVANT)];
 }
 
@@ -480,8 +487,24 @@ async function prepare(run: Run): Promise<Proposal> {
   // 6a. "The latest": newest first among the candidates that match (latestOrder).
   const latest = asksLatest(lookup);
   if (latest && allowed.length > 1) {
-    allowed = latestOrder(allowed, filters);
+    allowed = latestOrder(allowed, filters, lookup);
     run.code('retrieve', LABELS.newestFirst);
+  }
+
+  // 6a2. Days in the request and a question about what was said or sent then ("what did X remind me about on
+  // November 4"): the items dated on those days are the ones meant, so when some candidates are, those that only
+  // mention such a day are not read. A bill tracker's email of the next day about "a transaction from November 4" was
+  // picked 5 of 5 times over the landlord's reminder of that day (Nov 22, 2026); without it the reminder is picked.
+  const days = filters as HardFilter | undefined;
+  if ((days?.after || days?.before) && allowed.length > 1 && asksSaid(lookup)) {
+    const dated = allowed.filter((a) => {
+      const d = iso(new Date(a.rec.date));
+      return (!days.after || d >= days.after) && (!days.before || d <= days.before);
+    });
+    if (dated.length > 0 && dated.length < allowed.length) {
+      run.code('retrieve', LABELS.datedOnly(allowed.length - dated.length));
+      allowed = dated;
+    }
   }
 
   // 6b. An exact identifier in the question (an order, booking or receipt number): the candidates that hold it are the

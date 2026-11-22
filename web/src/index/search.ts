@@ -9,7 +9,7 @@ import type { EmbedInput, EmbedOutput } from '../ml/protocol';
 import { errorLine } from '../robust/errorLine';
 import { BOOST, GMAIL_LIVE_K, RERANK_TEXT_CHARS, SEARCH_TUNING } from './config';
 import { repairOrphanHit } from './consistency';
-import { asksLatest, isRoleCue, knownSenderWordsOf, senderMatches } from './cues';
+import { asksLatest, holdsTopic, isRoleCue, knownSenderWordsOf, senderMatches, topicTerms } from './cues';
 import { clockFor, type SieveDb } from './db';
 import { iso } from './dates';
 import { getRecord } from './ingest';
@@ -449,9 +449,12 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
     liveList = live.ids.slice(0, GMAIL_LIVE_K);
   }
 
-  // "Ramki's latest email": the sender's newest items are a list of their own, so the newest one is there to pick (20 section 10.2)
-  const latestList = filter.sender && asksLatest(p.corrected)
-    ? [...rt.meta.values()].filter((m) => accept(m.id)).sort((a, b) => b.date - a.date).slice(0, k).map((m) => m.id)
+  // "Ramki's latest email": the sender's newest items are a list of their own, so the newest one is there to pick (20 section 10.2).
+  // "The latest email about my Dashbite payment plan" names no sender: the newest items about that thing (holdsTopic)
+  // are the list. Without it a better keyword fit from two days earlier stood before the newest one (Nov 22, 2026).
+  const topic = !filter.sender && asksLatest(p.corrected) ? topicTerms(p.corrected) : [];
+  const latestList = asksLatest(p.corrected) && (filter.sender || topic.length > 1)
+    ? [...rt.meta.values()].filter((m) => accept(m.id) && (filter.sender || holdsTopic(topic, m.title, m.from))).sort((a, b) => b.date - a.date).slice(0, k).map((m) => m.id)
     : [];
 
   // Weighted reciprocal rank fusion: a record high in either list ranks high, one in both higher still, and the
@@ -489,7 +492,7 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
     const b = boostFor(rec, rt.meta.get(id), hints, p.corrected, now);
     const hit = vectorHits.get(id);
     const matchedBy: Candidate['matchedBy'] = hit ? (rec.kind === 'photo' ? 'caption' : 'vector') : inKeyword.has(id) ? 'keyword' : inLive.has(id) ? 'gmail-search' : 'keyword';
-    scored.push({ id, score: (fused.get(id) ?? 0) / unit + T.boostScale * b.boost, matchedBy, hit, fromBoost: b.fromBoost || inLatest.has(id), termMatched: b.termMatched });
+    scored.push({ id, score: (fused.get(id) ?? 0) / unit + T.boostScale * b.boost, matchedBy, hit, fromBoost: b.fromBoost || (!!filter.sender && inLatest.has(id)), termMatched: b.termMatched });
   }
   scored.sort((a, b) => b.score - a.score);
   const hashes = new Set<string>();

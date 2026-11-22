@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { asksCount, asksLatest, asksState, identifierTerms, isRoleCue, knownSenderWords, senderCue, senderMatches } from './cues';
+import { asksCount, asksLatest, asksSaid, asksState, holdsTopic, identifierTerms, isRoleCue, knownSenderWords, senderCue, senderMatches, topicTerms } from './cues';
 import { loadDictionaryText } from './dictionary';
 
 beforeAll(() => {
@@ -29,6 +29,10 @@ describe('senderMatches', () => {
     expect(senderMatches('HelloSign', 'Dropbox Sign <noreply@mail.hellosign.com>')).toBe(true);
     expect(senderMatches('Kay Narayanan', 'Kay Smith <kay@x.example>')).toBe(false);
     expect(senderMatches('Kay', undefined)).toBe(false);
+    // an address with no display name: the name sits inside the part before the @ (Nov 22)
+    expect(senderMatches('The Quarry', 'thequarryuiuc@relay.example')).toBe(true);
+    expect(senderMatches('Maple Court', 'themaplecourtapts@relay.example')).toBe(true);
+    expect(senderMatches('Chase', 'purchases@store.example')).toBe(false);   // five letters inside another word is not a name
   });
 
   it('an address cue must be the address or its domain', () => {
@@ -83,6 +87,33 @@ describe('senderCue', () => {
 
   it('known sender words are not English words and not generic', () => {
     expect([...known].sort()).toEqual(['kestrelmoor', 'kestrelmoorbank', 'parcelmoor', 'parcelmoordelivery', 'strava']);
+  });
+});
+
+describe('asksSaid', () => {
+  it('what someone said, sent or reminded: the days in the question are when it was sent', () => {
+    for (const q of ['What did my apartment complex remind me about on November 4?', 'What did Kay say last Friday?', 'What was sent to me on Nov 4?', 'Who emailed me yesterday?', 'What did the bank ask for on Monday?']) {
+      expect(asksSaid(q), q).toBe(true);
+    }
+    for (const q of ['What time is my flight on December 4?', 'What does my lease say about the deposit due on November 4?', 'How much was the charge on Nov 15?', 'Which hotel is booked for September 7?']) {
+      expect(asksSaid(q), q).toBe(false);
+    }
+  });
+});
+
+describe('topicTerms and holdsTopic', () => {
+  it("the question's own words, without stop words and \"latest\"", () => {
+    expect(topicTerms('What did the most recent email about my Dashbite payment plan say?')).toEqual(['dashbite', 'payment', 'plan']);
+    expect(topicTerms("What's the latest email from my bank?")).toEqual(['bank']);
+  });
+
+  it('an item is about the thing when its title or sender holds two of those words', () => {
+    const topic = topicTerms('the most recent email about my Dashbite payment plan');
+    expect(holdsTopic(topic, 'Payment failed for Dashbite', 'Klaro <noreply@klaro.example>')).toBe(true);
+    expect(holdsTopic(topic, 'Your payments are up to date', 'Dashbite <no-reply@dashbite.example>')).toBe(true);   // the sender counts, and "payments" is "payment"
+    expect(holdsTopic(topic, 'Long time no shop. Save 50%', 'Dashbite <no-reply@dashbite.example>')).toBe(false);
+    expect(holdsTopic(topic, 'Refund confirmation for Dashbite', 'Klaro <noreply@klaro.example>')).toBe(false);
+    expect(holdsTopic(topicTerms('my latest bank email'), 'Bank statement from your bank', 'Bank <a@bank.example>')).toBe(false);   // one word of its own
   });
 });
 

@@ -3,7 +3,7 @@
 import type { QueryHints } from '@sieve/shared';
 import { isDictionaryLoaded, isEnglishWord } from './dictionary';
 import { displayName, fromAddress } from './text';
-import { STOP_WORDS } from './tokenize';
+import { STOP_WORDS, terms } from './tokenize';
 import { osaDistance } from './typos';
 
 /** Role words stay a boost: "my landlord" rarely appears in the landlord's sender name. */
@@ -70,7 +70,11 @@ export function isRoleCue(cue: string): boolean {
 function wordMatches(w: string, token: string): boolean {
   if (w === token) return true;
   if (w.length >= 5 && token.length >= 5 && osaDistance(w, token, 1) <= 1) return true;
-  return w.length >= 4 && token.startsWith(w);
+  if (w.length >= 4 && token.startsWith(w)) return true;
+  // An address with no display name holds the name inside one run of letters ("thequarryuiuc@relay.example" for
+  // "The Quarry"): a cue of six or more letters fits anywhere in it. Before, such a sender's mail never passed its own
+  // sender filter (Nov 22, 2026: 4 of about 35 emails did, the ones sent with a display name).
+  return w.length >= 6 && token.includes(w);
 }
 
 /**
@@ -203,6 +207,29 @@ const LAST_RE =
 /** "latest", "newest", "most recent", or "last" not followed by a unit, a number or a date. */
 export function asksLatest(text: string): boolean {
   return LATEST_RE.test(text) || LAST_RE.test(text);
+}
+
+/** The question's own words, each once (stop words and "latest" are not among them): what "the latest X" is about. */
+export function topicTerms(question: string): string[] {
+  return [...new Set(terms(question))];
+}
+
+/**
+ * Whether an item is about the thing a "latest" question names when no sender says so: its title or its sender holds
+ * two of the question's words ("Payment failed for Dashbite" for "the most recent email about my Dashbite payment
+ * plan"). One shared word is not enough: a shop's newest sale email holds the shop's name too.
+ */
+export function holdsTopic(topic: readonly string[], title: string, from: string | undefined): boolean {
+  if (topic.length < 2) return false;
+  const have = new Set([...terms(title), ...senderTokens(from)]);
+  return topic.filter((t) => have.has(t)).length > 1;
+}
+
+const SAID_RE = /\b(?:did\b.*\b(?:say|send|tell|remind|write|ask|notify|announce|email|message)|said|sent|told|reminded|wrote|asked|notified|announced|emailed|messaged)\b/i;
+
+/** "What did X remind me about on November 4?", "what was sent last Friday": the days are when the item was sent. */
+export function asksSaid(text: string): boolean {
+  return SAID_RE.test(text);
 }
 
 const STATE_RE = /\b(?:status|update on|any (?:update|news)|where is|where's|what happened (?:to|with)|still|yet|currently|right now|so far)\b/i;

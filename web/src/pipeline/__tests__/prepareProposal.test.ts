@@ -379,6 +379,27 @@ describe('prepareProposal (10 section 16.10)', () => {
     expect(idsOf(latestOrder(six, { sender: 'Ramki' }))).toEqual(['ramki-13', 'ramki-12', 'ramki-9', 'ramki-7', 'ramki-3']);
   });
 
+  it('"the latest" about a named thing: the candidates whose title or sender holds two of its words go newest first (Nov 22)', () => {
+    const mail = (title: string, from: string, day: number) => ({ rec: record({ id: `gmail:${title}`, title, from, date: Date.parse(`2026-11-${String(day).padStart(2, '0')}T09:00:00-06:00`) }) });
+    const titles = (list: { rec: IndexRecord }[]) => list.map((x) => x.rec.title);
+    const q = 'What did the most recent email about my Dashbite payment plan say?';
+    // the order search gave: the best keyword fits first, the newest one about the plan fifth, the shop's own sale email sixth
+    const ranked = [
+      mail('Updated payment plan for Dashbite', 'Klaro <noreply@klaro.example>', 19),
+      mail('Payment plan canceled for Dashbite', 'Klaro <noreply@klaro.example>', 19),
+      mail('We got your final Dashbite payment', 'Klaro <noreply@klaro.example>', 19),
+      mail('Refund confirmation for Dashbite', 'Klaro <noreply@klaro.example>', 19),
+      mail('Payment failed for Dashbite', 'Klaro <noreply@klaro.example>', 21),
+      mail('Long time no shop. Save 50%', 'Dashbite <no-reply@dashbite.example>', 22),
+    ];
+    const out = titles(latestOrder(ranked, undefined, q));
+    expect(out[0]).toBe('Payment failed for Dashbite');
+    // one shared word (the shop's name) is not about the plan: the sale email and the refund keep their place after
+    expect(out.slice(4)).toEqual(['Refund confirmation for Dashbite', 'Long time no shop. Save 50%']);
+    // a question with one word of its own, or no title that holds two: the best three by date, as before
+    expect(titles(latestOrder(ranked, undefined, "What's my newest Dashbite email?"))[0]).toBe('Updated payment plan for Dashbite');
+  });
+
   it('PP-20: progress events arrive in order, and every step-end matches a step-start', async () => {
     idx.search.mockResolvedValue([idx.cand('playground:deposit')]);
     hybrid = createFakeHybrid((spec) =>

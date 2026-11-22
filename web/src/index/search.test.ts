@@ -229,6 +229,21 @@ describe('search', () => {
     expect(ids.every((id) => id === 'playground:pg-mail-11' || id === 'playground:pg-mail-12')).toBe(true);
   });
 
+  it('the newest items about a named thing join the list when the question asks for the latest and names no sender (Nov 22)', async () => {
+    const day = 86_400_000;
+    const from = 'Klaro <noreply@klaro.example>';
+    const ids: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      ids.push(`gmail:plan-${i}`);
+      await ingest(db, { source: 'gmail', sourceRef: `plan-${i}`, kind: 'email', title: `Updated payment plan for Dashbite, part ${i + 1}`, from, date: Date.now() - 3 * day - i * 60_000, text: `Your Dashbite payment plan was updated. Payment plan ${i + 1}: the next payment of your payment plan is due soon. See your payment plan in the app.` }, 'sample');
+    }
+    ids.push('gmail:plan-failed');
+    await ingest(db, { source: 'gmail', sourceRef: 'plan-failed', kind: 'email', title: 'Payment failed for Dashbite', from, date: Date.now() - day, text: 'We could not collect it from your card. Add money and try again.' }, 'sample');
+    const res = await search(db, 'What did the most recent email about my Dashbite payment plan say?', { k: 10 });
+    expect(res.map((c) => c.recordId)).toContain('gmail:plan-failed');
+    await db.records.bulkDelete(ids);
+  });
+
   it('A-SR-5: embedder not ready gives keyword results and says so', async () => {
     ml.setStatus('embed', { state: 'loading' });
     let report: SearchReport | undefined;
