@@ -273,7 +273,8 @@ export function holdsIdentifier(rec: IndexRecord, ids: readonly string[]): boole
 /**
  * A few facts about a pick that say nothing of its content, for the reason code of a run that shared nothing: its
  * place among the candidates the model read ("r2of5"), whether it holds the asker's exact terms ("t1", "t0", or "tx"
- * with none sent), and whether every number in the answer is in the item ("g1", "g0", or "gx" with no number).
+ * with none sent), whether every number in the answer is in the item ("g1", "g0", or "gx" with no number), and whether
+ * the item's whole text was there ("b1") or only its first lines ("b0").
  */
 export function pickCode(list: { rec: IndexRecord }[], chosen: IndexRecord, hints: QueryHints | undefined, answer: string): string {
   const at = list.findIndex((a) => a.rec.id === chosen.id);
@@ -282,7 +283,9 @@ export function pickCode(list: { rec: IndexRecord }[], chosen: IndexRecord, hint
   const t = terms.length === 0 ? 'x' : terms.every((x) => body.includes(x)) ? '1' : '0';
   const numbers = answer.toLowerCase().match(/\d[\d,.:/-]*\d|\d/g) ?? [];
   const g = numbers.length === 0 ? 'x' : numbers.every((n) => body.includes(n)) ? '1' : '0';
-  return `r${at + 1}of${list.length}-t${t}-g${g}`;
+  // "b1": the item's whole text was read; "b0": only its first lines were there (an email whose body is not fetched yet)
+  const b = chosen.kind === 'photo' || chosen.text !== undefined ? '1' : '0';
+  return `r${at + 1}of${list.length}-t${t}-g${g}-b${b}`;
 }
 
 /**
@@ -591,7 +594,11 @@ async function prepare(run: Run): Promise<Proposal> {
       return run.finish('error');
     }
     if (res.trace.where === 'cloud') run.warn(callData === 'sample' ? WARNINGS.sampleDataCloud() : WARNINGS.cloudFallback());
-    if (res.value.recordId === null) return run.why(`model-picked-none-of${list.length}`).blockedOrNoMatch(neverBlocked);
+    if (res.value.recordId === null) {
+      // how many of the candidates had their whole text ("b"), not only the first lines
+      const whole = list.filter((a) => a.rec.kind === 'photo' || a.rec.text !== undefined).length;
+      return run.why(`model-picked-none-of${list.length}-b${whole}`).blockedOrNoMatch(neverBlocked);
+    }
 
     const pick = list.find((a) => a.rec.id === res.value.recordId);
     if (!pick) {

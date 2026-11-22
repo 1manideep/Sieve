@@ -149,7 +149,7 @@ describe('the tester cases (Nov 20)', () => {
     model('P1', 'Bella has a vet visit on Jun 12 at 5 PM.', false);
     const p = await prepareProposal(input({ question: "When is Bella's vet visit?" }));
     expect(p.outcome).toBe('no-match');
-    expect(p.reasonCode).toBe('second-check-no-r1of3-tx-g1');
+    expect(p.reasonCode).toBe('second-check-no-r1of3-tx-g1-b1');
   });
 
   it('T05: a count is unsupported: no search, no model, and the line for the asker', async () => {
