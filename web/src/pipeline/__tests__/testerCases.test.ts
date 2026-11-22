@@ -128,7 +128,7 @@ describe('the tester cases (Nov 20)', () => {
     expect(labels(q).join(' ')).not.toContain('hold the exact number');
   });
 
-  it('the status of an order named by its number: its items go newest first, so a later cancellation is read before the confirmation', async () => {
+  it('the status of an order named by its number: only its newest item is read, so a later cancellation answers, not the confirmation', async () => {
     const confirmed = record({ id: 'gmail:ord-confirmed', source: 'gmail', title: 'Your order US20418833 is confirmed', from: 'Peak Athletics <orders@peak.example>', category: 'Shopping', date: T - 2 * DAY, text: 'Order US20418833 was confirmed and is getting ready to ship.' });
     const cancelled = record({ id: 'gmail:ord-cancelled', source: 'gmail', title: 'Your order US20418833 has been cancelled', from: 'Peak Athletics <orders@peak.example>', category: 'Shopping', date: T - 2 * DAY + 3_600_000, text: 'Your order US20418833 has been cancelled as requested.' });
     const promo = record({ id: 'gmail:ord-promo', source: 'gmail', title: 'New arrivals', from: 'Peak Athletics <news@peak.example>', category: 'Shopping', date: T - DAY, text: 'Shop the winter range.' });
@@ -136,9 +136,9 @@ describe('the tester cases (Nov 20)', () => {
     idx.search.mockResolvedValue([confirmed, promo, cancelled].map((r) => idx.cand(r.id)));
     model('P1', 'Your order US20418833 has been cancelled.');
     const p = await prepareProposal(input({ question: 'What is the status of Peak Athletics order US20418833?', hints: { terms: ['US20418833'] } }));
-    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(['gmail:ord-cancelled', 'gmail:ord-confirmed']);
+    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(['gmail:ord-cancelled']);
     expect(p.item?.recordId).toBe('gmail:ord-cancelled');
-    expect(labels(p)).toContain('Put those newest first, because the newest says how it stands now');
+    expect(labels(p)).toContain('Read only the newest of those, because the newest says how it stands now');
     // a question about a fact of the order, not how it stands, keeps the search order
     await prepareProposal(input({ question: 'How much was Peak Athletics order US20418833?', hints: { terms: ['US20418833'] } }));
     expect(hybrid.callsFor('select-answer').at(-1)?.meta?.recordIds).toEqual(['gmail:ord-confirmed', 'gmail:ord-cancelled']);

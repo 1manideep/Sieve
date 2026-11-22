@@ -487,7 +487,7 @@ async function prepare(run: Run): Promise<Proposal> {
   // 6b. An exact identifier in the question (an order, booking or receipt number): the candidates that hold it are the
   // only ones about that thing, so only they are read. Without this the model answered from another booking by the
   // same sender and the second check threw the answer away (Nov 21, 2026). And for the state of that thing ("the
-  // status of order US123", "has it shipped yet") its newest item says how it stands now, so they go newest first: a
+  // status of order US123", "has it shipped yet") its newest item says how it stands now, so only that one is read: a
   // confirmation answered for an order that was cancelled later the same day.
   const ids = identifierTerms(lookup, hints?.terms);
   if (ids.length > 0 && allowed.length > 1) {
@@ -496,10 +496,11 @@ async function prepare(run: Run): Promise<Proposal> {
       allowed = holders;
       run.code('retrieve', LABELS.identifierOnly(holders.length));
     }
-    // Only the order changes: measured on the on-device model (Nov 21, 2026), it then reads the newest first and
-    // answers from it, while the "listed newest first" line made it pick the second passage.
+    // Only the newest is read. Given several, newest first, the on-device model mostly answered from the newest but
+    // sometimes from an older one ("confirmed" for an order cancelled later that day, Nov 22, 2026), and the "listed
+    // newest first" line made it pick the second passage.
     if (!latest && holders.length > 1 && asksState(lookup)) {
-      allowed = [...holders].sort((a, b) => b.rec.date - a.rec.date);
+      allowed = [holders.reduce((a, b) => (b.rec.date > a.rec.date ? b : a))];
       run.code('retrieve', LABELS.newestState);
     }
   }
