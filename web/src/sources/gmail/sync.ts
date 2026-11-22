@@ -13,6 +13,7 @@ import { isLeader } from '../../index/locks';
 import { getRuntime } from '../../index/runtime';
 import { SOURCE_COPY } from '../types';
 import { getGmailToken } from './auth';
+import { renewOnTimer } from './renew';
 import { loadStoredGmailToken } from './tokenStore';
 import {
   GmailAuthError, GmailForbiddenError, GmailNetworkError, GmailNotFoundError, GmailRateError,
@@ -451,7 +452,11 @@ export function syncAfterNewToken(db: SieveDb): void {
 export function startGmailTimers(db: SieveDb): void {
   const c = controllerFor(db);
   if (c.timer) return;
-  c.timer = setInterval(() => void runGmailSync(db), GMAIL_SYNC_INTERVAL_MS);
+  c.timer = setInterval(() => {
+    // access that is about to end, or has ended by time, is renewed first where Chrome lets a timer do it (renew.ts)
+    void renewOnTimer()?.catch(() => undefined);
+    void runGmailSync(db);
+  }, GMAIL_SYNC_INTERVAL_MS);
   if (typeof document !== 'undefined') {
     c.onVisible = () => {
       if (document.visibilityState === 'visible') void runGmailSync(db);

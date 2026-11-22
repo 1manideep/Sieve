@@ -2,7 +2,12 @@
 // listener on the document asks Google Identity Services for a new token (prompt '') when the token has less than
 // GMAIL_RENEW_BEFORE_MS left, at most once per GMAIL_RENEW_EVERY_MS. Never the Firebase popup: that opens only from
 // the card's own Continue button, because a surprise popup is worse than a notice.
+// Since Nov 22, 2026 the same request is also made on the Gmail sync timer, for a home base nobody is clicking in:
+// "the latest" questions were refused an hour after the last click. Without a click Chrome opens Google's window only
+// where the person has allowed pop-ups for this site; everywhere else Chrome blocks it, nothing shows, and the
+// timer stops asking on this page, so clicks renew as before.
 import type { SieveDb } from '../../index/db';
+import { SourceError } from '../types';
 import { gisAvailable, gmailTokenExpiresAt, gmailTokenRequestOpen, requestGmailToken } from './auth';
 
 export const GMAIL_RENEW_BEFORE_MS = 10 * 60_000;
@@ -22,6 +27,8 @@ export interface RenewTarget {
 let target: RenewTarget | null = null;
 let lastAttempt = Number.NEGATIVE_INFINITY;
 let listening = false;
+/** Chrome blocked the window a timer asked for: the timer does not ask again on this page. */
+let timerBlocked = false;
 
 function onDocumentClick(): void {
   void renewInClick()?.catch(() => undefined);
@@ -49,6 +56,28 @@ export function renewInClick(now = Date.now()): Promise<void> | null {
   );
 }
 
+/**
+ * The same renewal with no click, from the Gmail sync timer. A blocked window stops only the timer; any other failure
+ * (access taken away, a window that was closed) stops renewals as a click's failure does. The request's promise, or
+ * null when nothing was asked.
+ */
+export function renewOnTimer(now = Date.now()): Promise<void> | null {
+  const t = target;
+  if (!t || t.blocked || timerBlocked || !gisAvailable() || gmailTokenRequestOpen()) return null;
+  const ends = Math.max(gmailTokenExpiresAt() ?? Number.NEGATIVE_INFINITY, t.expiresAt ?? Number.NEGATIVE_INFINITY);
+  if (!Number.isFinite(ends) || ends - now > GMAIL_RENEW_BEFORE_MS) return null;
+  if (now - lastAttempt < GMAIL_RENEW_EVERY_MS) return null;
+  lastAttempt = now;
+  return requestGmailToken({ prompt: '', loginHint: t.account }).then(
+    () => t.onToken(t.db),
+    (e: unknown) => {
+      if (e instanceof SourceError && e.code === 'popup-blocked') timerBlocked = true;
+      else if (target === t) t.blocked = true;
+      throw e;
+    },
+  );
+}
+
 /** The connected Gmail source the clicks renew for, or null (disconnected, closed): the listener comes and goes with it. */
 export function setRenewTarget(next: RenewTarget | null): void {
   target = next;
@@ -70,4 +99,5 @@ export function renewTargetDb(): SieveDb | null {
 export function resetGmailRenew(): void {
   setRenewTarget(null);
   lastAttempt = Number.NEGATIVE_INFINITY;
+  timerBlocked = false;
 }

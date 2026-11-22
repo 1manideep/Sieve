@@ -206,7 +206,7 @@ export const SOURCES = {
   folderName: 'Folder: {folderName}',
   pausedLabel: 'Indexing paused',
   /** A plain note: the Gmail token ran out and no tab renewed it (20 section 15.1). */
-  needsAuthGmail: 'Syncing paused. Continue to keep getting new mail.',
+  needsAuthGmail: 'Syncing paused. Continue to keep getting new mail. To stay connected without a click, allow pop-ups for this site in Chrome.',
   /** The one Gmail warning: Google still refused read-only access after Continue. */
   needsAuthGmailRefused: "Google didn't allow read-only Gmail access. Try Continue again.",
   needsAuthFolder: 'Chrome needs your OK to read "{folderName}" again.',
