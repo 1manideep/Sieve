@@ -15,7 +15,7 @@ export const MSG = {
    * an outside assistant cannot tell a held item from one that was not found.
    */
   withReason: (line: string, code: string | undefined) => {
-    const c = (code ?? '').replace(/[^A-Za-z0-9-]/g, '').slice(0, 48);
+    const c = (code ?? '').replace(/[^A-Za-z0-9.-]/g, '').slice(0, 96);
     return c ? `${line} (${c})` : line;
   },
   /** The same line with which step failed, as a short code with no content ("model-timeout", "search-TypeError"). */
