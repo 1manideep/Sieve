@@ -8,7 +8,7 @@ import { env } from '@/app/env';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
 import { LinkButton } from '@/components/Button/Button';
 import { HOW_COPY, HOW_SECTIONS, type HowBlock, type HowCell, type HowListItem, type HowTable } from '@/copy/screens-how';
-import { SCREENS, TITLES } from '@/copy/strings';
+import { PUBLIC_NAV, SCREENS, TITLES } from '@/copy/strings';
 import { ArchitectureFigure, LadderFigure, RelayFigure, StepsFigure } from './figures';
 import styles from './how.module.css';
 
@@ -146,8 +146,8 @@ function Block({ block }: { block: HowBlock }) {
   }
   return (
     <div className={styles.next}>
-      <LinkButton to="/playground" variant="primary">
-        {HOW_COPY.playground}
+      <LinkButton to="/try" variant="primary">
+        {PUBLIC_NAV.tryComputer}
       </LinkButton>
       <LinkButton to={env.repoUrl} external variant="secondary">
         {HOW_COPY.source}

@@ -176,12 +176,13 @@ describe('/how', () => {
     expect(screen.queryByText(HOW_COPY.video.soon)).toBeNull();
   });
 
-  it('sends "Open the Playground" to the Playground and "Read the source" to the repository', () => {
+  it('sends "Try on a real computer" to the demo computer and "Read the source" to the repository; nothing links to the Playground', () => {
     renderHow();
     const next = document.getElementById('next') as HTMLElement;
     const links = within(next).getAllByRole('link');
-    expect(links.map((a) => a.textContent)).toEqual(['Open the Playground', 'Read the source']);
-    expect(links[0]).toHaveAttribute('href', '/playground');
+    expect(links.map((a) => a.textContent)).toEqual(['Try on a real computer', 'Read the source']);
+    expect(links[0]).toHaveAttribute('href', '/try');
+    expect(document.body).not.toHaveTextContent(/playground/i);
     expect(links[1]).toHaveAttribute('href', env.repoUrl);
     expect(links[1]).toHaveAttribute('target', '_blank');
   });

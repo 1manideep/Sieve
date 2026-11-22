@@ -50,7 +50,6 @@ export const HOW_COPY = {
   onThisPage: 'On this page',
   /** The hidden heading of Table 2's step numbers. */
   number: 'Number',
-  playground: 'Open the Playground',
   source: 'Read the source',
   figures: {
     architecture: {
@@ -455,7 +454,7 @@ export const HOW_SECTIONS: readonly HowSection[] = [
       {
         table: {
           caption: 'Table 5 · Inference mode by step',
-          head: ['Step', "A person's own data", 'Playground sample data'],
+          head: ['Step', "A person's own data", 'Sample data'],
           rows: [
             ['Pick the item and write the answer', DEVICE_ONLY, 'On device when Gemini Nano is ready. Otherwise in the cloud, labelled.'],
             ['Other search words', DEVICE_ONLY, DEVICE_ONLY],
@@ -475,7 +474,7 @@ export const HOW_SECTIONS: readonly HowSection[] = [
     blocks: [
       {
         ul: [
-          "**Chrome on a desktop.** A person's own data is processed only where Gemini Nano is available: Chrome 139 or later on a desktop computer. Elsewhere the Playground still works on sample data in the cloud, labelled as such.",
+          "**Chrome on a desktop.** A person's own data is processed only where Gemini Nano is available: Chrome 139 or later on a desktop computer. Without it, Sieve can still be tried on a real computer that has the model set up.",
           '**The tab must be open.** The home base does the private work, so an assistant can reach Sieve only while that tab is open.',
           '**One fact from one item.** Sieve does not count items, list them or combine several into one answer.',
           '**A small model.** The on-device model can pick an item that only looks right. The checks after it stop many of these and not all of them, which is one reason the person reads the text before it leaves. Sieve also returns nothing for some questions it could have answered.',
@@ -491,7 +490,7 @@ export const HOW_SECTIONS: readonly HowSection[] = [
     blocks: [
       {
         ul: [
-          'Try the Playground: a sample computer in the browser, with no sign-in. Ask a question and watch the trace.',
+          'Try on a real computer: a seat on a Mac with Gemini Nano already set up, streamed to your browser, with sample data. Ask a question and watch the trace.',
           'Read the source: the web app, the relay, the extension and the test bench, under Apache 2.0.',
         ],
       },
