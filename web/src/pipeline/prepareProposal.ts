@@ -319,6 +319,22 @@ export function latestOrder<T extends { rec: IndexRecord }>(list: T[], filters: 
   return [...list.slice(0, LATEST_RELEVANT).sort(newest), ...list.slice(LATEST_RELEVANT)];
 }
 
+/**
+ * Whether the first of a "latest" list (latestOrder) is surely the item the question means, so only it is read: the
+ * sender's newest when the question asks about nothing but that sender ("my most recent Kestrelmoor email"), or the
+ * newest whose title or sender holds the thing named. Given the newest five, the on-device model answered from the
+ * third, the one whose words fit the question best (Nov 22, 2026: 2 of 2 on real mail; 1 of 5 with invented copies
+ * of it, and 0 of 5 once only the newest was read).
+ */
+export function newestIsMeant<T extends { rec: IndexRecord }>(list: T[], filters: HardFilter | undefined, question: string): boolean {
+  const topic = topicTerms(question);
+  const first = list[0];
+  if (!first) return false;
+  if (!filters?.sender) return holdsTopic(topic, first.rec.title, first.rec.from);
+  const sender = topicTerms(filters.sender);
+  return topic.every((t) => sender.includes(t));
+}
+
 function clockOf(db: SieveDb, fallback: number): number {
   try {
     const t = clockFor(db);
@@ -488,6 +504,10 @@ async function prepare(run: Run): Promise<Proposal> {
   if (latest && allowed.length > 1) {
     allowed = latestOrder(allowed, filters, lookup);
     run.code('retrieve', LABELS.newestFirst);
+    if (newestIsMeant(allowed, filters, lookup)) {
+      allowed = allowed.slice(0, 1);
+      run.code('retrieve', LABELS.newestOnly);
+    }
   }
 
   // 6b. An exact identifier in the question (an order, booking or receipt number): the candidates that hold it are the

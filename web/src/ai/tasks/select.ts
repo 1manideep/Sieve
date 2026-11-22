@@ -86,9 +86,20 @@ const DATE_HELD =
  * fact of that kind: a receipt's matched chunk was its header, the price line sat just past it, and the model
  * answered with an amount from another item (6 of 6 on the on-device model, Nov 21, 2026).
  */
+// A question about what an item says ("what did the email about my payment plan say") names its subject with the
+// same words ("payment", "rent", "due"): there only an outright "how much" or "when" asks for an amount or a date.
+// Before, a right answer with no number in it ("your payment failed") was withheld (Nov 22, 2026).
+const SAYS_ASKED = /\b(?:say|says|said|about|regarding|mention(?:s|ed)?)\b/i;
+const MONEY_SURE = /\bhow much\b/i;
+const DATE_SURE = /\b(?:when|what (?:day|date|time)|which day|how long)\b/i;
+
+function kindsAsked(question: string): { money: boolean; date: boolean } {
+  const says = SAYS_ASKED.test(question);
+  return { money: (says ? MONEY_SURE : MONEY_ASKED).test(question), date: (says ? DATE_SURE : DATE_ASKED).test(question) };
+}
+
 export function answerKind(question: string): RegExp | null {
-  const money = MONEY_ASKED.test(question);
-  const date = DATE_ASKED.test(question);
+  const { money, date } = kindsAsked(question);
   if (money && date) return new RegExp(`${MONEY_HELD.source}|${DATE_HELD.source}`, 'i');
   return money ? MONEY_HELD : date ? DATE_HELD : null;
 }
@@ -99,8 +110,7 @@ export function answerKind(question: string): RegExp | null {
  * for a question that asks for neither.
  */
 export function answersKind(question: string, answer: string): boolean {
-  const money = MONEY_ASKED.test(question);
-  const date = DATE_ASKED.test(question);
+  const { money, date } = kindsAsked(question);
   if ((!money && !date) || /\d/.test(answer)) return true;
   if (date && DATE_HELD.test(answer)) return true;
   return money && (MONEY_HELD.test(answer) || /\b(?:free|no charge|not charged|nothing|none|waived|zero)\b/i.test(answer));

@@ -5,7 +5,7 @@ import { SELECT_TARGET_TOKENS, TIMING } from '../config';
 import { setLanguageModelForTests } from '../device/languageModel';
 import { setHybridForTests } from '../hybrid';
 import { SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
-import { answerKind, bestWindow, deriveExcerpt, fitPassages, selectAndAnswer, selectPrompt } from '../tasks/select';
+import { answerKind, answersKind, bestWindow, deriveExcerpt, fitPassages, selectAndAnswer, selectPrompt } from '../tasks/select';
 import { createFakeHybrid, promptText, type FakeReply } from '../testing/fakeHybrid';
 import { installFakeLanguageModel } from '../testing/fakeLanguageModel';
 import { resetAiForTests } from '../testing/reset';
@@ -160,6 +160,14 @@ describe('selectAndAnswer (10 section 16.7)', () => {
       expect(answerKind('When does the cover run out?')?.test('It will expire on November 26, 2026.')).toBe(true);
       expect(answerKind('When was I charged, and how much?')?.test('at 10:30')).toBe(true);
       expect(answerKind('Who signed the lease?')).toBeNull();
+      // a question about what an item says names its subject with the same words: no amount or date is asked for
+      expect(answerKind('What did the most recent email about my Dashbite payment plan say?')).toBeNull();
+      expect(answerKind('What did my landlord say about the rent?')).toBeNull();
+      expect(answersKind('What did the email about my payment plan say?', 'Your payment did not go through.')).toBe(true);
+      // unless it says so outright
+      expect(answerKind('How much did the email about my payment plan say I owe?')?.test('$13.08')).toBe(true);
+      expect(answerKind('What did Pawsure say about when the cover ends?')?.test('November 26, 2026')).toBe(true);
+      expect(answersKind('How much was the last payment?', 'It did not go through.')).toBe(false);
     });
 
     it('the best window counts a sentence with an amount for more when an amount is asked for', () => {

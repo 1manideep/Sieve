@@ -85,7 +85,7 @@ describe('the tester cases (Nov 20)', () => {
     expect(privacy.buildStepOption).not.toHaveBeenCalled();
   });
 
-  it('T03, T04: "the latest" puts the newest first and, with a sender filter, gives the model only the newest few', async () => {
+  it('"the latest" from a sender with nothing else asked: only the newest is read; with something asked about, the newest five (Nov 22)', async () => {
     const more = [20, 30, 40].map((ago, i) => record({ id: `gmail:ramki-old-${i}`, source: 'gmail', title: `Old ${i}`, from: 'Ramki <ramki@inbox.example>', category: 'Work', date: T - ago * DAY, text: 'An older note.' }));
     for (const r of more) idx.records.set(r.id, r);
     const list = [...more, ...RAMKI];
@@ -95,6 +95,38 @@ describe('the tester cases (Nov 20)', () => {
     });
     model('P1', 'Ramki sent update number 2 on the release plan.');
     const p = await prepareProposal(input({ question: "What did Ramki's latest email say?" }));
+    expect(p.item?.recordId).toBe('gmail:ramki-2');                  // 1 day ago
+    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(['gmail:ramki-2']);
+    expect(labels(p)).toContain('Read only the newest one, because that is the one the question asks about');
+    // the question also asks about a thing: his newest email may not be about it, so the newest five are read
+    await prepareProposal(input({ question: "What did Ramki's latest email say about the budget?" }));
+    expect(hybrid.callsFor('select-answer').at(-1)?.meta?.recordIds).toHaveLength(5);
+  });
+
+  it('"the latest" about a named thing with no sender: only the newest email whose title holds it is read (Nov 22)', async () => {
+    const klaro = (id: string, title: string, ago: number, text: string) => record({ id: `gmail:${id}`, source: 'gmail', title, from: 'Klaro <noreply@klaro.example>', category: 'Money', date: T - ago * DAY, text });
+    const done = klaro('plan-done', 'We got your final Dashbite payment', 3, 'We received your final payment of $13.08. Your payment plan is now completed.');
+    const updated = klaro('plan-updated', 'Updated payment plan for Dashbite', 3.1, 'Your payment plan was updated after a refund.');
+    const failed = klaro('plan-failed', 'Payment failed for Dashbite', 1, 'Your payment to Dashbite failed because it could not be processed.');
+    for (const r of [done, updated, failed]) idx.records.set(r.id, r);
+    idx.search.mockResolvedValue([done, updated, failed].map((r) => idx.cand(r.id)));
+    model('P1', 'The payment to Dashbite did not go through.');
+    const p = await prepareProposal(input({ question: 'What did the most recent email about my Dashbite payment plan say?' }));
+    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(['gmail:plan-failed']);
+    expect(p.item?.recordId).toBe('gmail:plan-failed');
+    expect(labels(p)).toContain('Read only the newest one, because that is the one the question asks about');
+  });
+
+  it('T03, T04: "the latest" puts the newest first and, with a sender filter, gives the model only the newest few', async () => {
+    const more = [20, 30, 40].map((ago, i) => record({ id: `gmail:ramki-old-${i}`, source: 'gmail', title: `Old ${i}`, from: 'Ramki <ramki@inbox.example>', category: 'Work', date: T - ago * DAY, text: 'An older note.' }));
+    for (const r of more) idx.records.set(r.id, r);
+    const list = [...more, ...RAMKI];
+    idx.search.mockImplementation(async (_db, _q, o) => {
+      (o as { onReport?: (r: unknown) => void }).onReport?.({ filters: { sender: 'Ramki' } });
+      return list.map((r) => idx.cand(r.id));
+    });
+    model('P1', 'Ramki sent update number 2 on the release plan.');
+    const p = await prepareProposal(input({ question: "What did Ramki's latest email say about the release?" }));
     expect(p.outcome).toBe('ready');
     expect(p.item?.recordId).toBe('gmail:ramki-2');                  // 1 day ago
     const ids = hybrid.callsFor('select-answer')[0].meta?.recordIds;

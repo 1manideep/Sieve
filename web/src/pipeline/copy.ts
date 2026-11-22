@@ -70,6 +70,7 @@ export const LABELS = {
   newestFirst: 'Put the matches newest first, because the question asks for the latest',
   identifierOnly: (n: number) => `Read only the ${n === 1 ? 'item' : `${n} items`} that ${n === 1 ? 'holds' : 'hold'} the exact number in the question`,
   newestState: 'Read only the newest of those, because the newest says how it stands now',
+  newestOnly: 'Read only the newest one, because that is the one the question asks about',
   kindOnly: (left: number) => `Left out ${left === 1 ? '1 item' : `${left} items`} with no amount or date in ${left === 1 ? 'it' : 'them'}, because the question asks for one`,
   kindMissing: 'The answer held no date or amount, though the question asks for one, so nothing is shared',
   verifyYes: 'The item answers the question',
