@@ -13,6 +13,38 @@ export const REQUEST_TTL_HOURS = 24;         // Firestore TTL on request docs (f
 // UTF-16 code units (JavaScript String.length). Python counts with len(s.encode('utf-16-le', 'surrogatepass')) // 2.
 export const MAX_QUESTION_CHARS = 500;
 export const MAX_PAYLOAD_CHARS = 8000;       // hard cap on any outgoing text
+
+// A file sent as itself (Nov 22, 2026): the full step with the original attached. The person approves it by name,
+// the home base uploads it to Cloud Storage, and the assistant gets a link. Mirrors functions/sieve/files.py.
+export const SHARED_FILE_MAX_BYTES = 20 * 1024 * 1024;
+export const SHARED_FILE_LINK_SECONDS = 600;
+export const SHARED_FILE_NAME_MAX_CHARS = 120;
+/** What may be sent, by media type, with the endings a name of that type may have. Nothing a browser would run, no archives. */
+export const SHARED_FILE_TYPES: Readonly<Record<string, readonly string[]>> = {
+  'application/pdf': ['.pdf'],
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'image/png': ['.png'],
+  'image/webp': ['.webp'],
+  'image/gif': ['.gif'],
+  'image/heic': ['.heic'],
+  'text/plain': ['.txt'],
+  'text/csv': ['.csv'],
+  'text/markdown': ['.md'],
+  'text/calendar': ['.ics'],
+  'application/msword': ['.doc'],
+  'application/vnd.ms-excel': ['.xls'],
+  'application/vnd.ms-powerpoint': ['.ppt'],
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
+};
+/** A listed type, with a name that ends as that type does. */
+export function sharedFileTypeAllowed(mime: string, name: string): boolean {
+  const endings = SHARED_FILE_TYPES[mime];
+  return !!endings && endings.some((e) => name.toLowerCase().endsWith(e));
+}
+/** handoffs/{uid}/{requestId}/{object}: where an approved file waits for its link, as the Storage rules accept it. */
+export const SHARED_FILE_PATH_RE = /^handoffs\/[A-Za-z0-9]{1,128}\/[A-Za-z0-9]{20}\/[A-Za-z0-9_-]{16,64}$/;
 // TOP_K retired (v2): the pipeline reads up to VECTOR_K + KEYWORD_SAFETY_K candidates
 export const RELATED_MAX = 3;                // related suggestions shown with a proposal
 export const PREVIEW_CHARS = 280;

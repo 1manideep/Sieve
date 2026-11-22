@@ -146,6 +146,9 @@ export interface StepOption {
 
 export interface SharedImage { mime: 'image/jpeg'; base64: string; width: number; height: number; bytes: number }
 
+/** A file sent as itself: its name, type and size as approved, and where the home base put it for the relay's link. */
+export interface SharedFile { name: string; mime: string; bytes: number; path: string }
+
 export type ProposalOutcome = 'ready' | 'blocked-never' | 'no-match' | 'unsupported' | 'needs-cloud-consent' | 'model-unavailable' | 'error';   // unsupported: a count (10 section 12.4)
 
 /** What the home base prepares for the person to approve. Local only (the extension gets a preview). */
@@ -179,7 +182,7 @@ export interface Decision {
 }
 
 /** What actually leaves the device for an outside assistant. Equals the approved StepOption text. */
-export interface RelayPayload { step: LadderStep; text: string; chars: number; itemCount: number; image?: SharedImage }
+export interface RelayPayload { step: LadderStep; text: string; chars: number; itemCount: number; image?: SharedImage; file?: SharedFile }
 
 export type RequestStatus =
   | 'queued' | 'claimed' | 'awaiting-person' | 'answered' | 'declined' | 'blocked' | 'no-match' | 'unsupported'

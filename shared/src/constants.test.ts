@@ -24,6 +24,12 @@ import {
   RELAY_WAIT_SECONDS,
   REQUEST_TTL_HOURS,
   VECTOR_K,
+  SHARED_FILE_LINK_SECONDS,
+  SHARED_FILE_MAX_BYTES,
+  SHARED_FILE_NAME_MAX_CHARS,
+  SHARED_FILE_PATH_RE,
+  SHARED_FILE_TYPES,
+  sharedFileTypeAllowed,
 } from './constants';
 import type { CategoryRule } from './types';
 
@@ -98,6 +104,21 @@ describe('contract constants', () => {
       RELAY_COLLECT_MINUTES: 60,
       MESSAGE_VERSION: 1,
     });
+  });
+
+  it('lists what may be sent as a file, as the Python mirror does', () => {
+    expect(SHARED_FILE_MAX_BYTES).toBe(20 * 1024 * 1024);
+    expect(SHARED_FILE_LINK_SECONDS).toBe(600);
+    expect(SHARED_FILE_NAME_MAX_CHARS).toBe(120);
+    expect(Object.keys(SHARED_FILE_TYPES)).toHaveLength(16);
+    expect(sharedFileTypeAllowed('application/pdf', 'Lease.PDF')).toBe(true);
+    expect(sharedFileTypeAllowed('image/jpeg', 'Lease.pdf')).toBe(false);
+    for (const [mime, name] of [['text/html', 'page.html'], ['image/svg+xml', 'logo.svg'], ['application/zip', 'all.zip'], ['', 'x.pdf']] as const) {
+      expect(sharedFileTypeAllowed(mime, name), mime).toBe(false);
+    }
+    expect(SHARED_FILE_PATH_RE.test(`handoffs/${'u'.repeat(28)}/${'r'.repeat(20)}/${'o'.repeat(24)}`)).toBe(true);
+    expect(SHARED_FILE_PATH_RE.test(`handoffs/${'u'.repeat(28)}/${'r'.repeat(20)}/../x`)).toBe(false);
+    expect(SHARED_FILE_PATH_RE.test(`users/${'u'.repeat(28)}/${'r'.repeat(20)}/${'o'.repeat(24)}`)).toBe(false);
   });
 
   it('keeps the names of databases, ports and models', () => {
