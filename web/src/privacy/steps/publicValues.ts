@@ -103,6 +103,9 @@ export function dropPublicValues(text: string, spans: readonly PiiSpan[], itemTe
   return spans.filter((s) => {
     const value = text.slice(s.start, s.end);
     if (s.type !== 'name' && s.type !== 'dob' && s.type !== 'secret-code' && isDateOrTime(value)) return false;
+    // A date marked as a name ("Sunday, September 6, 2026" came out as "[name]", Nov 21, 2026). It needs a number in
+    // it: a bare "April", "June" or "May" may be a person.
+    if (s.type === 'name' && /\d/.test(value) && isDateOrTime(value)) return false;
     if (s.type === 'address') return isStreetAddress(text, s.start, s.end);
     if (s.type === 'phone' || s.type === 'other') return !isLabelledReference(value, text, s.start, itemText);
     return true;

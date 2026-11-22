@@ -205,6 +205,17 @@ describe('Defect 2: identifiers the caller gave stay unmasked', () => {
     expect(keepAskerWords(text, code, 'Is 482913 my code?')).toEqual(code);
   });
 
+  it('a date that a detector marked as a name is not masked; a bare month that may be a person still is', () => {
+    const text = 'Your check-in date is Sunday, September 6, 2026, from 3:00 PM. June will meet you there.';
+    const date = text.indexOf('Sunday');
+    const june = text.indexOf('June');
+    const spans = [
+      { type: 'name' as const, start: date, end: date + 'Sunday, September 6, 2026'.length, by: 'validator' as const },
+      { type: 'name' as const, start: june, end: june + 4, by: 'validator' as const },
+    ];
+    expect(dropPublicValues(text, spans, text)).toEqual([spans[1]]);
+  });
+
   it('dropPublicValues leaves names (even "June"), dates of birth and cards alone', () => {
     const text = 'June was born on May 3, 1990 and paid with 4111 1111 1111 1111.';
     const span = (part: string, type: 'name' | 'dob' | 'card') => ({ start: text.indexOf(part), end: text.indexOf(part) + part.length, type, by: 'validator' as const });
