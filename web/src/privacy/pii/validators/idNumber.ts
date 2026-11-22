@@ -21,6 +21,23 @@ export function looksLikeIdNumber(value: string, senders?: ReadonlySet<string>):
   const v = value.trim();
   if (!v) return false;
   if (senders && senders.size > 0 && forms(v).some((f) => senders.has(f))) return false;
-  if ((v.match(/\d/g) ?? []).length >= 4) return true;
+  const words = v.split(/\s+/);
+  if (words.length > ID_MAX_WORDS) return false;
+  if (idDigits(words) >= 4) return true;
   return ID_SHAPE.test(v);
+}
+
+/** An ID is a number with a short label at most, never a sentence ("Your balance is below $25.00 USD", Nov 22, 2026). */
+const ID_MAX_WORDS = 5;
+const CURRENCY_SIGN = /[$\u20AC\u00A3\u20B9\u00A5]/;
+const CURRENCY_CODE = /^(?:usd|eur|gbp|inr|cad|aud|rs)\.?$/i;
+
+/** The digits that could belong to an ID: the digits of an amount of money ("$25.00", "1,950.00 INR") do not count. */
+function idDigits(words: readonly string[]): number {
+  let n = 0;
+  words.forEach((w, i) => {
+    const money = CURRENCY_SIGN.test(w) || /^\d[\d,]*\.\d{2}\D*$/.test(w) || CURRENCY_CODE.test(words[i + 1] ?? '') || CURRENCY_CODE.test(words[i - 1] ?? '');
+    if (!money) n += (w.match(/\d/g) ?? []).length;
+  });
+  return n;
 }

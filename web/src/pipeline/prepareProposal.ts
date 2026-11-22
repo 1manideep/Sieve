@@ -286,7 +286,12 @@ export function pickCode(list: { rec: IndexRecord }[], chosen: IndexRecord, hint
   const g = numbers.length === 0 ? 'x' : numbers.every((n) => body.includes(n)) ? '1' : '0';
   // "b1": the item's whole text was read; "b0": only its first lines were there (an email whose body is not fetched yet)
   const b = chosen.kind === 'photo' || chosen.text !== undefined ? '1' : '0';
-  return `r${at + 1}of${list.length}-t${t}-g${g}-b${b}`;
+  return `r${at + 1}of${list.length}-t${t}-g${g}-b${b}-c${readCode(list)}`;
+}
+
+/** The items the model read, in the order read: each email as the last four characters of its own mail id (no content), other kinds as "x". */
+export function readCode(list: { rec: IndexRecord }[]): string {
+  return list.map((a) => (a.rec.source === 'gmail' ? a.rec.sourceRef.slice(-4) : 'x')).join('.');
 }
 
 /**
@@ -613,13 +618,13 @@ async function prepare(run: Run): Promise<Proposal> {
     if (res.value.recordId === null) {
       // how many of the candidates had their whole text ("b"), not only the first lines
       const whole = list.filter((a) => a.rec.kind === 'photo' || a.rec.text !== undefined).length;
-      return run.why(`model-picked-none-of${list.length}-b${whole}`).blockedOrNoMatch(neverBlocked);
+      return run.why(`model-picked-none-of${list.length}-b${whole}-c${readCode(list)}`).blockedOrNoMatch(neverBlocked);
     }
     // A question that asks when or how much, and an answer with no date and no number in it ("it starts on arrival
     // day"): the model answered something else, so nothing is shared.
     if (!isYesNoQuestion(lookup) && !answersKind(lookup, res.value.answer)) {
       run.code('rule', LABELS.kindMissing);
-      return run.why('answer-lacks-asked-kind').blockedOrNoMatch(neverBlocked);
+      return run.why(`answer-lacks-asked-kind-r${list.findIndex((a) => a.rec.id === res.value.recordId) + 1}-c${readCode(list)}`).blockedOrNoMatch(neverBlocked);
     }
 
     const pick = list.find((a) => a.rec.id === res.value.recordId);

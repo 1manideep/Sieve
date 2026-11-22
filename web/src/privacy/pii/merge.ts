@@ -37,7 +37,7 @@ export function filterSpans(text: string, spans: readonly PiiSpan[], opts: SpanF
     if (s.by !== 'validator' && s.type === 'other' && !looksLikeIdNumber(value, opts.senders)) return false;
     if (s.type === 'name') {
       const low = value.trim().toLowerCase();
-      if (PII_STOPWORDS.has(low) || value.trim().length <= 2) return false;
+      if (PII_STOPWORDS.has(low) || value.trim().length <= 2 || !/\p{L}/u.test(value)) return false;   // "2026" is no name
       if (MONTH_NAMES.has(low) && /\d/.test(text.slice(Math.max(0, s.start - 2), s.start) + text.slice(s.end, s.end + 2))) return false;
     }
     return true;

@@ -154,7 +154,7 @@ describe('the tester cases (Nov 20)', () => {
     // the second check said no: it ends there, the model is not asked for a second choice
     expect(hybrid.callsFor('select-answer')).toHaveLength(1);
     expect(p.outcome).toBe('no-match');
-    expect(p.reasonCode).toBe('second-check-no-r2of5-tx-gx-b1');
+    expect(p.reasonCode).toMatch(/^second-check-no-r2of5-tx-gx-b1-c(?:[\w-]{1,4}\.){4}[\w-]{1,4}$/);
   });
 
   it('a "when" question answered with no date or number in it shares nothing', async () => {
@@ -164,7 +164,7 @@ describe('the tester cases (Nov 20)', () => {
     model('P1', "Your dog's free cover starts on arrival day, after you bring him home.");
     const p = await prepareProposal(input({ question: "When does my dog's free cover run out?" }));
     expect(p.outcome).toBe('no-match');
-    expect(p.reasonCode).toBe('answer-lacks-asked-kind');
+    expect(p.reasonCode).toMatch(/^answer-lacks-asked-kind-r1-c[\w-]{1,4}$/);
     expect(hybrid.callsFor('verify-answer')).toHaveLength(0);
     // with a date in it, the same answer goes on to the second check
     model('P1', 'His free cover runs out 30 days after pickup.');
@@ -192,7 +192,7 @@ describe('the tester cases (Nov 20)', () => {
     const p = await prepareProposal(input({ question: "When is Bella's vet visit?" }));
     expect(p.outcome).toBe('no-match');
     // the two notes hold no date, so only the booking was read; with nothing else to pick from, it ends there
-    expect(p.reasonCode).toBe('second-check-no-r1of1-tx-g1-b1');
+    expect(p.reasonCode).toMatch(/^second-check-no-r1of1-tx-g1-b1-c[\w-]{1,4}$/);
   });
 
   it('T05: a count is unsupported: no search, no model, and the line for the asker', async () => {

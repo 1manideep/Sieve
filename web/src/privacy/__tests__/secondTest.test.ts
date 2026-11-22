@@ -154,6 +154,9 @@ describe('B09: a brand with a digit or two is not an ID number', () => {
     for (const v of ['123456789012', 'X1234567', 'RI-2026-88431', '#482', 'No. 12', 'RX-66']) expect(looksLikeIdNumber(v), v).toBe(true);
     expect(looksLikeIdNumber('Zip2024', new Set(['zip2024']))).toBe(false);
     expect(looksLikeIdNumber('Z1llow4', new Set(['zillow']))).toBe(false);   // look-alike digits read as letters
+    // an amount of money or a whole sentence is never an ID, however many digits it holds
+    for (const v of ['$25.00 USD', '$1,950.00', '1,950.00 INR', 'below $25.00 USD', 'Your wallet balance is below $25.00 USD today']) expect(looksLikeIdNumber(v), v).toBe(false);
+    for (const v of ['member 4471 2209', 'policy number AB-448812']) expect(looksLikeIdNumber(v), v).toBe(true);
   });
 
   it('"Z1llow" stays in the answer; the AWS account ID is still masked', async () => {

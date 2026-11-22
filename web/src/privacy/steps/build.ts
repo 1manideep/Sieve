@@ -194,6 +194,8 @@ export async function buildStepOption(
       const dropped = dropSubject(text, rec, opts.question);
       if (!dropped.ok) return unavailable(step, UNAVAILABLE.metadataOnly);
       text = dropped.text;
+      // an answer that is only masks ("[id number]") says nothing: it is not offered
+      if (!/[\p{L}\p{N}]/u.test(text.replace(/\[[^\]]*\]/g, ''))) return unavailable(step, UNAVAILABLE.empty);
     }
 
     // 9. caps, hidden leaks, the final pattern check

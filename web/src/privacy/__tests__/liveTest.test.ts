@@ -205,6 +205,21 @@ describe('Defect 2: identifiers the caller gave stay unmasked', () => {
     expect(keepAskerWords(text, code, 'Is 482913 my code?')).toEqual(code);
   });
 
+  it('the last check marking a whole sentence, an amount or a year does not mask the answer (Nov 22)', async () => {
+    const WALLET = rec({ id: 'gmail:wallet-1', from: 'Paywell <service@paywell.example>', title: 'Your balance is below $25.00 USD', text: 'Your balance is below $25.00 USD. Your low balance reload did not go through. Member number 5520018842.' });
+    const said = 'Your low balance reload did not go through, and your balance is below $25.00 USD.';
+    const q = 'What was my most recent Paywell email about?';
+    const whole = await answerOf(WALLET, said, q, { extraEntities: [nano(said, 'other'), nano('$25.00 USD', 'other'), nano('low balance reload', 'other')] });
+    expect(whole.available).toBe(true);
+    expect(whole.text).not.toContain('[');
+    const year = await answerOf(HOTEL, 'Your check-in is in 2026.', 'Which year is my check-in?', { extraEntities: [nano('2026', 'name')] });
+    expect(year.text).toBe('Your check-in is in 2026.');
+    // an answer that is only a mask says nothing, so it is not offered
+    const masked = await answerOf(WALLET, '5520018842.', 'What is in my Paywell email?', { extraEntities: [nano('5520018842', 'other')] });
+    expect(masked.available).toBe(false);
+    expect(masked.unavailableReason).toBe(UNAVAILABLE.empty);
+  });
+
   it('a date that a detector marked as a name is not masked; a bare month that may be a person still is', () => {
     const text = 'Your check-in date is Sunday, September 6, 2026, from 3:00 PM. June will meet you there.';
     const date = text.indexOf('Sunday');
