@@ -233,6 +233,24 @@ export function asksSaid(text: string): boolean {
   return SAID_RE.test(text);
 }
 
+/** The verbs that name a kind of message, and how that kind starts in a subject line ("Reminder: ...", "Notice of ..."). */
+const SAID_KINDS: readonly [RegExp, RegExp][] = [
+  [/\bremind(?:ed|s)?\b/i, /\bremind/i],
+  [/\bannounc(?:e|ed|es)\b/i, /\bannounc/i],
+  [/\bnotif(?:y|ied|ies)\b/i, /\bnoti(?:f|ce)/i],
+];
+
+/**
+ * "What did X remind me about on March 3?" names the kind of message: a reminder. Given a subject line, this says
+ * whether it is that kind; null when the question names no kind ("what did X say"). Two emails a sender sent on one
+ * day are told apart this way before the model reads them: left to choose, the on-device model answered from the other
+ * one 2 times of 5 (Nov 21, 2026).
+ */
+export function titleSaysAskedKind(question: string, title: string): boolean | null {
+  const kind = SAID_KINDS.find(([asked]) => asked.test(question));
+  return kind ? kind[1].test(title) : null;
+}
+
 const DESCRIBED_RE = /\b(?:did|does|has|have)\s+((?:my|our)\s+[\p{L}' -]{2,40}?)\s+(say|said|send|sent|remind(?:ed)?|ask(?:ed)?|tell|told|email(?:ed)?|write|wrote|written|announced?|notif(?:y|ied)|mention(?:ed)?|want(?:ed)?|need(?:ed)?)\b/iu;
 /**
  * "What did my gym remind me about on March 3?": the question says who the item is from only by

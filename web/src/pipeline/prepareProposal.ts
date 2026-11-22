@@ -16,7 +16,7 @@ import {
   asksCount, asksLatest, asksSeveral, asksState, clockFor, flushUrgentEmbeds, getRecord, identifierTerms, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
   type HardFilter, type ParsedQuestion, type SearchReport, type SieveDb,
 } from '@/index';
-import { asksSaid, describesOnlySender, holdsTopic, topicTerms } from '@/index/cues';
+import { asksSaid, describesOnlySender, holdsTopic, titleSaysAskedKind, topicTerms } from '@/index/cues';
 import { iso } from '@/index/dates';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
 import { isYesNoQuestion } from '@/privacy/steps/answerShape';
@@ -548,6 +548,13 @@ async function prepare(run: Run): Promise<Proposal> {
     if (dated.length > 0 && dated.length < allowed.length) {
       run.code('retrieve', LABELS.datedOnly(allowed.length - dated.length));
       allowed = dated;
+    }
+    // "What did they remind me about" names a kind of message. When the subject of some of that day's emails says it
+    // is one ("Reminder: ...") and the subject of others does not, only the first are read.
+    const kind = allowed.filter((a) => titleSaysAskedKind(lookup, a.rec.title) === true);
+    if (kind.length > 0 && kind.length < allowed.length) {
+      run.code('retrieve', LABELS.saidKindOnly(allowed.length - kind.length));
+      allowed = kind;
     }
   }
 

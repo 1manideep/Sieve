@@ -77,6 +77,7 @@ export const LABELS = {
   newestState: 'Read only the newest of those, because the newest says how it stands now',
   datedOnly: (left: number) => `Left out ${left === 1 ? '1 email that only mentions' : `${left} emails that only mention`} those days, because the question asks what was said then`,
   newestOnly: 'Read only the newest one, because that is the one the question asks about',
+  saidKindOnly: (left: number) => `Left out ${left === 1 ? '1 email' : `${left} emails`} of those days, because another one's subject says it is what the question asks about`,
   kindOnly: (left: number) => `Left out ${left === 1 ? '1 item' : `${left} items`} with no amount or date in ${left === 1 ? 'it' : 'them'}, because the question asks for one`,
   kindMissing: 'The answer held no date or amount, though the question asks for one, so nothing is shared',
   verifyYes: 'The item answers the question',

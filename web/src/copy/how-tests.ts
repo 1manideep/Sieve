@@ -20,7 +20,7 @@ export interface LiveRound {
 
 export const TESTS = {
   /** `npm run check` at the last release, and the counts on a fresh copy of the repository on Nov 20, 2026. */
-  automated: { tests: 2361, files: 185, testsOnNov20: 2047, functionsTests: 99, benchTests: 68 },
+  automated: { tests: 2363, files: 185, testsOnNov20: 2047, functionsTests: 99, benchTests: 68 },
   /** Each risky step tried alone before the build, Nov 15 and 16, 2026: an M2 MacBook, 16 GB, sample data. */
   spikes: {
     labels: { right: 48, of: 50 },

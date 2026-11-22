@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { asksCount, asksLatest, asksSaid, asksState, describesOnlySender, holdsTopic, identifierTerms, isRoleCue, knownSenderWords, senderCue, senderMatches, topicTerms } from './cues';
+import { asksCount, asksLatest, asksSaid, asksState, describesOnlySender, holdsTopic, identifierTerms, isRoleCue, knownSenderWords, senderCue, senderMatches, titleSaysAskedKind, topicTerms } from './cues';
 import { loadDictionaryText } from './dictionary';
 
 beforeAll(() => {
@@ -92,6 +92,19 @@ describe('senderCue', () => {
 
   it('known sender words are not English words and not generic', () => {
     expect([...known].sort()).toEqual(['kestrelmoor', 'kestrelmoorbank', 'parcelmoor', 'parcelmoordelivery', 'strava']);
+  });
+});
+
+describe('titleSaysAskedKind', () => {
+  it('knows the kind of message a question names, and whether a subject line is that kind', () => {
+    expect(titleSaysAskedKind('What did Northside Gym remind me about on March 3?', 'Reminder: your class is tomorrow')).toBe(true);
+    expect(titleSaysAskedKind('What did Northside Gym remind me about on March 3?', 'A friendly reminder about lockers')).toBe(true);
+    expect(titleSaysAskedKind('What did Northside Gym remind me about on March 3?', 'New lockers in the changing room')).toBe(false);
+    expect(titleSaysAskedKind('What did the school announce last Friday?', 'Announcement: sports day')).toBe(true);
+    expect(titleSaysAskedKind('What was I notified about on Monday?', 'Notice of a planned outage')).toBe(true);
+    // no kind is named: nothing to tell the subjects apart by
+    expect(titleSaysAskedKind('What did Northside Gym say on March 3?', 'Reminder: your class is tomorrow')).toBeNull();
+    expect(titleSaysAskedKind('What was sent to me on Mar 3?', 'Reminder: your class is tomorrow')).toBeNull();
   });
 });
 

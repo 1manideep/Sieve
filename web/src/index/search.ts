@@ -33,7 +33,8 @@ export interface SearchReport {
   repaired: number;                     // orphan hits dropped (20 section 5.7)
   filters?: HardFilter;                 // the sender and dates every candidate had to fit (10.2)
   senderDropped?: string;               // a sender read from the question's words that no item is from, but titles hold: it only ranks
-  categoryRelaxed?: Category[];         // a category hint left too few results, so the search ran again without it
+  categoryRelaxed?: Category[];         // a category hint left too few results, or hid the newest item the question names, so the search ran again without it
+  latest?: string[];                    // "the latest": the newest items from the named sender or about the named thing, newest first
   dateRelaxed?: { after?: string; before?: string };   // a date filter left too few results: run again, the dates only ranking
   fusion?: { vector: number; keyword: number; live: number; pool: number };   // list lengths fused, and the records after them
   rerank?: { ran: boolean; ms: number; passages: number; reason?: RerankResult['reason'] | 'few-candidates' | 'asks-latest' };
@@ -295,7 +296,11 @@ function boostFor(rec: IndexRecord, meta: RecordMeta | undefined, hints: QueryHi
 
 /**
  * The search. With a category hint from an outside assistant it looks only in those categories first; when that
- * leaves fewer than CATEGORY_MIN_RESULTS, the hint was probably a wrong guess, so it runs again without it. Then a date
+ * leaves fewer than CATEGORY_MIN_RESULTS, the hint was probably a wrong guess, so it runs again without it. It also runs
+ * again without it when the question asks for the latest of something and the newest such item is filed elsewhere: the
+ * person named the thing, and the category is only the assistant's guess at how Sieve filed it. Before, a "Money" hint
+ * hid the newest order summary, which was filed under another category, and the answer came from another email
+ * (Nov 22, 2026). Then a date
  * filter that leaves fewer than DATE_MIN_RESULTS is dropped the same way, and its dates only rank. The category goes
  * first: it is the assistant's guess at how Sieve sorted the item, while a date is something the person said.
  */
@@ -307,11 +312,26 @@ export async function search(db: SieveDb, question: string, opts: SearchOptions 
   let res = await once(current);
   let categoryRelaxed: Category[] | undefined;
   const hinted = opts.hints?.categories;
-  if (res.length < CATEGORY_MIN_RESULTS && hinted && hinted.length > 0) {
+  if (hinted && hinted.length > 0) {
     const { categories: _dropped, ...rest } = opts.hints ?? {};
-    current = { ...opts, hints: rest };
-    res = await once(current);
-    categoryRelaxed = hinted;
+    const open = { ...opts, hints: rest };
+    if (res.length < CATEGORY_MIN_RESULTS) {
+      current = open;
+      res = await once(current);
+      categoryRelaxed = hinted;
+    } else if (asksLatest(question)) {
+      const kept = { res, report, newest: report?.latest?.[0] };
+      const wide = await once(open);
+      const newest = report?.latest?.[0];
+      if (newest && newest !== kept.newest) {
+        current = open;
+        res = wide;
+        categoryRelaxed = hinted;
+      } else {
+        res = kept.res;
+        report = kept.report;
+      }
+    }
   }
   let dateRelaxed: SearchReport['dateRelaxed'];
   const f = report?.filters;
@@ -504,6 +524,7 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
   const inKeyword = new Set(keywordList);
   const inLive = new Set(liveList);
   const inLatest = new Set(latestList);
+  if (latestList.length > 0) report.latest = latestList;
 
   // boosts on the fused list, then one per contentHash
   const recCache = new Map<string, IndexRecord | undefined>();

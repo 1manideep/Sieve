@@ -267,8 +267,13 @@ describe('the tester cases (Nov 20)', () => {
     withFilters({ sender: 'Northside Gym', ...days });
     model('P1', 'Your spin class is tomorrow at 7 AM.');
     const p = await prepareProposal(input({ question: 'What did Northside Gym remind me about on March 3?', hints: { from: 'Northside Gym', ...days } }));
-    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(['gmail:ng-class', 'gmail:ng-lockers']);
+    // of the two sent that day, the one whose subject says it is a reminder is the one read
+    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(['gmail:ng-class']);
     expect(labels(p)).toContain('Left out 1 email that only mentions those days, because the question asks what was said then');
+    expect(labels(p)).toContain("Left out 1 email of those days, because another one's subject says it is what the question asks about");
+    // a question that names no kind of message reads both
+    await prepareProposal(input({ question: 'What did Northside Gym say on March 3?', hints: { from: 'Northside Gym', ...days } }));
+    expect(hybrid.callsFor('select-answer').at(-1)?.meta?.recordIds).toEqual(['gmail:ng-class', 'gmail:ng-lockers']);
     // with no sender filter the emails of that day are from anyone: all three are read, as before
     withFilters(days);
     await prepareProposal(input({ question: 'What did Northside Gym remind me about on March 3?', hints: days }));

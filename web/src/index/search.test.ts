@@ -222,6 +222,33 @@ describe('search', () => {
     await db.records.delete('gmail:sub-1');
   });
 
+  it('a category hint does not hide the newest item the question names: it is dropped when that item is filed elsewhere (Nov 22)', async () => {
+    const day = 86_400_000;
+    const ids: string[] = [];
+    const add = async (ref: string, title: string, ago: number, text: string) => {
+      ids.push(`gmail:${ref}`);
+      return ingest(db, { source: 'gmail', sourceRef: ref, kind: 'email', title, from: 'Larkfield Goods <noreply@mailer.larkfield.example>', date: Date.now() - ago * day, text }, 'own');
+    };
+    for (let i = 0; i < 3; i++) await add(`hv-bill-${i}`, `Invoice for your Harvest order, part ${i + 1}`, 20 + i, 'Invoice for your Harvest order. The amount due is on the statement.');
+    const summary = await add('hv-new', 'Harvest order summary', 1, 'Your Harvest order has shipped. Item: plum jam. Quantity: 12 jars.');
+    expect(summary.category).not.toBe('Money');
+    const q = 'How many jars did my latest Harvest order hold?';
+    let report: SearchReport | undefined;
+    const res = await search(db, q, { hints: { categories: ['Money'] }, onReport: (r) => (report = r) });
+    expect(res.map((c) => c.recordId)).toContain('gmail:hv-new');
+    expect(report?.categoryRelaxed).toEqual(['Money']);
+    expect(report?.latest?.[0]).toBe('gmail:hv-new');
+    // when the newest one is itself in the hinted category, the hint stays
+    const newest = await add('hv-bill-new', 'Invoice for your Harvest order, the newest', 0.5, 'Invoice for your Harvest order. The amount due is on the statement.');
+    expect(newest.category).toBe('Money');
+    const kept = await search(db, q, { hints: { categories: ['Money'] }, onReport: (r) => (report = r) });
+    expect(report?.categoryRelaxed).toBeUndefined();
+    expect(report?.filters).toMatchObject({ categories: ['Money'] });
+    expect(kept.map((c) => c.recordId)).toContain('gmail:hv-bill-new');
+    expect(kept.map((c) => c.recordId)).not.toContain('gmail:hv-new');
+    await db.records.bulkDelete(ids);
+  });
+
   it("the sender's newest items join the list when the question asks for the latest (T04)", async () => {
     const res = await search(db, "What did Kestrelmoor's latest email say?");
     const ids = res.map((c) => c.recordId);
