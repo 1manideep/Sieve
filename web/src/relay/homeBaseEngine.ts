@@ -912,7 +912,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
         return;
       default:
         deps.toast({ tone: 'error', title: HOME_BASE.prepareFailed(aiName) });
-        await finishAuto(id, { status: 'error', message: MSG.errorWith(proposal.errorCode ?? 'unknown') }, 'error', proposal);
+        await finishAuto(id, { status: 'error', message: proposal.errorCode === 'mail-not-current' ? MSG.mailNotCurrent : MSG.errorWith(proposal.errorCode ?? 'unknown') }, 'error', proposal);
     }
   }
 

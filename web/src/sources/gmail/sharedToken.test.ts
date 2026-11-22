@@ -287,6 +287,33 @@ describe('Continue and renewal inside clicks', () => {
     }, 30_000);
   }
 
+  it('a row left asking for sign-in by an older build (no token, no end time, no refusal) renews inside a click; a failed try is not repeated (Nov 22)', async () => {
+    await connect();
+    const name = db.name;
+    await db.sources.update('gmail', { needsAuth: true, accessToken: undefined, tokenEndedAt: undefined } as never);
+    await closeDb(db, { flush: false });
+    resetGmailAuth();
+    resetGmailRenew();
+    const tab = await freshTab();
+    try {
+      const renew = await import('./renew');
+      await tab.registry.startSources(tab.db);
+      await until(async () => renew.renewTargetDb() !== null && (await tab.db.sources.get('gmail'))?.needsAuth === true);
+      gis.set({ respondWith: 'error' });
+      const before = gis.requests.length;
+      document.body.click();
+      expect(gis.requests).toHaveLength(before + 1);
+      await new Promise((r) => setTimeout(r, 20));
+      later(GMAIL_RENEW_EVERY_MS + 1000);
+      document.body.click();   // the first try failed: clicks on this page do not ask again
+      expect(gis.requests).toHaveLength(before + 1);
+      renew.resetGmailRenew();
+    } finally {
+      await tab.close();
+      db = openDbNamed(name, 'real');
+    }
+  }, 30_000);
+
   it('a click asks nothing while more than 10 minutes are left', async () => {
     await connect();
     const before = gis.requests.length;

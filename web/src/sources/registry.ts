@@ -115,6 +115,10 @@ function onGmailRow(db: SieveDb, watch: RowWatch, row: SourceRow | undefined): v
     // A tab loaded after the token ran out never saw it in use: the row still holds it, or when it ended. Without this
     // a reload stopped clicks from renewing, and new mail was not read until Continue (Nov 22, 2026).
     if (watch.expiresAt === null) watch.expiresAt = stored?.expiresAt ?? (row as GmailRow | undefined)?.tokenEndedAt ?? null;
+    // A row that asks for sign-in with no token, no end time and no refusal on it was left so by a token that ran out
+    // before the end time was kept: the next click may renew it too. A click that fails is not tried again on this
+    // page (renew.ts), so access the person took away in their Google account opens one window at most.
+    if (watch.expiresAt === null && row?.connected && row.needsAuth && row.errorCode !== 'auth-needed') watch.expiresAt = 0;
     // Renewal inside a click is for a token that ran out by time; a refused, signed-out or removed token waits for Continue.
     const ranOut = watch.expiresAt !== null && Date.now() >= watch.expiresAt - GMAIL_TOKEN_SKEW_MS;
     if (!ranOut) watch.expiresAt = null;

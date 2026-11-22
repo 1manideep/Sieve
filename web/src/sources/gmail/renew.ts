@@ -38,8 +38,15 @@ export function renewInClick(now = Date.now()): Promise<void> | null {
   if (!Number.isFinite(ends) || ends - now > GMAIL_RENEW_BEFORE_MS) return null;
   if (now - lastAttempt < GMAIL_RENEW_EVERY_MS) return null;
   lastAttempt = now;
-  // A failed renewal says nothing: the card's note and Continue are still there.
-  return requestGmailToken({ prompt: '', loginHint: t.account }).then(() => t.onToken(t.db));
+  // A failed renewal says nothing: the card's note and Continue are still there. It is not tried again from clicks on
+  // this page, so a window Google could not finish (access taken away, a closed popup) does not come back on its own.
+  return requestGmailToken({ prompt: '', loginHint: t.account }).then(
+    () => t.onToken(t.db),
+    (e: unknown) => {
+      if (target === t) t.blocked = true;
+      throw e;
+    },
+  );
 }
 
 /** The connected Gmail source the clicks renew for, or null (disconnected, closed): the listener comes and goes with it. */
