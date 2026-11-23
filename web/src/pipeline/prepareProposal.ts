@@ -10,7 +10,7 @@ import type {
 } from '@sieve/shared';
 import {
   CANDIDATE_POOL, CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, answerKind, answersKind, codeTrace, deriveExcerpt, excerptBasis, fitPassages, getNanoAvailability, hasFreshConsent,
-  recordBody, repeatsExample, searchWords, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
+  recordBody, searchWords, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
 } from '@/ai';
 import {
   asksCount, asksLatest, asksSeveral, asksState, clockFor, dictionaryReady, flushUrgentEmbeds, getRecord, identifierTerms, knownOrgsOf, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
@@ -739,13 +739,6 @@ async function prepare(run: Run): Promise<Proposal> {
       run.errorCode = 'pick-not-listed';
       return run.finish('error');
     }
-    // A fact of the answer prompt's own example in the answer, when the item does not hold it: the model repeated its
-    // instructions ("paid on March 3rd" on another payment, Nov 22, 2026). It had one more try; this is never shared.
-    if (repeatsExample(res.value.answer, pick.rec, lookup, today)) {
-      run.code('rule', LABELS.exampleRepeated);
-      return run.why(`answer-repeats-prompt-example-r${list.indexOf(pick) + 1}-c${readCode(list)}`).blockedOrNoMatch(neverBlocked);
-    }
-
     // 12a. Freshness, before any step option is built.
     const freshId = run.start('retrieve', RUNNING.fresh, 'code');
     const f0 = performance.now();
@@ -801,7 +794,11 @@ async function prepare(run: Run): Promise<Proposal> {
   if (run.aborted) return run.stopped();
   const chosenData = recordDataClass(chosen);
   const verifyId = run.start('answer', RUNNING.verify, nano.text === 'available' ? 'device' : chosenData === 'sample' ? 'cloud' : 'code');
-  const checked = await verifyAnswer(lookup, chosen, value.answer, chosenData, {
+  // "Today" and "tomorrow" in the answer mean the item's day: when the item is not from today, the date is written.
+  // Written before the second check reads it: the check refused "is today from 10:30 AM" from a two-week-old email
+  // because "the date in the email is not today" (1 of 10 on the on-device model; 0 of 10 with the date, Nov 22, 2026).
+  const answer = anchorRelativeDays(value.answer, chosen.date, run.now);
+  const checked = await verifyAnswer(lookup, chosen, answer, chosenData, {
     ...(recomputeExcerpt || !value.passage ? {} : { passage: value.passage }),
     ...(input.signal ? { signal: input.signal } : {}),
     ...(hints?.after || hints?.before ? { dates: { ...(hints.after ? { after: hints.after } : {}), ...(hints.before ? { before: hints.before } : {}) } } : {}),
@@ -819,8 +816,6 @@ async function prepare(run: Run): Promise<Proposal> {
 
   // 13. The excerpt, chosen by plain code.
   const rec = chosen;
-  // "Today" and "tomorrow" in the answer mean the item's day: when the item is not from today, the date is written.
-  const answer = anchorRelativeDays(value.answer, rec.date, run.now);
   if (answer !== value.answer) run.code('clean', LABELS.dayWritten);
   let excerpt = value.excerpt;
   let unsupported = value.unsupported ?? [];

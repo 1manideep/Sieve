@@ -189,22 +189,17 @@ describe('the tester cases (Nov 20)', () => {
     expect(p.reasonCode).toMatch(/^second-check-no-r2of5-tx-gx-b1-c(?:[\w-]{1,4}\.){4}[\w-]{1,4}$/);
   });
 
-  it('an answer that repeats the date of the prompt\'s own example shares nothing (Nov 22, R16)', async () => {
-    const order = record({ id: 'gmail:order-lumora', source: 'gmail', title: 'Your Lumora order', from: 'Lumora <no-reply@mail.lumora.example>', category: 'Shopping', date: T - 12 * DAY, text: 'Thanks for your order. We charged $18.40 to the card ending 4417. Your items arrive in 3 to 5 days.' });
-    idx.records.set(order.id, order);
-    idx.search.mockResolvedValue([idx.cand(order.id)]);
-    // the same on both tries: the item holds no "March 3", so the model took it from its instructions
-    model('P1', 'You were charged $18.40, paid on March 3rd.');
-    const p = await prepareProposal(input({ question: 'How much did Lumora charge me?' }));
-    expect(hybrid.callsFor('select-answer')).toHaveLength(2);
-    expect(p.outcome).toBe('no-match');
-    expect(p.reasonCode).toMatch(/^answer-repeats-prompt-example-r1-c[\w-]{1,4}$/);
-    expect(hybrid.callsFor('verify-answer')).toHaveLength(0);
-    expect(p.options.every((o) => !o.available)).toBe(true);
-    // without the added date, the same item answers
-    model('P1', 'You were charged $18.40.');
-    const ok = await prepareProposal(input({ question: 'How much did Lumora charge me?' }));
-    expect(ok.outcome).toBe('ready');
+  it('the second check reads the answer with its day written out (Nov 22, B11)', async () => {
+    const event = record({ id: 'gmail:cocoa-day', source: 'gmail', title: 'Hot cocoa in the clubhouse today', from: 'Birchwood Residents <office@birchwood.example>', category: 'Personal', date: new Date(2026, 10, 6, 9).getTime(), text: 'Come warm up with us at the clubhouse. Today from 10:30 AM to 12:00 PM. Stop by for a cup of hot cocoa.' });
+    idx.records.set(event.id, event);
+    idx.search.mockResolvedValue([idx.cand(event.id)]);
+    model('P1', 'The get-together is today from 10:30 AM to 12:00 PM.');
+    const p = await prepareProposal(input({ question: 'When is the hot cocoa get-together at the clubhouse?', now: new Date(2026, 10, 22, 12).getTime() }));
+    expect(p.outcome).toBe('ready');
+    const check = promptText(hybrid.callsFor('verify-answer')[0].parts);
+    expect(check).toContain('Proposed answer: The get-together is on November 6, 2026 from 10:30 AM to 12:00 PM.');
+    expect(check).not.toContain('is today from');
+    expect(p.options[0].text).toContain('on November 6, 2026 from 10:30 AM');
   });
 
   it('a "when" question answered with no date or number in it shares nothing', async () => {

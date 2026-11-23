@@ -80,7 +80,6 @@ export const LABELS = {
   saidKindOnly: (left: number) => `Left out ${left === 1 ? '1 email' : `${left} emails`} of those days, because another one's subject says it is what the question asks about`,
   kindOnly: (left: number) => `Left out ${left === 1 ? '1 item' : `${left} items`} with no amount or date in ${left === 1 ? 'it' : 'them'}, because the question asks for one`,
   kindMissing: 'The answer held no date or amount, though the question asks for one, so nothing is shared',
-  exampleRepeated: 'The answer held a date or an amount from the instructions the model was given, not from the item, so nothing is shared',
   verifyYes: 'The item answers the question',
   verifyNo: 'The item does not answer the question',
   verifyFailed: "Couldn't check the answer against the item on this device",

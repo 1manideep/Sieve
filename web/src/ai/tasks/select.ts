@@ -17,7 +17,7 @@ import {
 } from '../config';
 import { extractFacts, normFact, normalizedFacts } from '../facts';
 import { partialJsonString } from '../json';
-import { RESHAPE_REMINDER, RETRY_REMINDER, SELECT_CLOUD_SCHEMA, SELECT_EXAMPLE, SELECT_SCHEMA, SELECT_SYSTEM, YES_NO_REMINDER, madeUpReminder } from '../prompts';
+import { RESHAPE_REMINDER, RETRY_REMINDER, SELECT_CLOUD_SCHEMA, SELECT_SCHEMA, SELECT_SYSTEM, YES_NO_REMINDER, madeUpReminder } from '../prompts';
 import { runModel } from '../runModel';
 import { cleanModelSentence, collapseWhitespace, escapeDelimiters, localDay, promptField, sentences, stems, type Range } from '../text';
 import { codeTrace } from '../trace';
@@ -168,17 +168,6 @@ export function madeUpFacts(answer: string, record: IndexRecord, question: strin
     out.push(raw.trim());
   }
   return out;
-}
-
-const EXAMPLE_FACTS = normalizedFacts(SELECT_EXAMPLE);
-
-/**
- * A fact of the prompt's own example answer in an answer whose item does not hold it: the model repeated its
- * instructions. "Paid on March 3rd" went out on an answer about another payment (Nov 22, 2026), the only invented
- * detail in six test rounds. Such an answer is never shared.
- */
-export function repeatsExample(answer: string, record: IndexRecord, question: string, today: number): string | undefined {
-  return madeUpFacts(answer, record, question, today).find((f) => EXAMPLE_FACTS.has(normFact(f)));
 }
 
 /** What the one retry says when the first answer lacked the kind of fact asked for. */

@@ -865,7 +865,7 @@ You get a question and numbered passages (P1, P2, ...). Each passage comes from 
 
 Reply with JSON only, in this order:
 - "item": the passage that answers the question, such as "P2", or "none" if no passage answers it.
-- "answer": one short sentence that answers the question, written to the person, such as "Your deposit was $1,200, paid on March 3." Use only facts stated in that passage. No greeting, no advice, no links, and no email addresses unless the question asks for one. If "item" is "none", "answer" is "".
+- "answer": one short sentence that answers the question, written to the person, such as "Your landlord returned the deposit in full." Use only facts stated in that passage. No greeting, no advice, no links, and no email addresses unless the question asks for one. If "item" is "none", "answer" is "".
 ```
 
 User message:

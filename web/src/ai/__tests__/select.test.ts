@@ -3,9 +3,10 @@ import { NANO_PROMPT_BUDGET } from '@sieve/shared';
 import { estimatePromptTokens } from '../budget';
 import { SELECT_TARGET_TOKENS, TIMING } from '../config';
 import { setLanguageModelForTests } from '../device/languageModel';
+import { extractFacts } from '../facts';
 import { setHybridForTests } from '../hybrid';
-import { SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
-import { answerKind, answersKind, bestWindow, deriveExcerpt, fitPassages, madeUpFacts, repeatsExample, selectAndAnswer, selectPrompt } from '../tasks/select';
+import { SELECT_EXAMPLE, SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
+import { answerKind, answersKind, bestWindow, deriveExcerpt, fitPassages, madeUpFacts, selectAndAnswer, selectPrompt } from '../tasks/select';
 import { parseWords } from '../tasks/words';
 import { createFakeHybrid, promptText, type FakeReply } from '../testing/fakeHybrid';
 import { installFakeLanguageModel } from '../testing/fakeLanguageModel';
@@ -150,14 +151,14 @@ describe('selectAndAnswer (10 section 16.7)', () => {
     const plain = useReplies(reply('P1', 'You were charged $18.40.'));
     await selectAndAnswer('How much did Lumora charge me?', [order], 'sample', { today: TODAY });
     expect(plain.calls).toHaveLength(1);
-    // the same on the second try: one retry, never a third call (the pipeline refuses the example's facts after this)
+    // the same on the second try: one retry, never a third call (the excerpt's check then warns about it)
     const stuck = useReplies(reply('P1', 'You were charged $18.40, paid on March 3rd.'));
     const again = await selectAndAnswer('How much did Lumora charge me?', [order], 'sample', { today: TODAY });
     expect(again.ok && again.value.answer).toBe('You were charged $18.40, paid on March 3rd.');
     expect(stuck.calls).toHaveLength(2);
   });
 
-  it('madeUpFacts and repeatsExample: what an item holds, and what is the model\'s own', () => {
+  it('madeUpFacts: what an item holds, and what is the model\'s own', () => {
     const q = 'When does my order ship?';
     const item = record({
       id: 'gmail:order-ships', source: 'gmail', title: 'Order update', from: 'Lumora <no-reply@mail.lumora.example>', date: new Date(2026, 10, 10, 9).getTime(),
@@ -176,11 +177,9 @@ describe('selectAndAnswer (10 section 16.7)', () => {
     const plain = record({ ...item, id: 'gmail:order-plain', text: 'Your order has shipped. Total: $18.40.' });
     expect(madeUpFacts('It ships on November 11.', plain, q, TODAY)).toEqual(['November 11']);
 
-    // the prompt's own example: only when the item does not hold the fact
-    expect(repeatsExample('You were charged $18.40, paid on March 3rd.', item, q, TODAY)).toBe('March 3rd');
-    expect(repeatsExample('Your total was $1,200.', item, q, TODAY)).toBe('$1,200');
-    expect(repeatsExample('It ships on July 9.', item, q, TODAY)).toBeUndefined();                // made up, but not the example's
-    expect(repeatsExample('Your deposit was $1,200, paid on March 3.', RECORDS.deposit, 'How much was my deposit?', TODAY)).toBeUndefined();
+    // the prompt's own example holds no date and no amount, so there is nothing of it to copy into an answer
+    expect(extractFacts(SELECT_EXAMPLE)).toEqual([]);
+    expect(SELECT_SYSTEM).toContain(`such as "${SELECT_EXAMPLE}"`);
   });
 
   it('Nov 22: an answer with several facts, or one copied from the item, gets one more try that says what to change', async () => {
