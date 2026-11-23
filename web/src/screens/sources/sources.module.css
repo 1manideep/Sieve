@@ -33,8 +33,6 @@
 /* The grid: categories down, sources across, a circle sized by count in every cell. */
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .gridSearch { flex: 0 1 280px; height: 36px; margin-left: auto; }
-.iconButton { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 36px; height: 36px; border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 50%; background: transparent; color: var(--color-text); cursor: pointer; }
-.iconButton:hover { background: rgba(255, 255, 255, 0.08); }
 
 .grid { display: flex; flex-direction: column; }
 .gcols { display: grid; grid-template-columns: 236px repeat(3, 150px) minmax(0, 1fr) 128px; align-items: center; gap: 0 12px; }

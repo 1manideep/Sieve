@@ -1,5 +1,6 @@
-// Assistants (40 sections 13.8.1 to 13.8.3 and 13.8.9; design handoff of Nov 20, 2026): the marks, the selected
-// assistant opened in one panel in place, Auto-approve answers, Revoke, and connecting in place.
+// Assistants (40 sections 13.8.1 to 13.8.3 and 13.8.9; design handoff of Nov 20, 2026): the marks, the pressed
+// assistant opened in one panel in place and closed by a second press, Auto-approve answers, Revoke, and connecting
+// in place.
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -53,6 +54,7 @@ function renderCard() {
 const marks = () => screen.getByRole('list', { name: SETTINGS.marksLabel });
 const mark = (name: RegExp) => within(marks()).getByRole('button', { name });
 const panel = (name: string) => screen.getByRole('article', { name });
+const claudeMark = () => mark(/^Claude(?! Code)/);
 
 beforeEach(() => {
   useSettings.setState({ settings: { ...DEFAULT_SETTINGS } });
@@ -73,15 +75,23 @@ afterEach(() => {
 });
 
 describe('Assistants: the marks and the open assistant', () => {
-  it('shows every assistant as a mark, live or to connect, and opens the first live one in place', async () => {
+  it('shows every assistant as a mark, live or to connect, and opens none of them, even the live ones, until pressed', async () => {
     renderCard();
     expect(within(marks()).getAllByRole('button')).toHaveLength(7);
-    expect(mark(/^Claude(?! Code)/)).toHaveTextContent(SETTINGS.markLive);
-    expect(mark(/^Claude(?! Code)/)).toHaveAttribute('aria-pressed', 'true');
+    expect(claudeMark()).toHaveTextContent(SETTINGS.markLive);
     expect(mark(/^ChatGPT/)).toHaveTextContent(SETTINGS.markLive);
     expect(mark(/^Gemini CLI/)).toHaveTextContent(SETTINGS.markSubConnect);
+    for (const button of within(marks()).getAllByRole('button')) expect(button).toHaveAttribute('aria-pressed', 'false');
     expect(screen.getByText(fillText(SETTINGS.aisNote, { n: 2 }))).toBeInTheDocument();
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
+    await expectNoAxeViolations();
+  });
 
+  it('a press opens that assistant in place, and a second press on it closes it', async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(claudeMark());
+    expect(claudeMark()).toHaveAttribute('aria-pressed', 'true');
     const claude = panel('Claude');
     expect(within(claude).getByText(grantMeta(grant({}), NOW))).toBeInTheDocument();
     expect(within(claude).getByText(SETTINGS.capAnswer)).toBeInTheDocument();
@@ -92,38 +102,56 @@ describe('Assistants: the marks and the open assistant', () => {
     expect(within(claude).getByRole('button', { name: SETTINGS.narrow })).toBeInTheDocument();
     expect(screen.getAllByRole('article')).toHaveLength(1);
     await expectNoAxeViolations();
+
+    await user.click(claudeMark());
+    expect(claudeMark()).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
+    await user.click(mark(/^Gemini CLI/));
+    expect(panel(fillText(SETTINGS.connectHeading, { name: 'Gemini CLI' }))).toBeInTheDocument();
+    await user.click(mark(/^Gemini CLI/));
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
   });
 
   it('pressing another mark opens that assistant instead', async () => {
     const user = userEvent.setup();
     renderCard();
+    await user.click(claudeMark());
     await user.click(mark(/^ChatGPT/));
     expect(mark(/^ChatGPT/)).toHaveAttribute('aria-pressed', 'true');
-    expect(mark(/^Claude(?! Code)/)).toHaveAttribute('aria-pressed', 'false');
+    expect(claudeMark()).toHaveAttribute('aria-pressed', 'false');
     expect(within(panel('ChatGPT')).getByText(SETTINGS.capExcerpt)).toBeInTheDocument();
     expect(screen.queryByRole('article', { name: 'Claude' })).not.toBeInTheDocument();
   });
 
-  it('says when a connection expires soon', () => {
+  it('says when a connection expires soon', async () => {
+    const user = userEvent.setup();
     useGrants.setState({ grants: [grant({ state: 'expiring', expiresAt: NOW + 2 * DAY })] });
     renderCard();
+    await user.click(claudeMark());
     expect(within(panel('Claude')).getByText(fillText(SETTINGS.expiresSoon, { left: fillText(SETTINGS.daysLeft, { n: 2 }) }))).toBeInTheDocument();
   });
 
-  it('shows the loading and the error states in place of the panel', () => {
+  it('shows the loading and the error states in place of the panel, once a mark is pressed', async () => {
+    const user = userEvent.setup();
     useGrants.setState({ status: 'loading', grants: [] });
     const view = renderCard();
+    expect(screen.queryByText(SETTINGS.aisLoading)).not.toBeInTheDocument();
+    await user.click(claudeMark());
     expect(screen.getByText(SETTINGS.aisLoading)).toBeInTheDocument();
     view.unmount();
     useGrants.setState({ status: 'error', grants: [] });
     renderCard();
+    expect(screen.queryByText(SETTINGS.aisError)).not.toBeInTheDocument();
+    await user.click(claudeMark());
     expect(screen.getByText(SETTINGS.aisError)).toBeInTheDocument();
   });
 });
 
 describe('Assistants: auto-approve (40 section 13.8.9)', () => {
   it('is an off switch with its note on the open connection', async () => {
+    const user = userEvent.setup();
     renderCard();
+    await user.click(claudeMark());
     const toggle = within(panel('Claude')).getByRole('switch', { name: SETTINGS.autoApprove });
     expect(toggle).toHaveAttribute('aria-checked', 'false');
     expect(toggle).toHaveAccessibleDescription(SETTINGS.autoApproveNote);
@@ -133,6 +161,7 @@ describe('Assistants: auto-approve (40 section 13.8.9)', () => {
   it('turns on for this connection only: the pill, the mark and the note above say so', async () => {
     const user = userEvent.setup();
     renderCard();
+    await user.click(claudeMark());
     await user.click(within(panel('Claude')).getByRole('switch', { name: SETTINGS.autoApprove }));
     const until = useAutoApprove.getState().until.g1;
     expect(until).toBeGreaterThanOrEqual(NOW + AUTO_APPROVE_MS);
@@ -140,30 +169,35 @@ describe('Assistants: auto-approve (40 section 13.8.9)', () => {
     expect(autoApproveOn('u1', 'g2')).toBe(false);
     expect(within(panel('Claude')).getByRole('switch', { name: SETTINGS.autoApprove })).toHaveAttribute('aria-checked', 'true');
     expect(within(panel('Claude')).getByText(fillText(SETTINGS.autoApproveUntil, { time: formatClock(until!) }))).toBeInTheDocument();
-    expect(mark(/^Claude(?! Code)/)).toHaveTextContent(SETTINGS.markLiveAuto);
+    expect(claudeMark()).toHaveTextContent(SETTINGS.markLiveAuto);
     expect(screen.getByText(fillText(SETTINGS.aisNoteAuto, { n: 2, names: 'Claude', time: formatClock(until!) }))).toBeInTheDocument();
     await expectNoAxeViolations();
 
     await user.click(within(panel('Claude')).getByRole('switch', { name: SETTINGS.autoApprove }));
     expect(autoApproveOn('u1', 'g1')).toBe(false);
-    expect(mark(/^Claude(?! Code)/)).toHaveTextContent(SETTINGS.markLive);
+    expect(claudeMark()).toHaveTextContent(SETTINGS.markLive);
   });
 
-  it('reads a switch that was already on', () => {
+  it('reads a switch that was already on', async () => {
+    const user = userEvent.setup();
     window.localStorage.setItem(AUTO_APPROVE_KEY('u1'), JSON.stringify({ g1: Date.now() + 60_000 }));
     stopStore();
     stopStore = useAutoApprove.getState().start('u1');
     renderCard();
+    // Auto-approve being on does not open the assistant either.
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
+    await user.click(claudeMark());
     expect(within(panel('Claude')).getByRole('switch', { name: SETTINGS.autoApprove })).toHaveAttribute('aria-checked', 'true');
   });
 
   it('Revoke asks in place, then revokes and clears auto-approve for that connection only', async () => {
     const user = userEvent.setup();
     renderCard();
+    await user.click(claudeMark());
     await user.click(within(panel('Claude')).getByRole('switch', { name: SETTINGS.autoApprove }));
     await user.click(mark(/^ChatGPT/));
     await user.click(within(panel('ChatGPT')).getByRole('switch', { name: SETTINGS.autoApprove }));
-    await user.click(mark(/^Claude(?! Code)/));
+    await user.click(claudeMark());
     await user.click(within(panel('Claude')).getByRole('button', { name: SETTINGS.revoke }));
     const confirm = within(panel('Claude')).getByRole('group', { name: fillText(SETTINGS.revokeTitle, { aiName: 'Claude' }) });
     expect(confirm).toHaveFocus();
@@ -179,6 +213,7 @@ describe('Assistants: auto-approve (40 section 13.8.9)', () => {
   it('Cancel leaves the connection as it was', async () => {
     const user = userEvent.setup();
     renderCard();
+    await user.click(claudeMark());
     await user.click(within(panel('Claude')).getByRole('button', { name: SETTINGS.revoke }));
     await user.click(within(panel('Claude')).getByRole('button', { name: SETTINGS.cancel }));
     expect(revoke).not.toHaveBeenCalled();
@@ -255,12 +290,33 @@ describe('Assistants: connecting in place (40 section 13.8.2)', () => {
     await user.click(within(dialog).getByRole('button', { name: SETTINGS.closeCancel }));
     expect(within(panel(name)).getByRole('textbox', { name: SETTINGS.linkLabel })).toHaveValue(LINK);
 
-    await user.click(mark(/^Claude(?! Code)/));
+    await user.click(claudeMark());
     dialog = await screen.findByRole('dialog', { name: SETTINGS.closeTitle });
     expect(mark(/^Cursor/)).toHaveAttribute('aria-pressed', 'true');
     await user.click(within(dialog).getByRole('button', { name: SETTINGS.closeConfirm }));
-    expect(mark(/^Claude(?! Code)/)).toHaveAttribute('aria-pressed', 'true');
+    expect(claudeMark()).toHaveAttribute('aria-pressed', 'true');
     expect(screen.queryByRole('textbox', { name: SETTINGS.linkLabel })).not.toBeInTheDocument();
+  });
+
+  it('asks before closing a link that was not copied by pressing its own mark again', async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(mark(/^Cursor/));
+    const name = fillText(SETTINGS.connectHeading, { name: 'Cursor' });
+    await user.click(within(panel(name)).getByRole('button', { name: SETTINGS.create }));
+    await within(panel(name)).findByText(SETTINGS.step2of2);
+
+    await user.click(mark(/^Cursor/));
+    let dialog = await screen.findByRole('dialog', { name: SETTINGS.closeTitle });
+    await user.click(within(dialog).getByRole('button', { name: SETTINGS.closeCancel }));
+    expect(mark(/^Cursor/)).toHaveAttribute('aria-pressed', 'true');
+    expect(within(panel(name)).getByRole('textbox', { name: SETTINGS.linkLabel })).toHaveValue(LINK);
+
+    await user.click(mark(/^Cursor/));
+    dialog = await screen.findByRole('dialog', { name: SETTINGS.closeTitle });
+    await user.click(within(dialog).getByRole('button', { name: SETTINGS.closeConfirm }));
+    expect(mark(/^Cursor/)).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
   });
 
   it('"Other" asks for a name, and needs at least one category and one source', async () => {

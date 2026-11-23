@@ -1,8 +1,9 @@
 // "Assistants" (40 sections 13.8.1 to 13.8.3 and 13.8.9; design handoff of Nov 20, 2026): a row of bare assistant
-// marks, in colour when that assistant has a live connection and grey when it has none. Pressing one opens it in
-// one panel in place: a live assistant shows what it can get, its expiry, the Auto-approve answers switch, Change
-// limits and Revoke; an assistant with no connection shows the connect steps (ConnectPanel). ?connect=1 opens the
-// first assistant that is not connected, and is then removed from the URL.
+// marks, in colour when that assistant has a live connection and grey when it has none. No panel shows until a mark
+// is pressed. Pressing one opens it in one panel in place, and pressing it again closes it: a live assistant shows
+// what it can get, its expiry, the Auto-approve answers switch, Change limits and Revoke; an assistant with no
+// connection shows the connect steps (ConnectPanel). ?connect=1 opens the first assistant that is not connected,
+// and is then removed from the URL.
 import { useEffect, useId, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
@@ -187,22 +188,23 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [now] = useState(() => Date.now());
-  const [picked, setPicked] = useState<AssistantKind | null>(null);
+  // The open assistant: none until a mark is pressed.
+  const [selected, setSelected] = useState<AssistantKind | null>(null);
   // While a connector link is on screen its panel stays, even though the new connection is already live.
   const [link, setLink] = useState<{ kind: AssistantKind; state: LinkState } | null>(null);
-  const [leaving, setLeaving] = useState<AssistantKind | null>(null);
+  // Where a press would go while a link is not copied yet: another assistant, or none (the open one pressed again).
+  const [leaving, setLeaving] = useState<{ to: AssistantKind | null } | null>(null);
   const [narrowing, setNarrowing] = useState<GrantView | null>(null);
 
   const current = grants.filter((g) => g.state === 'active' || g.state === 'expiring');
   const live = ASSISTANT_KINDS.filter((k) => current.some((g) => assistantKindOf(g.aiName) === k));
-  const selected: AssistantKind = picked ?? live[0] ?? 'claude';
 
   // ?connect=1 opens the first assistant with no connection, once; then the param is removed (the hash stays).
   const wantsConnect = params.get('connect') === '1';
   const [handledConnect, setHandledConnect] = useState(false);
   if (wantsConnect !== handledConnect) {
     setHandledConnect(wantsConnect);
-    if (wantsConnect) setPicked(ASSISTANT_KINDS.find((k) => !live.includes(k)) ?? 'other');
+    if (wantsConnect) setSelected(ASSISTANT_KINDS.find((k) => !live.includes(k)) ?? 'other');
   }
   useEffect(() => {
     if (!wantsConnect) return;
@@ -212,12 +214,13 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
     navigate({ search: search ? `?${search}` : '', hash: location.hash }, { replace: true });
   }, [wantsConnect, params, location.hash, navigate]);
 
+  // Pressing the open assistant closes it; pressing another opens that one instead.
   const select = (kind: AssistantKind) => {
-    if (kind === selected) return;
-    if (link?.state === 'uncopied') setLeaving(kind);
+    const next = kind === selected ? null : kind;
+    if (link?.state === 'uncopied') setLeaving({ to: next });
     else {
       setLink(null);
-      setPicked(kind);
+      setSelected(next);
     }
   };
 
@@ -230,9 +233,10 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
         ? fillText(SETTINGS.aisNoteAuto, { n: current.length, names: autoNames.map((g) => g.aiName).join(', '), time: formatClock(lastAuto) })
         : fillText(SETTINGS.aisNote, { n: current.length });
 
-  const showConnect = !live.includes(selected) || link?.kind === selected;
   let panel;
-  if (status === 'idle' || status === 'loading') {
+  if (selected === null) {
+    panel = null;
+  } else if (status === 'idle' || status === 'loading') {
     panel = (
       <div className={ground.panel} aria-busy="true">
         <span className="visually-hidden">{SETTINGS.aisLoading}</span>
@@ -241,7 +245,7 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
     );
   } else if (status === 'error') {
     panel = <p className={`${ground.panel} ${kit.text}`}>{SETTINGS.aisError}</p>;
-  } else if (showConnect) {
+  } else if (!live.includes(selected) || link?.kind === selected) {
     panel = <ConnectPanel key={selected} kind={selected} connected={connected} onLinkChange={(state) => setLink(state === 'none' ? null : { kind: selected, state })} />;
   } else {
     panel = current
@@ -286,7 +290,7 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
           onCancel={() => setLeaving(null)}
           onConfirm={() => {
             setLink(null);
-            setPicked(leaving);
+            setSelected(leaving?.to ?? null);
             setLeaving(null);
           }}
         />

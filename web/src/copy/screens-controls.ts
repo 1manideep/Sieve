@@ -274,7 +274,6 @@ export const SOURCES = {
   sortName: 'A to Z',
   gridSearchLabel: 'Search the grid',
   gridSearchPlaceholder: 'Search categories and people',
-  play: 'Play: watch the circles grow in',
   colCategory: 'Category',
   colFrom: 'Often from',
   colRule: 'Rule',

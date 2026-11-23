@@ -139,17 +139,13 @@ export function SourcesGrid({ db, split, sourceCounts, rules }: SourcesGridProps
   const [sort, setSort] = useState<Sort>('size');
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<Category | null>(null);
-  // The circles start at nothing and grow in, row by row; Play does it again.
+  // The circles start at nothing and grow in, row by row.
   const [settling, setSettling] = useState(true);
   const senders = useFrequentSenders(db);
   useEffect(() => {
     const timer = window.setTimeout(() => setSettling(false), 350);
     return () => window.clearTimeout(timer);
   }, []);
-  const play = () => {
-    setSettling(true);
-    window.setTimeout(() => setSettling(false), 80);
-  };
 
   const q = query.trim().toLowerCase();
   const totalOf = (c: Category) => REAL_SOURCES.reduce((n, k) => n + (split?.[c][k] ?? 0), 0);
@@ -177,11 +173,6 @@ export function SourcesGrid({ db, split, sourceCounts, rules }: SourcesGridProps
           <span className="visually-hidden">{SOURCES.gridSearchLabel}</span>
           <input type="search" value={query} placeholder={SOURCES.gridSearchPlaceholder} autoComplete="off" onChange={(e) => setQuery(e.target.value)} />
         </label>
-        <button type="button" className={styles.iconButton} aria-label={SOURCES.play} title={SOURCES.play} onClick={play}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M7 4.5l12 7.5-12 7.5z" />
-          </svg>
-        </button>
       </div>
 
       <div className={settling ? `${styles.grid} ${styles.settling}` : styles.grid}>

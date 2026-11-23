@@ -460,7 +460,7 @@ describe('Sources: the grid', () => {
     expect(screen.queryByRole('region', { name: 'Photos' })).not.toBeInTheDocument();
   });
 
-  it('dims the rows a search does not match, by category or by sender, and plays the circles again', async () => {
+  it('dims the rows a search does not match, by category or by sender, with no play button beside the search', async () => {
     const user = userEvent.setup();
     renderSources();
     await screen.findByText('Dana Whitfield');
@@ -474,8 +474,11 @@ describe('Sources: the grid', () => {
     expect(dimmed()).toBe(8);
     await user.clear(box);
     expect(dimmed()).toBe(0);
-    await user.click(screen.getByRole('button', { name: SOURCES.play }));
     expect(gridRows()).toHaveLength(9);
+    // The search's row holds the sort and the search box only.
+    const toolbar = box.closest('label')!.parentElement!;
+    expect(within(toolbar).queryAllByRole('button')).toHaveLength(0);
+    expect(screen.queryByRole('button', { name: /play/i })).not.toBeInTheDocument();
   });
 });
 

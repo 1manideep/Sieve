@@ -120,9 +120,11 @@ describe('Settings', () => {
       expect(screen.getByRole('heading', { level: 2, name: h })).toBeInTheDocument();
     }
     await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: SETTINGS.rulesHeading })).toHaveFocus());
-    // With nothing connected the first assistant's connect steps are open in place.
+    // No assistant is open until one is pressed.
     expect(screen.getByText(SETTINGS.aisNoteNone)).toBeInTheDocument();
-    expect(screen.getByRole('article', { name: fillText(SETTINGS.connectHeading, { name: 'Claude' }) })).toBeInTheDocument();
+    const ais = cardOf(SETTINGS.aisHeading);
+    expect(within(ais).queryByRole('article')).not.toBeInTheDocument();
+    expect(within(ais).queryByRole('button', { pressed: true })).not.toBeInTheDocument();
     // More is closed until pressed.
     const more = screen.getByRole('button', { name: new RegExp(`^${SETTINGS.moreHeading}`) });
     expect(more).toHaveAttribute('aria-expanded', 'false');
@@ -139,8 +141,10 @@ describe('Settings', () => {
   });
 
   it('shows skeleton rows while connections load', async () => {
+    const user = userEvent.setup();
     useGrants.setState({ status: 'loading' });
     renderSettings();
+    await user.click(within(cardOf(SETTINGS.aisHeading)).getByRole('button', { name: /^Claude(?! Code)/ }));
     expect(screen.getByText(SETTINGS.aisLoading)).toBeInTheDocument();
     await expectNoAxeViolations();
   });
@@ -157,6 +161,9 @@ describe('Settings', () => {
     renderSettings();
     const ais = cardOf(SETTINGS.aisHeading);
     expect(within(ais).getByText(fillText(SETTINGS.aisNote, { n: 2 }))).toBeInTheDocument();
+    // Connected, and still closed until pressed.
+    expect(within(ais).queryByRole('article')).not.toBeInTheDocument();
+    await user.click(within(ais).getByRole('button', { name: /^Gemini CLI/ }));
     const first = within(ais).getByRole('article', { name: AI });
     expect(within(first).getByText(`Link ends in …k3x9 · made ${formatDate(NOW - 10 * DAY)} · last used 3 hours ago`)).toBeInTheDocument();
     expect(within(first).getByText(SETTINGS.capExcerpt)).toBeInTheDocument();
@@ -180,6 +187,7 @@ describe('Settings', () => {
     const user = userEvent.setup();
     useGrants.setState({ grants: [grant({})] });
     renderSettings();
+    await user.click(within(cardOf(SETTINGS.aisHeading)).getByRole('button', { name: /^Gemini CLI/ }));
     await user.click(screen.getByRole('button', { name: SETTINGS.narrow }));
     const dialog = screen.getByRole('dialog', { name: fillText(SETTINGS.narrowTitle, { aiName: AI }) });
     expect(within(dialog).getByText(SETTINGS.narrowNote)).toBeInTheDocument();
@@ -214,6 +222,7 @@ describe('Settings', () => {
     const user = userEvent.setup();
     useGrants.setState({ grants: [grant({})] });
     renderSettings();
+    await user.click(within(cardOf(SETTINGS.aisHeading)).getByRole('button', { name: /^Gemini CLI/ }));
     await user.click(screen.getByRole('button', { name: SETTINGS.revoke }));
     const confirm = screen.getByRole('group', { name: fillText(SETTINGS.revokeTitle, { aiName: AI }) });
     expect(within(confirm).getByText(SETTINGS.revokeBody)).toBeInTheDocument();
