@@ -293,6 +293,31 @@ describe('selectAndAnswer (10 section 16.7)', () => {
       expect(typed.end).toBeGreaterThan(price);
     });
 
+    it('a long footer that names the company in every sentence does not take the passage from the price line (Nov 22)', () => {
+      // the top of a receipt is one long run with no full stop; the footer is many short sentences
+      const top =
+        'Receipt October 19, 2026 Order ID LM4QJ7 Document 686206993130 Account [email] Save 3% on every purchase with the card, apply and use in minutes ' +
+        'Cloud storage 2 TB (Monthly) Renews November 19, 2026 $9.99 Billing and Payment [name] [address] United States Subtotal $9.99 Card ending 6113 $9.99 ' +
+        'If you have any questions about your bill, contact support, and keep this message for your records until the next plan period begins';
+      const footer = Array.from({ length: 30 }, (_, i) => `Lumora Pay rule ${i + 1} is set by Lumora.`).join(' ');
+      const text = `${top}. ${footer}`;
+      const lumora = record({ id: 'gmail:lumora-receipt', source: 'gmail', title: 'Your receipt from Lumora.', from: 'Lumora <no_reply@email.lumora.example>', text });
+      const q = 'How much did Lumora charge me on October 19, 2026?';
+      // by words alone the footer wins: every sentence of it holds the company's name
+      const plain = bestWindow(text, q, 400);
+      expect(text.slice(plain.start, plain.end)).not.toContain('$9.99');
+      // told that an amount is asked for, the run chosen holds one
+      const typed = bestWindow(text, q, 400, answerKind(q));
+      expect(text.slice(typed.start, typed.end)).toContain('$9.99');
+      // and so does the passage the model reads, whichever chunk the search matched
+      const inFooter = { start: text.length - 500, end: text.length - 100 };
+      const [p] = fitPassages(q, [lumora], { [lumora.id]: inFooter }, { today: TODAY });
+      expect(p.text).toContain('$9.99');
+      // an item with no amount anywhere keeps the best run by words
+      const none = bestWindow(footer, q, 400, answerKind(q));
+      expect(none).toEqual(bestWindow(footer, q, 400));
+    });
+
     it('a matched chunk with no amount gives way to the part of the item that has one', () => {
       const header = { start: 0, end: 300 };
       const q = 'What did the store charge me for last month?';

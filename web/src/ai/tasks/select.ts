@@ -182,7 +182,9 @@ const KIND_BONUS = 2;
 
 /**
  * The run of consecutive sentences (at most maxChars) holding the most question stems; ties go to the earliest.
- * `wants`: a sentence it matches (answerKind) counts for more.
+ * `wants`: a sentence it matches (answerKind) counts for more, and when the text holds one, the run chosen holds one:
+ * a receipt's long footer named the company in every sentence and outscored the one line with the price, so a "how
+ * much" question was answered from a passage with no amount in it (twice on real mail, Nov 22, 2026).
  */
 export function bestWindow(text: string, question: string, maxChars: number, wants?: RegExp | null): PassageRange {
   if (text.length <= maxChars) return { start: 0, end: text.length };
@@ -196,11 +198,16 @@ export function bestWindow(text: string, question: string, maxChars: number, wan
     for (const w of q) if (sentenceStems.has(w)) n += 1;
     return n;
   });
-  let best: { start: number; end: number; total: number } | null = null;
+  type Run = { start: number; end: number; total: number };
+  let best: Run | null = null;
+  let bestOfKind: Run | null = null;   // the best run that holds a fact of the kind asked for
+  const offer = (candidate: Run) => {
+    if (!best || candidate.total > best.total) best = candidate;
+    if (wants && (!bestOfKind || candidate.total > bestOfKind.total) && wants.test(text.slice(candidate.start, candidate.end))) bestOfKind = candidate;
+  };
   for (let i = 0; i < ss.length; i += 1) {
     if (ss[i].end - ss[i].start > maxChars) {
-      const candidate = { start: ss[i].start, end: ss[i].start + maxChars, total: score[i] };
-      if (!best || candidate.total > best.total) best = candidate;
+      offer({ start: ss[i].start, end: ss[i].start + maxChars, total: score[i] });
       continue;
     }
     let total = 0;
@@ -209,9 +216,10 @@ export function bestWindow(text: string, question: string, maxChars: number, wan
       total += score[j];
       j += 1;
     }
-    if (!best || total > best.total) best = { start: ss[i].start, end: ss[j - 1].end, total };
+    offer({ start: ss[i].start, end: ss[j - 1].end, total });
   }
-  return best ? { start: best.start, end: best.end } : { start: 0, end: maxChars };
+  const chosen = (bestOfKind ?? best) as Run | null;
+  return chosen ? { start: chosen.start, end: chosen.end } : { start: 0, end: maxChars };
 }
 
 /** Moves the start back and the end forward to sentence boundaries, at most PASSAGE_SNAP_CHARS each. */
