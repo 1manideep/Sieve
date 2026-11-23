@@ -7,6 +7,7 @@ import { useShallow } from 'zustand/shallow';
 import { CATEGORIES, type Category, type CategoryRule } from '@sieve/shared';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
 import { Button } from '@/components/Button/Button';
+import { unfinishedPercent, wholePercent } from '@/components/percent';
 import { CATEGORY_COLORS } from '@/components/CategoryIcon/CategoryIcon';
 import { useDb } from '@/components/dbTables';
 import { SENTENCE, SOURCES, fillText } from '@/copy/screens-controls';
@@ -76,7 +77,7 @@ export function sourceState(kind: RealSource, row: SourceRowView | undefined, co
     indexing: unfinished && !ready,
     background: ready,
     needsYou: connected && Boolean(row?.needsAuth || row?.error),
-    pct: Math.round(fraction * 100),
+    pct: unfinished ? unfinishedPercent(fraction) : Math.round(fraction * 100),
   };
 }
 
@@ -339,7 +340,7 @@ export function Component() {
         </div>
         <div>
           <span className={`${ground.big} ${ground.bigAccent}`}>{formatCount(never)}</span>
-          <span className={ground.totalLabel}>{fillText(SOURCES.statNever, { pct: items > 0 ? Math.floor((never / items) * 100) : 100 })}</span>
+          <span className={ground.totalLabel}>{fillText(SOURCES.statNever, { pct: items > 0 ? wholePercent(never, items) : 100 })}</span>
         </div>
       </section>
 

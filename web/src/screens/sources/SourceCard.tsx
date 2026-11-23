@@ -5,6 +5,7 @@
 import { useId, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Button } from '@/components/Button/Button';
 import { Notice } from '@/components/Notice/Notice';
+import { unfinishedPercent } from '@/components/percent';
 import { ProgressBar } from '@/components/ProgressBar/ProgressBar';
 import { useIndexing } from '@/state/indexing';
 import { SOURCES, fillText } from '@/copy/screens-controls';
@@ -132,7 +133,7 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false, panel = 
         <span className={styles.statusRow}>
           {indexing ? (
             <span className={`${kit.status} ${kit.accent}`}>
-              {fillText(SOURCES.indexingPct, { pct: Math.round(fraction * 100) })}
+              {fillText(SOURCES.indexingPct, { pct: unfinishedPercent(fraction) })}
             </span>
           ) : null}
           {status}

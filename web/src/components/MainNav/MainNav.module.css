@@ -38,7 +38,11 @@
 
 .badge { position: absolute; top: 9px; right: 9px; width: 9px; height: 9px; border: 2px solid #000000; border-radius: 50%; background: var(--color-accent); }
 
-/* Never shared: the blue arc is the share that has left, the number the share that never has. */
+/* The ring. Never shared: the blue arc is the share that has left, the number the share that never has. Indexing:
+   the blue arc and the number are the share that can be searched. The caption under it says which one it is. */
+.ringItem { display: flex; flex-direction: column; align-items: center; }
+.cap { margin-top: 1px; font: 400 9px/1.2 var(--font-mono); letter-spacing: 0.04em; color: var(--color-text-muted); white-space: nowrap; }
+.capBusy { color: var(--color-accent); }
 .ring {
   display: flex;
   align-items: center;
@@ -57,4 +61,5 @@
   .foot { margin-top: 0; margin-left: auto; }
   .it { width: 44px; height: 44px; }
   .tip { display: none; }
+  .cap { display: none; }
 }
