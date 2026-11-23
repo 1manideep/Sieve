@@ -56,6 +56,11 @@ export const LABELS = {
   ruleStale: (n: number) => `${plural(n, 'stale search entry', 'stale search entries')} skipped`,
   ruleSecret: (n: number) =>
     `${plural(n, 'item holds', 'items hold')} a verification code or a sign-in link, never shared, stopped before any model read ${n === 1 ? 'it' : 'them'}`,
+  asksSecretCode: 'This asks for a verification or sign-in code. Sieve never shares one, so no model read anything',
+  aboutOnly: (left: number) => `Left out ${left === 1 ? '1 email' : `${left} emails`} from that sender that ${left === 1 ? 'says' : 'say'} nothing about what the question names`,
+  aboutNone: "None of that sender's emails says anything about what the question names, so nothing is shared",
+  ownMailFirst: "Put the sender's own emails before notices about them from other services",
+  selectRetried: 'The model took too long, so Sieve asked it once more',
   countUnsupported: 'This asks for a count. Sieve answers from one item at a time, so nothing was searched.',
   // Nov 21, the second tester's B-cases
   severalUnsupported: 'This asks for several things at once. Sieve shares one fact at a time, so nothing was searched.',

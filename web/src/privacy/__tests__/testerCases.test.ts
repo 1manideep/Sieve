@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { IndexRecord, KnownEntity } from '@sieve/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setPrivacyModelHost } from '../model/client';
-import { findSecretCodes, holdsSecretCode } from '../pii/validators/secretCode';
+import { asksForSecretCode, findSecretCodes, holdsSecretCode } from '../pii/validators/secretCode';
 import { clearScanMemo } from '../scan/scan';
 import { keepAskerWords, personSender } from '../steps/asker';
 import { buildStepOption } from '../steps/build';
@@ -60,6 +60,15 @@ describe('one-time codes and sign-in links (secret-code, T10)', () => {
       'Review it in the code review tool before Friday. PR #212 changed 14 files.',
     ]) {
       expect(findSecretCodes(t), t).toEqual([]);
+    }
+  });
+
+  it('tells a question that asks for a sign-in or verification code from one about a booking or promo code (Nov 23, R37)', () => {
+    for (const q of ['What is the code in my latest Google verification email?', 'What is my Nestra sign-in code?', 'Send me the OTP from Kestrelmoor', 'What was the 2FA code?', 'What is my one-time passcode?']) {
+      expect(asksForSecretCode(q), q).toBe(true);
+    }
+    for (const q of ['What is the booking code for my flight?', 'What promo code did Lumora send?', 'What is the zip code of the office?', 'Did Google verify my account?', 'When is my security deposit due?']) {
+      expect(asksForSecretCode(q), q).toBe(false);
     }
   });
 

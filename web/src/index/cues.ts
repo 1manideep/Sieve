@@ -272,6 +272,49 @@ export function asksSaid(text: string): boolean {
   return SAID_RE.test(text);
 }
 
+const ABOUT_RE = /\b(?:about|regarding|concerning)\s+([^?!;]+)/i;
+/** Words that say what a message did, or which one: they name no subject. */
+const NOT_TOPIC: ReadonlySet<string> = new Set(
+  terms('ask asked say said reply replied tell told send sent write wrote mention mentioned remind reminded email emailed latest most recent recently newest last first previous one before after since until'),
+);
+
+/**
+ * What a question says it is about, as search terms: "what did Wren reply about the window subscription" gives
+ * window and subscription. The words of the sender, dates, numbers and the message verbs are left out; with
+ * nothing after "about" ("what did Ivo ask me about?", "remind me about on March 3") there is none.
+ */
+export function aboutTerms(question: string, sender?: string): string[] {
+  const m = ABOUT_RE.exec(question);
+  if (!m) return [];
+  const thing = (m[1] ?? '').replace(/^\s*(?:on|in|at|from|since|last|this)\b.*$/is, '').split(/\s(?:on|in|from|since|before|after|between)\s(?=\p{Lu}|\d|last\b|this\b)/u)[0] ?? '';
+  const own = new Set([...terms(sender ?? ''), ...senderTokens(sender)]);
+  return [...new Set(terms(thing))].filter((t) => !own.has(t) && !NOT_TOPIC.has(t) && !CALENDAR.has(t) && !/^\d/.test(t));
+}
+
+/** A term is in a text when one of its words starts as the term does: "subscription" meets "subscribed", "refund" meets "refunded". */
+export function holdsAnyTerm(about: readonly string[], text: string): boolean {
+  if (about.length === 0) return true;
+  const have = terms(text);
+  return about.some((t) => {
+    const stem = t.slice(0, Math.min(t.length, 6));
+    return have.some((w) => (t.length <= 4 ? w === t : w.startsWith(stem)));
+  });
+}
+
+/** "Teodor Marsh via LinkedIn <messages-noreply@linkedin.com>": another service's notice about the person, not their own email. */
+export function relayedFrom(from: string | undefined): boolean {
+  return /\s\(?via\s+\S/i.test(displayName(from));
+}
+
+/**
+ * The question asks for an email of the person ("what did Teodor ask me in his latest email"), not a message on some
+ * service: their own emails go before another service's notices about them. The newest of Teodor's was LinkedIn's
+ * "Teodor just messaged you", which holds nothing he asked (Nov 23, 2026).
+ */
+export function wantsOwnEmail(question: string): boolean {
+  return /\b(?:e-?mails?|mail)\b/i.test(question) && !/\b(?:messages?|messaged|dms?|texts?|texted|chats?|via|linkedin|facebook|slack|teams|twitter|instagram|whatsapp)\b/i.test(question);
+}
+
 /** The verbs that name a kind of message, and how that kind starts in a subject line ("Reminder: ...", "Notice of ..."). */
 const SAID_KINDS: readonly [RegExp, RegExp][] = [
   [/\bremind(?:ed|s)?\b/i, /\bremind/i],

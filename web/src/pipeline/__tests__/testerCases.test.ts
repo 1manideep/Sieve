@@ -101,7 +101,9 @@ describe('the tester cases (Nov 20)', () => {
   });
 
   it('"the latest" from a sender with nothing else asked: only the newest is read; with something asked about, the newest five (Nov 22)', async () => {
-    const more = [20, 30, 40].map((ago, i) => record({ id: `gmail:benji-old-${i}`, source: 'gmail', title: `Old ${i}`, from: 'Benji <benji@inbox.example>', category: 'Work', date: T - ago * DAY, text: 'An older note.' }));
+    const more = [20, 30, 40].map((ago, i) =>
+      record({ id: `gmail:benji-old-${i}`, source: 'gmail', title: ['Draft', 'Numbers', 'Follow-up'][i]!, from: 'Benji <benji@inbox.example>', category: 'Work', date: T - ago * DAY, text: 'An older note on the budget.' }),
+    );
     for (const r of more) idx.records.set(r.id, r);
     const list = [...more, ...BENJI];
     idx.search.mockImplementation(async (_db, _q, o) => {
@@ -118,10 +120,61 @@ describe('the tester cases (Nov 20)', () => {
     expect(labels(p)).toContain('Not checked again: this is the newest email from the sender you named');
     model('P1', 'Benji sent update number 2 on the release plan.', false);
     expect((await prepareProposal(input({ question: "What did Benji's latest email say?" }))).outcome).toBe('ready');
-    // the question also asks about a thing: his newest email may not be about it, so the newest five are read
-    await prepareProposal(input({ question: "What did Benji's latest email say about the budget?" }));
-    expect(hybrid.callsFor('select-answer').at(-1)?.meta?.recordIds).toHaveLength(5);
-    expect(hybrid.callsFor('verify-answer')).toHaveLength(1);   // and the second check is asked, as before
+    // the question also asks about a thing: only his emails that hold it are read, newest first, and the second
+    // check is asked, as before (Nov 23, R33)
+    const budget = await prepareProposal(input({ question: "What did Benji's latest email say about the budget?" }));
+    expect(hybrid.callsFor('select-answer').at(-1)?.meta?.recordIds).toEqual(['gmail:benji-old-0', 'gmail:benji-old-1', 'gmail:benji-old-2']);
+    expect(labels(budget)).toContain('Left out 4 emails from that sender that say nothing about what the question names');
+    expect(hybrid.callsFor('verify-answer')).toHaveLength(1);
+  });
+
+  it('a named sender and a thing none of their emails is about: no model reads any of them (Nov 23, R33)', async () => {
+    idx.search.mockImplementation(async (_db, _q, o) => {
+      (o as { onReport?: (r: unknown) => void }).onReport?.({ filters: { sender: 'Benji' } });
+      return BENJI.map((r) => idx.cand(r.id));
+    });
+    model('P1', 'Benji said to disregard his last note.');
+    const p = await prepareProposal(input({ question: 'What did Benji reply about the window subscription?' }));
+    expect(p.outcome).toBe('no-match');
+    expect(p.reasonCode).toBe('topic-not-in-sender-mail');
+    expect(hybrid.callsFor('select-answer')).toHaveLength(0);
+    expect(labels(p)).toContain("None of that sender's emails says anything about what the question names, so nothing is shared");
+    // a word that is there in another form counts ("subscribed" for "subscription"), and nothing after "about" is no thing
+    const subscribed = record({ id: 'gmail:benji-sub', source: 'gmail', title: 'Re: tools', from: 'Benji <benji@inbox.example>', category: 'Work', date: T - 2 * DAY, text: 'I subscribed the team to the window plan.' });
+    idx.records.set(subscribed.id, subscribed);
+    idx.search.mockImplementation(async (_db, _q, o) => {
+      (o as { onReport?: (r: unknown) => void }).onReport?.({ filters: { sender: 'Benji' } });
+      return [...BENJI, subscribed].map((r) => idx.cand(r.id));
+    });
+    model('P1', 'Benji subscribed the team to the window plan.');
+    const found = await prepareProposal(input({ question: 'What did Benji reply about the window subscription?' }));
+    expect(found.outcome).toBe('ready');
+    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual([subscribed.id]);
+    model('P1', 'Benji sent update number 2 on the release plan.');
+    await prepareProposal(input({ question: 'What did Benji ask me about?' }));
+    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toHaveLength(5);
+  });
+
+  it('"his latest email": the sender\'s own email, not another service\'s notice about him, and a notice is checked (Nov 23, R29)', async () => {
+    const own = record({ id: 'gmail:teodor-own', source: 'gmail', title: 'Call notes', from: 'Teodor Marsh <teodor@mail.example>', category: 'Work', date: T - 90 * DAY, text: 'Can we move our call to Thursday at 4?' });
+    const notice = record({ id: 'gmail:teodor-li', source: 'gmail', title: 'Teodor just messaged you', from: 'Teodor Marsh via LinkedIn <messages-noreply@linkedin.example>', category: 'Work', date: T - 2 * DAY, text: 'You have 1 new message. View message.' });
+    for (const r of [own, notice]) idx.records.set(r.id, r);
+    idx.search.mockImplementation(async (_db, _q, o) => {
+      (o as { onReport?: (r: unknown) => void }).onReport?.({ filters: { sender: 'Teodor' } });
+      return [notice, own].map((r) => idx.cand(r.id));
+    });
+    model('P1', 'Teodor asked to move your call to Thursday at 4.');
+    const p = await prepareProposal(input({ question: 'What did Teodor ask me in his latest email?' }));
+    expect(p.item?.recordId).toBe(own.id);
+    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual([own.id]);
+    expect(labels(p)).toContain("Put the sender's own emails before notices about them from other services");
+    expect(hybrid.callsFor('verify-answer')).toHaveLength(0);
+    // asked for his LinkedIn message, the notice is first, and it is checked: it is not his own email
+    model('P1', 'Teodor sent you a message.', false);
+    const li = await prepareProposal(input({ question: 'What did Teodor ask me in his latest LinkedIn message?' }));
+    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds?.[0]).toBe(notice.id);
+    expect(hybrid.callsFor('verify-answer')).toHaveLength(1);
+    expect(li.outcome).toBe('no-match');
   });
 
   it('"the latest" about a named thing with no sender: only the newest email whose title holds it is read (Nov 22)', async () => {
@@ -139,7 +192,7 @@ describe('the tester cases (Nov 20)', () => {
   });
 
   it('T03, T04: "the latest" puts the newest first and, with a sender filter, gives the model only the newest few', async () => {
-    const more = [20, 30, 40].map((ago, i) => record({ id: `gmail:benji-old-${i}`, source: 'gmail', title: `Old ${i}`, from: 'Benji <benji@inbox.example>', category: 'Work', date: T - ago * DAY, text: 'An older note.' }));
+    const more = [20, 30, 40].map((ago, i) => record({ id: `gmail:benji-old-${i}`, source: 'gmail', title: `Old ${i}`, from: 'Benji <benji@inbox.example>', category: 'Work', date: T - ago * DAY, text: 'An older note on the release.' }));
     for (const r of more) idx.records.set(r.id, r);
     const list = [...more, ...BENJI];
     idx.search.mockImplementation(async (_db, _q, o) => {
@@ -518,6 +571,52 @@ describe('the tester cases (Nov 20)', () => {
     expect(p.outcome).toBe('ready');
     expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual([SUNNY_PAWS.id]);
     expect(hybrid.calls.some((c) => promptText(c.parts).includes('733211'))).toBe(false);
+  });
+
+  it('a question that asks for a verification code: no model reads anything, and the held code item is named (Nov 23, R37)', async () => {
+    idx.search.mockResolvedValue([idx.cand(NESTRA.id), idx.cand(SUNNY_PAWS.id)]);
+    model('P1', 'Your booking for Bella is confirmed.');
+    const p = await prepareProposal(input({ question: 'What is the code in my latest Nestra verification email?' }));
+    expect(p.outcome).toBe('blocked-never');
+    expect(p.item?.recordId).toBe(NESTRA.id);
+    expect(p.reasonCode).toBe('asks-one-time-code');
+    expect(p.options[0].unavailableReason).toBe('Verification codes and sign-in links are never shared.');
+    expect(hybrid.callsFor('select-answer')).toHaveLength(0);
+    // with no code item among the matches, nothing matched, and still no model reads the rest
+    idx.search.mockResolvedValue([idx.cand(SUNNY_PAWS.id)]);
+    const none = await prepareProposal(input({ question: 'What is my Google sign-in code?' }));
+    expect(none.outcome).toBe('no-match');
+    expect(hybrid.callsFor('select-answer')).toHaveLength(0);
+    // a booking or promo code is not one
+    model('P1', 'Your booking for Bella is confirmed.');
+    expect((await prepareProposal(input({ question: 'What is the booking code for Bella at Sunny Paws?' }))).outcome).toBe('ready');
+  });
+
+  it('an answer step that runs past its time is asked once more, and a second timeout is an error (Nov 23, R17)', async () => {
+    idx.search.mockResolvedValue([idx.cand(SUNNY_PAWS.id)]);
+    let selects = 0;
+    const timesOut = (times: number) => {
+      selects = 0;
+      hybrid = createFakeHybrid((spec) => {
+        if (spec.purpose === 'select-answer') {
+          selects += 1;
+          if (selects <= times) throw new DOMException('Timeout', 'TimeoutError');
+          return { text: JSON.stringify({ item: 'P1', answer: 'Pickup is Jun 12 at 5 PM.' }), source: 'on_device' };
+        }
+        return { text: JSON.stringify({ answers: true, reason: 'It says so.' }), source: 'on_device' };
+      });
+      setHybridForTests(hybrid);
+    };
+    timesOut(1);
+    const p = await prepareProposal(input({ question: 'When do I pick up Bella?' }));
+    expect(p.outcome).toBe('ready');
+    expect(selects).toBe(2);
+    expect(labels(p)).toContain('The model took too long, so Sieve asked it once more');
+    timesOut(2);
+    const q = await prepareProposal(input({ question: 'When do I pick up Bella?' }));
+    expect(q.outcome).toBe('error');
+    expect(q.errorCode).toBe('model-timeout');
+    expect(selects).toBe(2);
   });
 
   it('a check that cannot run leaves the answer for the person, with a warning (no auto-approve)', async () => {

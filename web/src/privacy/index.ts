@@ -10,7 +10,7 @@ export { detectPii } from './pii/detect';
 export { redact } from './redact';
 export { checkInjection } from './injection/check';
 export { buildStepOption } from './steps/build';
-export { findSecretCodes, holdsSecretCode } from './pii/validators/secretCode';
+export { asksForSecretCode, findSecretCodes, holdsSecretCode } from './pii/validators/secretCode';
 export { keepAskerWords, personSender, senderEntities } from './steps/asker';
 export { isYesNoQuestion, packsSeveralFacts, shapeAnswer } from './steps/answerShape';
 export { itemTouchesSensitiveTopic, sensitiveTopicOf, touchesSensitiveTopic } from './sensitive';

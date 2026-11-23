@@ -68,6 +68,18 @@ export function findSecretCodes(text: string): PiiSpan[] {
   return [...linkSpans(text), ...codeSpans(text)].sort((a, b) => a.start - b.start);
 }
 
+const ASKS_CODE = /\b(?:codes?|otp|passcodes?|2fa)\b/i;
+const CODE_KIND = /\b(?:verif\w*|one[- ]?time|otp|passcodes?|2fa|two[- ](?:factor|step)|2[- ]step|security|sign[- ]?in|log[- ]?in|login|authenticat\w*|access|password)\b/i;
+
+/**
+ * The question asks for a sign-in or verification code ("what is the code in my latest Google verification email").
+ * Such a code is never shared, so no model reads anything for it: given the items left once the codes were held back,
+ * the on-device model answered from a Google payment email instead (Nov 23, 2026). A booking or promo code is not one.
+ */
+export function asksForSecretCode(question: string): boolean {
+  return ASKS_CODE.test(question) && CODE_KIND.test(question);
+}
+
 /** True when the item (title and text, or the preview) holds a one-time code or a sign-in link. */
 export function holdsSecretCode(record: { title?: string; text?: string; preview?: string; caption?: string }): boolean {
   const body = record.text ?? record.preview ?? record.caption ?? '';

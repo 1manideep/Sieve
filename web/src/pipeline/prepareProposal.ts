@@ -16,14 +16,14 @@ import {
   asksCount, asksLatest, asksSeveral, asksState, clockFor, dictionaryReady, flushUrgentEmbeds, getRecord, identifierTerms, knownOrgsOf, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
   type HardFilter, type ParsedQuestion, type SearchReport, type SieveDb,
 } from '@/index';
-import { asksSaid, describesOnlySender, holdsTopic, titleSaysAskedKind, topicTerms } from '@/index/cues';
+import { aboutTerms, asksSaid, describesOnlySender, holdsAnyTerm, holdsTopic, relayedFrom, titleSaysAskedKind, topicTerms, wantsOwnEmail } from '@/index/cues';
 import { iso } from '@/index/dates';
 import { stashFile } from './fileStash';
 import { originalFor } from './original';
 import { repairLongNumbers } from './askedNumbers';
 import { attachmentMayHold, withAttachmentText } from './attachmentText';
 import { anchorRelativeDays } from './relativeDays';
-import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
+import { asksForSecretCode, buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
 import { isYesNoQuestion } from '@/privacy/steps/answerShape';
 import { errorLine, errorName } from '@/robust/errorLine';
 import { forgetCloudConsentRequest, rememberCloudConsentRequest } from './consent';
@@ -300,6 +300,12 @@ export function pickCode(list: { rec: IndexRecord }[], chosen: IndexRecord, hint
   return `r${at + 1}of${list.length}-t${t}-g${g}-b${b}-c${readCode(list)}`;
 }
 
+/** The item holds a word of what the question is about (aboutTerms), or its text is not here yet to tell. */
+function aboutHolds(rec: IndexRecord, about: readonly string[]): boolean {
+  if (rec.kind !== 'photo' && rec.text === undefined) return true;
+  return holdsAnyTerm(about, `${rec.title} ${recordBody(rec)}`);
+}
+
 /** The items the model read, in the order read: each email as the last four characters of its own mail id (no content), other kinds as "x". */
 export function readCode(list: { rec: IndexRecord }[]): string {
   return list.map((a) => (a.rec.source === 'gmail' ? a.rec.sourceRef.slice(-4) : 'x')).join('.');
@@ -322,7 +328,13 @@ export const LATEST_RELEVANT = 3;
  */
 export function latestOrder<T extends { rec: IndexRecord }>(list: T[], filters: HardFilter | undefined, question = ''): T[] {
   const newest = (a: T, b: T) => b.rec.date - a.rec.date;
-  if (filters?.sender) return [...list].sort(newest).slice(0, VECTOR_K);
+  if (filters?.sender) {
+    const sorted = [...list].sort(newest);
+    // the sender's own emails before another service's notices about them, when the question asks for an email
+    const own = wantsOwnEmail(question) ? sorted.filter((a) => !relayedFrom(a.rec.from)) : sorted;
+    const ordered = own.length > 0 && own.length < sorted.length ? [...own, ...sorted.filter((a) => !own.includes(a))] : sorted;
+    return ordered.slice(0, VECTOR_K);
+  }
   const topic = topicTerms(question);
   const about = list.filter((a) => holdsTopic(topic, a.rec.title, a.rec.from));
   if (about.length > 0) return [...about.sort(newest), ...list.filter((a) => !about.includes(a))];
@@ -585,6 +597,15 @@ async function prepare(run: Run): Promise<Proposal> {
   let allowed = screened.allowed;
   // every candidate a model may read, before any step below narrows the list (12b compares the pick with all of them)
   const screenedAll = screened.allowed;
+  // 5a. A question that asks for a verification or sign-in code: such a code is never shared (11 section 5.2), so no
+  // model reads what is left. Given the rest, the on-device model answered "the code in my latest Google verification
+  // email" from a Google payment email, and the second check let it through (R37, Nov 23, 2026).
+  if (asksForSecretCode(lookup)) {
+    run.code('rule', LABELS.asksSecretCode);
+    const held = neverBlocked.find((r) => holdsSecretCode(r));
+    run.why('asks-one-time-code');
+    return held ? run.finish('blocked-never', { item: held, rule: 'never' }) : run.finish('no-match');
+  }
   if (allowed.length === 0) return run.why('rules-held-every-candidate').blockedOrNoMatch(neverBlocked);
   // A held item explains an empty result only when it was a better match than everything a model may read. When an
   // item that may be read ranked ahead of it and no answer came of that, the result is "nothing matched" with its own
@@ -597,6 +618,23 @@ async function prepare(run: Run): Promise<Proposal> {
     return at >= 0 && at < bestAllowed;
   });
 
+  // 6a0. A named sender and a thing the question is about ("what did Wren reply about the window subscription"):
+  // every candidate is from that sender, so the model answers from one of their emails whatever it is about. Only those
+  // that hold a word of that thing are read, and when none does, nothing is: given five emails of one sender, none about it,
+  // the model answered from an unrelated note of theirs and the second check let it through (R33, Nov 23, 2026).
+  const about = filters?.sender ? aboutTerms(lookup, filters.sender) : [];
+  if (about.length > 0) {
+    const on = allowed.filter((a) => aboutHolds(a.rec, about));
+    if (on.length === 0) {
+      run.code('rule', LABELS.aboutNone);
+      return run.why('topic-not-in-sender-mail').blockedOrNoMatch(heldAhead);
+    }
+    if (on.length < allowed.length) {
+      run.code('retrieve', LABELS.aboutOnly(allowed.length - on.length));
+      allowed = on;
+    }
+  }
+
   // 6a. "The latest": newest first among the candidates that match (latestOrder).
   const latest = asksLatest(lookup);
   // The sender's newest is the item meant ("what did Ivo ask in his latest email"): only it is read, and the second
@@ -605,6 +643,9 @@ async function prepare(run: Run): Promise<Proposal> {
   if (latest && allowed.length > 1) {
     allowed = latestOrder(allowed, filters, lookup);
     run.code('retrieve', LABELS.newestFirst);
+    if (filters?.sender && wantsOwnEmail(lookup) && allowed.some((a) => relayedFrom(a.rec.from)) && allowed.some((a) => !relayedFrom(a.rec.from))) {
+      run.code('retrieve', LABELS.ownMailFirst);
+    }
     if (newestIsMeant(allowed, filters, lookup)) {
       allowed = allowed.slice(0, 1);
       run.code('retrieve', LABELS.newestOnly);
@@ -745,6 +786,7 @@ async function prepare(run: Run): Promise<Proposal> {
   // "nothing" results into wrong answers, another sender's digest among them. The check lets about
   // half of lookalike answers through, so the model's second choice is not worth sharing.)
   let reruns = 0;
+  let timedOut = false;
   let list = allowed;
   let chosen: IndexRecord;
   let value: SelectValue;
@@ -775,6 +817,13 @@ async function prepare(run: Run): Promise<Proposal> {
         return askConsent(list, missing.length ? missing : records.filter((r) => recordDataClass(r) === 'own'));
       }
       if (res.error.code === 'unavailable' || res.error.code === 'downloading') return run.finish('model-unavailable');
+      // Once more after a timeout: the on-device model ran past its time on a one-passage question that it answers in
+      // seconds at other times, twice in one test round, and the next question went through (Nov 23, 2026).
+      if (res.error.code === 'timeout' && !timedOut) {
+        timedOut = true;
+        run.code('select', LABELS.selectRetried);
+        continue;
+      }
       // 12.4 (Nov 21, B04, B14): the model refused the shape (no usable output after its retry). That is a question
       // this level can't answer in one fact, not a failure of the device.
       if (res.error.code === 'bad-output') {
@@ -891,7 +940,8 @@ async function prepare(run: Run): Promise<Proposal> {
   // Not asked when plain code already knows the item is the one meant: it holds the exact number the asker gave and no
   // other candidate does, or it is the newest from the sender a "latest" question names. On such items the check
   // refused right answers about 2 times in 3 ("the job number is for a different company", Nov 23, 2026).
-  const certain = numberOnlyIn(chosen, screenedAll, hints?.terms) ? 'number' : newestOfSender && list.length === 1 ? 'newest' : null;
+  // A notice from another service about the sender ("Teodor via LinkedIn") is not their own email: it is checked.
+  const certain = numberOnlyIn(chosen, screenedAll, hints?.terms) ? 'number' : newestOfSender && list.length === 1 && !relayedFrom(chosen.from) ? 'newest' : null;
   if (certain) {
     run.code('answer', LABELS.verifySkipped(certain));
   }

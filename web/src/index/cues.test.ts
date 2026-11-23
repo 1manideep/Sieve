@@ -2,7 +2,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { asksCount, asksLatest, asksSaid, asksState, describesOnlySender, holdsTopic, identifierTerms, isRoleCue, knownOrgWords, knownSenderWords, senderCue, senderMatches, titleSaysAskedKind, topicTerms } from './cues';
+import {
+  aboutTerms, asksCount, asksLatest, asksSaid, asksState, describesOnlySender, holdsAnyTerm, holdsTopic, identifierTerms, isRoleCue, knownOrgWords, knownSenderWords, relayedFrom, senderCue,
+  senderMatches, titleSaysAskedKind, topicTerms, wantsOwnEmail,
+} from './cues';
 import { loadDictionaryText } from './dictionary';
 
 beforeAll(() => {
@@ -205,5 +208,40 @@ describe('identifiers and state questions', () => {
     expect(asksState('What is the status of order US20418833?')).toBe(true);
     expect(asksState('Has order US20418833 shipped yet?')).toBe(true);
     expect(asksState('How much was order US20418833?')).toBe(false);
+  });
+});
+
+describe('what a question is about, and whose email it wants (Nov 23, R33 and R29)', () => {
+  it('aboutTerms: the thing after "about", without the sender, dates, numbers or message verbs', () => {
+    expect(aboutTerms('What did Wren reply about the window subscription?', 'Wren')).toEqual(['window', 'subscription']);
+    expect(aboutTerms('What did Lumora say about my refund on March 3?', 'Lumora')).toEqual(['refund']);
+    expect(aboutTerms('What did Northside Gym remind me about on March 3?', 'Northside Gym')).toEqual([]);
+    expect(aboutTerms('What did Ivo ask me about?', 'Ivo')).toEqual([]);
+    expect(aboutTerms('What did Ivo say regarding the Birchwood lease?', 'Ivo')).toEqual(['birchwood', 'lease']);
+    expect(aboutTerms("What did Benji's latest email say about Benji's budget?", 'Benji')).toEqual(['budget']);
+    expect(aboutTerms('When is my dentist appointment?', 'Maple Dental')).toEqual([]);
+  });
+
+  it('holdsAnyTerm: one of the words, in any form that starts the same', () => {
+    expect(holdsAnyTerm(['window', 'subscription'], 'I subscribed the team last week.')).toBe(true);
+    expect(holdsAnyTerm(['refund'], 'We have refunded $23.18 to your card.')).toBe(true);
+    expect(holdsAnyTerm(['window', 'subscription'], 'Sorry, wrong thread. Disregard my last note.')).toBe(false);
+    expect(holdsAnyTerm(['rent'], 'The rental car is ready.')).toBe(false);
+    expect(holdsAnyTerm([], 'anything')).toBe(true);
+  });
+
+  it('relayedFrom: another service sending on the person\'s behalf', () => {
+    expect(relayedFrom('Teodor Marsh via LinkedIn <messages-noreply@linkedin.com>')).toBe(true);
+    expect(relayedFrom('"Ivo Lindqvist (via Google Docs)" <drive-shares-noreply@google.com>')).toBe(true);
+    expect(relayedFrom('Teodor Marsh <teodor@mail.example>')).toBe(false);
+    expect(relayedFrom('Viadukt Bikes <shop@viadukt.example>')).toBe(false);
+    expect(relayedFrom(undefined)).toBe(false);
+  });
+
+  it('wantsOwnEmail: an email of the person, not a message on some service', () => {
+    expect(wantsOwnEmail('What did Teodor ask me in his latest email?')).toBe(true);
+    expect(wantsOwnEmail('What did Teodor ask me in his latest LinkedIn message?')).toBe(false);
+    expect(wantsOwnEmail('What did Teodor say in his latest message?')).toBe(false);
+    expect(wantsOwnEmail('What did Teodor ask me?')).toBe(false);
   });
 });
