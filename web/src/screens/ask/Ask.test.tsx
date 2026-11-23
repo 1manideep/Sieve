@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Proposal, StepOption } from '@sieve/shared';
+import type { PrepareInput } from '@/pipeline';
 import { useAskReal } from '@/state/ask';
 import { useAvailability } from '@/state/availability';
 import { useIndexing } from '@/state/indexing';
@@ -22,9 +23,21 @@ vi.mock('firebase/auth', () => import('@/test/fakes/firebaseAuth'));
 vi.mock('@/ai', () => import('@/test/fakes/ai'));
 const db = makeFakeDb('real');
 vi.mock('@/index', () => ({ openDb: () => db, getRecord: async () => undefined }));
-vi.mock('@/pipeline', () => ({ composeOutgoingText: (o: StepOption[]) => o.map((x) => x.text).join('\n\n') }));
+// The real store's ask reaches this: every question comes back as the error outcome, for the question asked.
+const prepareProposal = vi.fn(async (input: PrepareInput): Promise<Proposal> => ({ ...errorOutcome, requestId: input.requestId, question: input.question }));
+vi.mock('@/pipeline', () => ({
+  composeOutgoingText: (o: StepOption[]) => o.map((x) => x.text).join('\n\n'),
+  prepareProposal: (input: PrepareInput) => prepareProposal(input),
+}));
 
 const ask = vi.fn(async () => undefined);
+
+/** The store as it starts, with its own ask behind a spy (other tests replace some of its actions). */
+function realAsk() {
+  const run = vi.fn(useAskReal.getInitialState().ask);
+  useAskReal.setState({ ...useAskReal.getInitialState(), ask: run });
+  return run;
+}
 
 function renderAsk() {
   return render(
@@ -40,6 +53,7 @@ beforeEach(async () => {
   await db.table('sources').clear();
   await db.table('sources').put({ kind: 'folder', connected: true, paused: false, progress: { done: 10, total: 10 } });
   ask.mockClear();
+  prepareProposal.mockClear();
   useAskReal.setState({ ask, question: '' });
   useRecords.setState({ ensure: vi.fn(async () => undefined) });
   useSession.setState({ ownerConflict: false });
@@ -75,15 +89,15 @@ describe('Ask', () => {
     await expectNoAxeViolations();
   });
 
-  it('a chip sets the question and runs it; an empty submit shows the inline error', async () => {
+  it('a chip runs its question and leaves the box empty; an empty submit shows the inline error', async () => {
     renderAsk();
     await userEvent.click(screen.getByRole('button', { name: 'Ask' }));
     expect(screen.getByText('Type a question first.')).toBeInTheDocument();
     expect(ask).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole('button', { name: 'How much is my auto insurance this month?' }));
     expect(ask).toHaveBeenCalledWith('How much is my auto insurance this month?');
-    expect(useAskReal.getState().question).toBe('How much is my auto insurance this month?');
-    expect(screen.getByRole('button', { name: 'How much is my auto insurance this month?' })).toHaveAttribute('aria-pressed', 'true');
+    expect(useAskReal.getState().question).toBe('');
+    expect(screen.getByLabelText('What are you looking for?')).toHaveValue('');
   });
 
   it('notices: an empty index, and a model to set up that blocks Ask with its reason', async () => {
@@ -106,17 +120,34 @@ describe('Ask', () => {
     await expectNoAxeViolations();
   });
 
-  it('while the model sets up, "Answer when ready" keeps the question and runs it once the model is ready', async () => {
+  it('while the model sets up, "Answer when ready" empties the box and runs the question once the model is ready', async () => {
     useAvailability.setState({ text: 'downloadable', setup: { state: 'downloading', fraction: 0.42 } });
     renderAsk();
     expect(screen.getByText("The on-device model is being set up (42%). You can ask once it's ready.")).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText('What are you looking for?'), 'deposit');
     await userEvent.click(screen.getByRole('button', { name: 'Answer when ready' }));
     expect(screen.getByText('Sieve answers once the on-device model is ready (42%).')).toBeInTheDocument();
+    expect(screen.getByLabelText('What are you looking for?')).toHaveValue('');
     expect(ask).not.toHaveBeenCalled();
     await expectNoAxeViolations();
     act(() => useAvailability.setState({ text: 'available', setup: { state: 'done' } }));
     expect(ask).toHaveBeenCalledWith('deposit');
+  });
+
+  it('a chip pressed while the model sets up waits, shown pressed with the box empty, and runs once the model is ready', async () => {
+    const run = realAsk();
+    useAvailability.setState({ text: 'downloadable', setup: { state: 'downloading', fraction: 0.42 } });
+    renderAsk();
+    const chip = screen.getByRole('button', { name: 'How much is my auto insurance this month?' });
+    await userEvent.click(chip);
+    expect(chip).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByLabelText('What are you looking for?')).toHaveValue('');
+    expect(run).not.toHaveBeenCalled();
+    act(() => useAvailability.setState({ text: 'available', setup: { state: 'done' } }));
+    expect(run).toHaveBeenCalledWith('How much is my auto insurance this month?');
+    expect(await screen.findByText('Something went wrong on this device. Nothing was shared.')).toBeInTheDocument();
+    expect(screen.getByText('How much is my auto insurance this month?')).toBeInTheDocument();
+    expect(screen.getByLabelText('Ask a follow-up')).toHaveValue('');
   });
 
   it('no model with cloud fallback off, and on; indexing', () => {
@@ -218,12 +249,12 @@ describe('Ask', () => {
   });
 
   it('an error: the sentence with Try again under it; the error card only under Details', async () => {
-    act(() => useAskReal.setState({ phase: 'error', error: 'Something went wrong on this device. Nothing was shared.' }));
+    act(() => useAskReal.setState({ phase: 'error', asked: 'deposit', error: 'Something went wrong on this device. Nothing was shared.' }));
     renderAsk();
     expect(screen.getByText('Something went wrong on this device. Nothing was shared.')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Something went wrong' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
-    expect(ask).toHaveBeenCalled();
+    expect(ask).toHaveBeenCalledWith('deposit');
     await expectNoAxeViolations();
     await userEvent.click(screen.getByRole('button', { name: 'Details' }));
     expect(screen.getByRole('heading', { name: 'Something went wrong' })).toBeInTheDocument();
@@ -231,9 +262,9 @@ describe('Ask', () => {
   });
 });
 
-/** A finished question, as the store holds it once the pipeline has prepared it. */
+/** A finished question, as the store holds it once the pipeline has prepared it: the box is empty again. */
 function answered(proposal: Proposal, requestId = proposal.requestId) {
-  act(() => useAskReal.setState({ phase: 'ready', requestId, question: proposal.question, proposal, step: 'answer' }));
+  act(() => useAskReal.setState({ phase: 'ready', requestId, question: '', asked: proposal.question, proposal, step: 'answer' }));
 }
 
 const card = () => screen.queryByRole('article', { name: 'Result' });
@@ -333,13 +364,63 @@ describe('Ask as a chat', () => {
     expect(reset).toHaveBeenCalled();
   });
 
+  it('a sent question empties the box while the bubble shows it; Try again asks it again and the box stays empty', async () => {
+    const run = realAsk();
+    renderAsk();
+    await userEvent.type(screen.getByLabelText('What are you looking for?'), 'What is my deposit?{Enter}');
+    expect(await screen.findByText('Something went wrong on this device. Nothing was shared.')).toBeInTheDocument();
+    expect(screen.getByText('What is my deposit?')).toBeInTheDocument();
+    expect(screen.getByLabelText('Ask a follow-up')).toHaveValue('');
+    expect(useAskReal.getState()).toMatchObject({ question: '', asked: 'What is my deposit?' });
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(run).toHaveBeenLastCalledWith('What is my deposit?');
+    await vi.waitFor(() => expect(prepareProposal).toHaveBeenCalledTimes(2));
+    expect(prepareProposal.mock.calls.map((c) => c[0].question)).toEqual(['What is my deposit?', 'What is my deposit?']);
+    expect(await screen.findByText('Something went wrong on this device. Nothing was shared.')).toBeInTheDocument();
+    expect(screen.getByText('What is my deposit?')).toBeInTheDocument();
+    expect(screen.getByLabelText('Ask a follow-up')).toHaveValue('');
+  });
+
+  it('a follow-up empties the box too; Try again asks the question asked, not what is typed below it', async () => {
+    const run = realAsk();
+    renderAsk();
+    answered(errorOutcome);
+    const box = screen.getByLabelText('Ask a follow-up');
+    await userEvent.type(box, 'Where is my lease?{Enter}');
+    expect(run).toHaveBeenLastCalledWith('Where is my lease?');
+    expect(box).toHaveValue('');
+    expect(await screen.findByText('Where is my lease?')).toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Try again' });
+    await userEvent.type(screen.getByLabelText('Ask a follow-up'), 'half a question');
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(run).toHaveBeenLastCalledWith('Where is my lease?');
+    expect(screen.getByLabelText('Ask a follow-up')).toHaveValue('half a question');
+  });
+
+  it('Stop while the answer is prepared: back to the empty box, nothing put back', async () => {
+    prepareProposal.mockImplementationOnce(
+      (input: PrepareInput) =>
+        new Promise((resolve) => {
+          input.signal?.addEventListener('abort', () => resolve({ ...errorOutcome, requestId: input.requestId, question: input.question }));
+        }),
+    );
+    realAsk();
+    renderAsk();
+    await userEvent.type(screen.getByLabelText('What are you looking for?'), 'What is my deposit?{Enter}');
+    await vi.waitFor(() => expect(prepareProposal).toHaveBeenCalled());
+    expect(screen.getByLabelText('Ask a follow-up')).toHaveValue('');
+    await userEvent.click(screen.getAllByRole('button', { name: 'Stop' })[0]);
+    expect(await screen.findByLabelText('What are you looking for?')).toHaveValue('');
+    expect(useAskReal.getState()).toMatchObject({ phase: 'idle', question: '' });
+  });
+
   it('an error outcome: the sentence with Try again', async () => {
     renderAsk();
     answered(errorOutcome);
     expect(screen.getByText('Something went wrong on this device. Nothing was shared.')).toBeInTheDocument();
     expect(card()).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
-    expect(ask).toHaveBeenCalled();
+    expect(ask).toHaveBeenCalledWith(errorOutcome.question);
   });
 
   it('only a notice that blocks asking stays in view; the others show with Details', async () => {

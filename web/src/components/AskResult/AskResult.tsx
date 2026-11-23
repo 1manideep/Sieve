@@ -247,12 +247,9 @@ function useSettle(phase: AskState['phase']) {
   return ref;
 }
 
-/** The question as it was asked, kept for the bubble while the field below is edited (state kept per request). */
+/** The question as it was asked, for the bubble and Try again; the field below holds the next one. */
 function useAskedQuestion(useAsk: AskStore): string {
-  const { requestId, question, proposal } = useAsk(useShallow((s) => ({ requestId: s.requestId, question: s.question, proposal: s.proposal })));
-  const [asked, setAsked] = useState<{ requestId?: string; text: string }>({ requestId, text: question });
-  if (asked.requestId !== requestId) setAsked({ requestId, text: proposal?.question ?? question });
-  return proposal?.question ?? (asked.requestId === requestId ? asked.text : question);
+  return useAsk((s) => s.proposal?.question ?? s.asked);
 }
 
 export function AskResult(props: AskResultProps) {
@@ -305,8 +302,9 @@ export function AskResult(props: AskResultProps) {
 
   const compose = useCompose(injectedCompose);
   const view = compose ? askCardView(s, { online, compose }) : null;
+  // Try again asks the same question again, whatever the field below holds by now.
   const ask = () => {
-    useAsk.getState().ask().catch((error: unknown) => console.error(error));
+    useAsk.getState().ask(asked).catch((error: unknown) => console.error(error));
   };
   const allowCloud = (id: string) => {
     useAsk.getState().allowCloudFor(id).catch((error: unknown) => console.error(error));

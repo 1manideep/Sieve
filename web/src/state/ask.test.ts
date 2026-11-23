@@ -85,6 +85,18 @@ describe('useAsk: ask', () => {
     expect(prepareProposal).not.toHaveBeenCalled();
   });
 
+  it('keeps the question asked apart from the box: the box is left as it is, Allow the cloud asks the same question', async () => {
+    const store = createAskStore('real');
+    await store.getState().ask('What did my landlord say about the deposit?');
+    expect(store.getState()).toMatchObject({ question: '', asked: 'What did my landlord say about the deposit?', phase: 'ready' });
+    store.getState().setQuestion('a follow-up being typed');
+    await store.getState().allowCloudFor('gmail:m1');
+    expect(consentsPut).toHaveBeenCalledWith(expect.objectContaining({ recordId: 'gmail:m1' }));
+    expect(prepareProposal).toHaveBeenCalledTimes(2);
+    expect(prepareProposal.mock.calls[1][0].question).toBe('What did my landlord say about the deposit?');
+    expect(store.getState()).toMatchObject({ question: 'a follow-up being typed', asked: 'What did my landlord say about the deposit?' });
+  });
+
   it('stop returns to idle; a timeout is an error', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     prepareProposal.mockImplementationOnce(
@@ -248,12 +260,12 @@ describe('useAsk: an old approval never writes over a new question', () => {
     await vi.waitFor(() => expect(finalizeDecision).toHaveBeenCalled());
     expect(store.getState().approving).toBe(true);
     await store.getState().ask('second question');
-    expect(store.getState()).toMatchObject({ question: 'second question', phase: 'ready', approving: false });
+    expect(store.getState()).toMatchObject({ asked: 'second question', phase: 'ready', approving: false });
     // the new question can be approved while the old approval is still waiting
     release();
     await approving;
     const s = store.getState();
-    expect(s).toMatchObject({ question: 'second question', phase: 'ready', draft: undefined, outcome: undefined, draftError: undefined });
+    expect(s).toMatchObject({ asked: 'second question', phase: 'ready', draft: undefined, outcome: undefined, draftError: undefined });
     expect(s.extraTrace).toEqual([]);
     expect(saveReceipt).not.toHaveBeenCalled();
     expect(draftReply).not.toHaveBeenCalled();
@@ -275,7 +287,7 @@ describe('useAsk: an old approval never writes over a new question', () => {
     release();
     await approving;
     const s = store.getState();
-    expect(s).toMatchObject({ question: 'second question', phase: 'ready', draft: undefined, outcome: undefined });
+    expect(s).toMatchObject({ asked: 'second question', phase: 'ready', draft: undefined, outcome: undefined });
     expect(s.extraTrace).toEqual([]);
     // and the new question's own approval runs normally
     await store.getState().approveAndDraft();

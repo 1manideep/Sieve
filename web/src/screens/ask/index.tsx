@@ -1,9 +1,9 @@
 // Ask (`/`, 40 section 13.4): the golden path on the person's own data, through useAskReal (40 section 12).
 // The final design: before a question, F2 (the headline and three chips); after one, a chat (the question, then a
 // plain reply, with the card under Details). The question box stays docked at the bottom of the window throughout:
-// the glass prompt card before the first question, the follow-up pill after it. Only notices that block asking stay
-// in view during a chat; the others open with Details. While indexing runs (or is paused), the home shows the
-// Sources screen's indexing row above the chips (13.4).
+// the glass prompt card before the first question, the follow-up pill after it, empty again once a question is sent.
+// Only notices that block asking stay in view during a chat; the others open with Details. While indexing runs (or
+// is paused), the home shows the Sources screen's indexing row above the chips (13.4).
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from 'react-router-dom';
@@ -90,13 +90,12 @@ export function AskScreen() {
   }, [phase]);
 
   const preparing = phase === 'preparing';
+  // As in a chat, a sent question leaves the box empty for the next one; the store keeps the one asked in `asked`.
   const submit = (q: string) => {
-    if (gate === 'setting-up') {
-      setWaiting(q.trim());
-      return;
-    }
-    if (gate !== 'open') return;
-    runAsk(q);
+    if (gate === 'setting-up') setWaiting(q.trim());
+    else if (gate === 'open') runAsk(q);
+    else return;
+    useAskReal.getState().setQuestion('');
   };
 
   const submitButton = (round: boolean): ReactNode => {
@@ -164,7 +163,7 @@ export function AskScreen() {
         chipsLabel={ASK_COPY.try}
         chips={ASK_COPY.chips.map((chip) => ({
           label: chip.label,
-          selected: question.trim() === chip.question,
+          selected: (waiting ?? question).trim() === chip.question,
           onClick: () => {
             useAskReal.getState().setQuestion(chip.question);
             submit(chip.question);

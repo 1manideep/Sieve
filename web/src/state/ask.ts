@@ -29,7 +29,10 @@ import type { DbKind, LiveStep } from './types';
 
 export type AskPhase = 'idle' | 'preparing' | 'ready' | 'drafting' | 'done' | 'error';
 export interface AskState {
+  /** The text in the question box. */
   question: string;
+  /** The question as it was asked: the bubble, Try again and Allow the cloud read this, not the box. */
+  asked: string;
   phase: AskPhase;
   requestId?: string;
   /** Epoch ms when the current question started (the PreparingCard's slow line counts from here). */
@@ -74,6 +77,7 @@ type AskData = Omit<AskState,
 
 const initial = (): AskData => ({
   question: '',
+  asked: '',
   phase: 'idle',
   requestId: undefined,
   startedAt: undefined,
@@ -407,9 +411,11 @@ export function createAskStore(kind: DbKind) {
         lastDraft = null;
         frameText = null;
         const requestId = crypto.randomUUID();
+        // The box is left as the screen has it (the Ask page empties it once a question is sent).
         set({
           ...initial(),
-          question,
+          question: get().question,
+          asked: question,
           instruction: get().instruction,
           requestId,
           startedAt: Date.now(),
@@ -514,7 +520,7 @@ export function createAskStore(kind: DbKind) {
       async allowCloudFor(recordId) {
         const db = await openDb();
         await tables(db).consents.put({ recordId, cloudAllowedAt: Date.now() });
-        await get().ask(get().question);
+        await get().ask(get().asked);
       },
 
       reset() {
