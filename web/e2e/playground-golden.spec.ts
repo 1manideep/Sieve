@@ -35,12 +35,14 @@ test.describe('Playground golden path', () => {
     expect(cloud[0].prompt).not.toContain(LANDLORD_OTHER_SENTENCE);
 
     // Every model call of the visit (11 section 10.7): loading and indexing the sample data make none; the question
-    // makes one select-answer, one verify-answer on the chosen item (10 section 12.3 step 12b), then one
-    // injection-check and one pii-check on the text that would leave, all on the device.
+    // makes one search-words (other words for the search, from the question alone), one select-answer, one
+    // verify-answer on the chosen item (10 section 12.3 step 12b), then one injection-check and one pii-check on the
+    // text that would leave, all on the device.
     const calls = await seamCalls(page);
-    expect(calls.map((c) => c.purpose)).toEqual(['select-answer', 'verify-answer', 'injection-check', 'pii-check', 'draft']);
-    expect(calls[1]).toMatchObject({ recordIds: ['playground:pg-mail-02'], data: 'sample', sdkReported: 'on_device' });
-    for (const c of calls.slice(2, 4)) {
+    expect(calls.map((c) => c.purpose)).toEqual(['search-words', 'select-answer', 'verify-answer', 'injection-check', 'pii-check', 'draft']);
+    expect(calls[0]).toMatchObject({ recordIds: [], sdkReported: 'on_device' });
+    expect(calls[2]).toMatchObject({ recordIds: ['playground:pg-mail-02'], data: 'sample', sdkReported: 'on_device' });
+    for (const c of calls.slice(3, 5)) {
       expect(c).toMatchObject({ recordIds: ['playground:pg-mail-02'], data: 'sample', sdkReported: 'on_device' });
       expect(c.prompt).toContain('$1,200');
     }

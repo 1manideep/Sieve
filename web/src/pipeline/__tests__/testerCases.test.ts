@@ -278,6 +278,30 @@ describe('the tester cases (Nov 20)', () => {
     expect(promptText(hybrid.callsFor('verify-answer')[0].parts)).toContain('Proposed answer: The racks for the new bike room are on order.');
   });
 
+  it('a never-shared item explains an empty result only when it ranked ahead of what a model may read (Nov 23)', async () => {
+    const statement = record({ id: 'gmail:statement', source: 'gmail', title: 'Your November statement is ready', from: 'Kestrelmoor Bank <statements@kestrelmoor.example>', category: 'Money', date: T - 15 * DAY, text: 'Your statement is ready to view. Sign in to online banking to see it.' });
+    const clinic = record({ id: 'gmail:clinic', source: 'gmail', title: 'Appointment reminder: Dr. Okafor, Tue 9:30 AM', from: 'Maple Clinic <hello@mapleclinic.example>', category: 'Health', date: T - 3 * DAY, text: 'This is a reminder of your appointment on Tuesday at 9:30 AM.' });
+    idx.records.set(statement.id, statement);
+    idx.records.set(clinic.id, clinic);
+    model('none', '');
+    // the item a model may read ranked first and gave no answer: nothing matched, and the clinic email is not named
+    idx.search.mockResolvedValue([idx.cand(statement.id), idx.cand(clinic.id)]);
+    const below = await prepareProposal(input({ question: 'What is my latest bank balance?' }));
+    expect(below.outcome).toBe('no-match');
+    expect(below.item).toBeUndefined();
+    expect(below.reasonCode).toMatch(/^model-picked-none-of1/);
+    // the never-shared item ranked first: it is the likely answer, so the result says a rule held it
+    idx.search.mockResolvedValue([idx.cand(clinic.id), idx.cand(statement.id)]);
+    const ahead = await prepareProposal(input({ question: 'When is my appointment?' }));
+    expect(ahead.outcome).toBe('blocked-never');
+    expect(ahead.item?.recordId).toBe(clinic.id);
+    // only never-shared items were found: held, as before
+    idx.search.mockResolvedValue([idx.cand(clinic.id)]);
+    expect((await prepareProposal(input({ question: 'When is my appointment?' }))).outcome).toBe('blocked-never');
+    // in every case no model call carried the clinic email
+    expect(hybrid.calls.every((c) => !(c.meta?.recordIds ?? []).includes(clinic.id))).toBe(true);
+  });
+
   it('a "when" question answered with no date or number in it shares nothing', async () => {
     const shop = record({ id: 'gmail:plan-shop', source: 'gmail', title: 'Your bike is ready Saturday', from: 'Dana Hill <dana@oakhillcycles.example>', category: 'Personal', date: T - 25 * DAY, text: 'Pickup is Saturday at 11 AM. The free service plan starts on pickup day, after you take it home.' });
     idx.records.set(shop.id, shop);

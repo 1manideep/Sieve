@@ -563,6 +563,16 @@ async function prepare(run: Run): Promise<Proposal> {
   const { neverBlocked } = screened;
   let allowed = screened.allowed;
   if (allowed.length === 0) return run.why('rules-held-every-candidate').blockedOrNoMatch(neverBlocked);
+  // A held item explains an empty result only when it was a better match than everything a model may read. When an
+  // item that may be read ranked ahead of it and no answer came of that, the result is "nothing matched" with its own
+  // reason: a bank question whose answer was withheld was shown as "Health is never shared", over an appointment email
+  // that sat further down the list (Nov 23, 2026).
+  const rankOf = (id: string): number => cands.findIndex((c) => c.recordId === id);
+  const bestAllowed = Math.min(...allowed.map((a) => rankOf(a.rec.id)).filter((at) => at >= 0));
+  const heldAhead = neverBlocked.filter((r) => {
+    const at = rankOf(r.id);
+    return at >= 0 && at < bestAllowed;
+  });
 
   // 6a. "The latest": newest first among the candidates that match (latestOrder).
   const latest = asksLatest(lookup);
@@ -733,13 +743,13 @@ async function prepare(run: Run): Promise<Proposal> {
     if (res.value.recordId === null) {
       // how many of the candidates had their whole text ("b"), not only the first lines
       const whole = list.filter((a) => a.rec.kind === 'photo' || a.rec.text !== undefined).length;
-      return run.why(`model-picked-none-of${list.length}-b${whole}-c${readCode(list)}`).blockedOrNoMatch(neverBlocked);
+      return run.why(`model-picked-none-of${list.length}-b${whole}-c${readCode(list)}`).blockedOrNoMatch(heldAhead);
     }
     // A question that asks when or how much, and an answer with no date and no number in it ("it starts on arrival
     // day"): the model answered something else, so nothing is shared.
     if (!isYesNoQuestion(lookup) && !answersKind(lookup, res.value.answer)) {
       run.code('rule', LABELS.kindMissing);
-      return run.why(`answer-lacks-asked-kind-r${list.findIndex((a) => a.rec.id === res.value.recordId) + 1}-c${readCode(list)}`).blockedOrNoMatch(neverBlocked);
+      return run.why(`answer-lacks-asked-kind-r${list.findIndex((a) => a.rec.id === res.value.recordId) + 1}-c${readCode(list)}`).blockedOrNoMatch(heldAhead);
     }
 
     const pick = list.find((a) => a.rec.id === res.value.recordId);
@@ -751,7 +761,7 @@ async function prepare(run: Run): Promise<Proposal> {
     // its instructions. It had one more try in the answer step; this is never shared.
     if (repeatsExample(res.value.answer, pick.rec, lookup, today)) {
       run.code('rule', LABELS.exampleRepeated);
-      return run.why(`answer-repeats-prompt-example-r${list.indexOf(pick) + 1}-c${readCode(list)}`).blockedOrNoMatch(neverBlocked);
+      return run.why(`answer-repeats-prompt-example-r${list.indexOf(pick) + 1}-c${readCode(list)}`).blockedOrNoMatch(heldAhead);
     }
     // A yes or no question answered with a sentence: one small call reads the sentence as yes or no. Asked to write
     // "No." itself the on-device model wrote a sentence for half of such answers, and asked again it gave up.
@@ -815,7 +825,7 @@ async function prepare(run: Run): Promise<Proposal> {
     if (!reread) {
       run.end(freshId, codeTrace('retrieve', LABELS.freshGone(kind), freshMs));
       list = list.filter((a) => a.rec.id !== pick.rec.id);
-      if (list.length === 0) return run.why('item-gone').blockedOrNoMatch(neverBlocked);
+      if (list.length === 0) return run.why('item-gone').blockedOrNoMatch(heldAhead);
     } else {
       run.end(freshId, codeTrace('retrieve', LABELS.freshChangedReread(kind), freshMs));
       list = list.map((a) => (a.rec.id === reread.id ? { rec: reread, cand: { ...a.cand, chunk: undefined } } : a));

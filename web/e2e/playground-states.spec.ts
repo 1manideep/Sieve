@@ -29,8 +29,8 @@ test.describe('Playground states', () => {
     await expect(page.getByText('Nothing on this device matched').first()).toBeVisible({ timeout: 45_000 });
     await expect(page.getByRole('button', { name: APPROVE })).toHaveCount(0);
     const calls = await seamCalls(page);
-    expect(calls.map((c) => c.purpose)).toEqual(['select-answer', 'verify-answer']);
-    expect(calls[1].sdkReported).toBe('on_device');
+    expect(calls.map((c) => c.purpose)).toEqual(['search-words', 'select-answer', 'verify-answer']);
+    expect(calls[2].sdkReported).toBe('on_device');
   });
 
   test('Money asks first: the banner sits directly above the buttons (Approve first), and approving still works', async ({ page }, info) => {

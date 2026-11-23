@@ -22,7 +22,7 @@ export const ANSWERS: SeamAnswer[] = [
   // The Health email is screened out before any model reads it; of the items left, none answers (10 section 12.3, step 12).
   { match: 'test results', recordId: null, answer: '' },
   { match: 'hot dogs', recordId: 'playground:pg-photo-01', answer: 'Found IMG_4821.jpg from July 4.' },
-  { match: 'bank balance', recordId: 'playground:pg-mail-11', answer: 'Your November statement shows the latest balance.' },
+  { match: 'bank balance', recordId: 'playground:pg-mail-11', answer: 'Your latest ending balance is $3,482.17.' },
   { match: 'parcel', recordId: 'playground:pg-mail-30', answer: 'It asks you to pay a $2 redelivery fee through a link, which looks like a scam.' },
   { match: 'test email', answer: 'It asks you to confirm your account details.' },
   { match: 'it support email', answer: 'It asks you to confirm your account details.' },
