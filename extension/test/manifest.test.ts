@@ -70,9 +70,9 @@ describe('source manifest (50 section 4.1)', () => {
     });
   });
 
-  it('is version 0.1.1, the same as package.json (the tolerant validator; the page trims lists for 0.1.0)', () => {
-    expect(source.version).toBe('0.1.1');
-    expect(pkg.version).toBe('0.1.1');
+  it('is version 0.1.2, the same as package.json (the preparing card, the Gmail line and a failed send with its reason)', () => {
+    expect(source.version).toBe('0.1.2');
+    expect(pkg.version).toBe('0.1.2');
   });
 
   it('carries a real key, not the placeholder', () => {
