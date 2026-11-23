@@ -19,6 +19,18 @@ import * as privacy from './mocks/privacy';
 
 vi.mock('@/index', () => import('./mocks/index'));
 vi.mock('@/privacy', () => import('./mocks/privacy'));
+// the PDF of an email is read through Gmail: here a stand-in that has none unless a test gives one
+const attachments = vi.hoisted(() => ({ text: new Map<string, string>() }));
+vi.mock('../attachmentText', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../attachmentText')>();
+  return {
+    ...real,
+    withAttachmentText: vi.fn(async (rec: { id: string; text?: string }) => {
+      const extra = attachments.text.get(rec.id);
+      return extra ? { ...rec, text: `${rec.text ?? ''}\n\nAttached file receipt.pdf: ${extra}` } : null;
+    }),
+  };
+});
 
 const SETTINGS: Settings = { categoryRules: { ...DEFAULT_CATEGORY_RULES }, defaultStep: 'answer', cloudFallbackForOwnData: false, pushEnabled: false };
 const OUTSIDE = { kind: 'outside' as const, grantId: 'g1', aiName: 'Claude' };
@@ -63,6 +75,7 @@ function model(item: string, answer: string, answers = true, yesNo: 'yes' | 'no'
 const labels = (p: Proposal) => p.trace.map((s) => s.label);
 
 beforeEach(() => {
+  attachments.text.clear();
   resetAiForTests();
   privacy.resetPrivacyMock();
   db = fakeDb();
@@ -321,6 +334,30 @@ describe('the tester cases (Nov 20)', () => {
     expect((await prepareProposal(input({ question: 'When is my appointment?' }))).outcome).toBe('blocked-never');
     // in every case no model call carried the clinic email
     expect(hybrid.calls.every((c) => !(c.meta?.recordIds ?? []).includes(clinic.id))).toBe(true);
+  });
+
+  it('a receipt that is only in the PDF attachment is read with the email, for this answer only (Nov 23, B02)', async () => {
+    const plain = record({ id: 'gmail:sub-active', source: 'gmail', title: 'Thank you for purchasing Premium', from: 'Lumora <billing@lumora.example>', category: 'Money', date: T - 3 * DAY, text: 'Your subscription is now active and your receipt is attached.' });
+    const other = record({ id: 'gmail:other-bill', source: 'gmail', title: 'Your bill', from: 'Kestrel Power <bills@kestrel.example>', category: 'Home', date: T - 5 * DAY, text: 'Your bill of $61.20 is due on the 12th.' });
+    for (const r of [plain, other]) idx.records.set(r.id, r);
+    idx.search.mockResolvedValue([idx.cand(plain.id), idx.cand(other.id)]);
+    attachments.text.set(plain.id, 'Invoice 1093. Premium, 1 month. Total: $39.99. Paid by card.');
+    model('P1', 'You paid $39.99 for Premium.');
+    const p = await prepareProposal(input({ question: 'How much did I pay for Lumora Premium?' }));
+    expect(p.outcome).toBe('ready');
+    expect(labels(p)).toContain('Read the text of the PDF attached to 1 email, because the email itself holds no amount or date');
+    // the model read the attachment's text with the email, and the email was not left out for lacking an amount
+    const prompt = promptText(hybrid.callsFor('select-answer')[0].parts);
+    expect(prompt).toContain('Total: $39.99');
+    expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toContain(plain.id);
+    // nothing is written back: the index keeps the email as it was
+    expect(idx.records.get(plain.id)?.text).toBe('Your subscription is now active and your receipt is attached.');
+
+    // an email that names no attachment, or a question that asks for no amount or date: no attachment is read
+    const { withAttachmentText } = await import('../attachmentText');
+    const calls = vi.mocked(withAttachmentText).mock.calls.length;
+    await prepareProposal(input({ question: 'What did Lumora say about my Premium subscription?' }));
+    expect(vi.mocked(withAttachmentText).mock.calls.length).toBe(calls);
   });
 
   it('a "when" question answered with no date or number in it shares nothing', async () => {

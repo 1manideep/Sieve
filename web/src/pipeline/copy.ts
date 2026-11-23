@@ -82,6 +82,7 @@ export const LABELS = {
   kindOnly: (left: number) => `Left out ${left === 1 ? '1 item' : `${left} items`} with no amount or date in ${left === 1 ? 'it' : 'them'}, because the question asks for one`,
   kindMissing: 'The answer held no date or amount, though the question asks for one, so nothing is shared',
   exampleRepeated: 'The answer held an amount from the instructions the model was given, not from the item, so nothing is shared',
+  attachmentRead: (n: number) => (n === 1 ? 'Read the text of the PDF attached to 1 email, because the email itself holds no amount or date' : `Read the text of the PDFs attached to ${n} emails, because the emails themselves hold no amount or date`),
   numberRepaired: 'A long number in the answer was a digit off the one in the item or the question; the real number is written',
   verifyYes: 'The item answers the question',
   verifySkipped: (why: 'number' | 'newest') => (why === 'number' ? 'Not checked again: this is the only item that holds the number you gave' : 'Not checked again: this is the newest email from the sender you named'),

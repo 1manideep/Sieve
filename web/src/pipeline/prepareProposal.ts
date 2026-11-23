@@ -21,6 +21,7 @@ import { iso } from '@/index/dates';
 import { stashFile } from './fileStash';
 import { originalFor } from './original';
 import { repairLongNumbers } from './askedNumbers';
+import { attachmentMayHold, withAttachmentText } from './attachmentText';
 import { anchorRelativeDays } from './relativeDays';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
 import { isYesNoQuestion } from '@/privacy/steps/answerShape';
@@ -654,9 +655,27 @@ async function prepare(run: Run): Promise<Proposal> {
       run.code('retrieve', LABELS.newestState);
     }
   }
+  // 6b1. The same question, and an email among the first few that holds no amount (or no date) but says something is
+  // attached: the text of its PDF attachment is read with it, for this answer only (attachmentText.ts).
+  const wants = answerKind(lookup);
+  const withAttachment = new Map<string, IndexRecord>();
+  if (wants && input.dataClass === 'own') {
+    const mayHold = allowed.slice(0, SELECT_MAX_PASSAGES).filter((a) => attachmentMayHold(a.rec, wants));
+    if (mayHold.length > 0) {
+      const read = await Promise.all(mayHold.map((a) => withAttachmentText(a.rec, input.signal ? { signal: input.signal } : {})));
+      read.forEach((r) => {
+        if (r) withAttachment.set(r.id, r);
+      });
+      if (withAttachment.size > 0) {
+        allowed = allowed.map((a) => ({ ...a, rec: withAttachment.get(a.rec.id) ?? a.rec }));
+        run.code('retrieve', LABELS.attachmentRead(withAttachment.size));
+      }
+    }
+  }
+  if (run.aborted) return run.stopped();
+
   // 6b2. A question that asks for an amount or a date: an item with no amount (or no date) anywhere in it cannot hold
   // the answer, so when some candidates have one, only those are read. An email whose body is not here yet stays.
-  const wants = answerKind(lookup);
   if (wants && allowed.length > 1) {
     const holders = allowed.filter((a) => a.rec.kind === 'photo' || a.rec.text === undefined || wants.test(`${a.rec.title} ${a.rec.text}`));
     if (holders.length > 0 && holders.length < allowed.length) {
@@ -826,7 +845,9 @@ async function prepare(run: Run): Promise<Proposal> {
     if (fresh.status === 'ok' || fresh.status === 'unknown') {
       run.end(freshId, codeTrace('retrieve', LABELS.freshChecked(kind), freshMs), false);
       if (fresh.status === 'unknown') run.warn(WARNINGS.sourceUnchecked());
-      chosen = fresh.record;
+      // the email as it is now, still with its attachment's text when that was read for this answer (6b1)
+      const attached = withAttachment.get(fresh.record.id);
+      chosen = attached ? { ...fresh.record, text: attached.text } : fresh.record;
       value = res.value;
       break;
     }
