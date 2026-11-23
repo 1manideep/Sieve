@@ -218,11 +218,15 @@ class Run {
       createdAt: this.now,
       ...(outcome === 'error' ? { errorCode: this.errorCode ?? 'unknown' } : {}),
       ...(outcome !== 'ready' && outcome !== 'error' && this.reasonCode ? { reasonCode: this.reasonCode } : {}),
+      ...(outcome === 'ready' && this.pickCode ? { pickCode: this.pickCode } : {}),
     };
   }
 
   /** Why nothing is shared, as a short fixed code (never content); see Proposal.reasonCode. */
   reasonCode: string | undefined;
+
+  /** Which candidate an answer came from, as a short code (never content); see Proposal.pickCode. */
+  pickCode: string | undefined;
 
   /** Sets the reason code and returns the run, so a site reads `run.why('model-none').finish('no-match')`. */
   why(code: string): this {
@@ -891,6 +895,7 @@ async function prepare(run: Run): Promise<Proposal> {
 
   // 13. The excerpt, chosen by plain code.
   const rec = chosen;
+  run.pickCode = pickCode(list, chosen, hints, answer);
   if (answer !== value.answer) run.code('clean', LABELS.dayWritten);
   let excerpt = value.excerpt;
   let unsupported = value.unsupported ?? [];

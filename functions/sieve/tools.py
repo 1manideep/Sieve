@@ -335,6 +335,20 @@ MSG_FILE_NOT_SENT = ("The file itself was not sent: the person approved sharing 
                      "the file, tell the person, and ask again with file set to true only if they want to send it.")
 
 
+_PICKED_RE = re.compile(r"picked [A-Za-z0-9.-]{1,96}")
+
+
+def with_pick(result: ToolResult, note: Any) -> ToolResult:
+    """Testing mode: the home base names the candidate an answer came from ("picked r1of5-..."), a code with no
+    content. It is added to the message as it is, and only when it has exactly that shape."""
+    if not (isinstance(note, str) and _PICKED_RE.fullmatch(note) and result.message):
+        return result
+    message = f"{result.message} ({note})"
+    if config.utf16_len(message) > config.MESSAGE_MAX_CHARS:
+        return result
+    return result.model_copy(update={"message": message})
+
+
 def answered_result(request_id: str, step: str, text: str, image: Any = None,
                     file: dict[str, Any] | None = None, *, file_asked: bool = False) -> ToolResult:
     if file is not None:

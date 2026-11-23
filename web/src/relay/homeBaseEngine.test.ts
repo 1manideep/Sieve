@@ -1195,6 +1195,28 @@ describe('home base engine: the automatic-outcome floor (40 section 11.6, Nov 21
     window.localStorage.clear();
   });
 
+  it('with auto-approve on, an answer carries the code of the picked item; without it, it carries nothing', async () => {
+    const picked = () => outcome({ maxStep: 'answer', pickCode: 'r1of3-tx-g1-b1-cab12.cd34.ef56' });
+    window.localStorage.setItem(AUTO_APPROVE_KEY('u1'), JSON.stringify({ g1: Date.now() + AUTO_APPROVE_MS }));
+    const testing = await activeHarness({ autoApprove: (grantId) => autoApproveOn('u1', grantId), markAutoApproved: vi.fn() });
+    testing.prepare.mockImplementationOnce(picked());
+    testing.push([request({ maxStep: 'answer' })]);
+    await flush();
+    await vi.waitFor(() => expect(testing.finish).toHaveBeenCalled());
+    expect(testing.finish.mock.calls[0][3]).toMatchObject({ status: 'answered', message: 'picked r1of3-tx-g1-b1-cab12.cd34.ef56' });
+    window.localStorage.clear();
+    // approved by the person, not in testing mode: the answer is written without a note
+    const plain = await activeHarness();
+    plain.prepare.mockImplementationOnce(picked());
+    plain.push([request({ maxStep: 'answer' })]);
+    await flush();
+    plain.push([request({ maxStep: 'answer', status: 'awaiting-person', claimedBy: 'dev1' })]);
+    await flush();
+    expect(await plain.engine.decide({ requestId: 'req1', approved: true, step: 'answer', decidedBy: 'app' })).toEqual({ ok: true });
+    expect(plain.finish.mock.calls[0][3]).toMatchObject({ status: 'answered' });
+    expect(plain.finish.mock.calls[0][3]).not.toHaveProperty('message');
+  });
+
   it('with auto-approve on, a held item\'s line carries its step code, as a no-match line does; without it, neither does', async () => {
     const held = async (i: PrepareInput) => proposal({ requestId: i.requestId, outcome: 'blocked-never', rule: 'never', reasonCode: 'model-picked-none-of3-b3-cab12.cd34.ef56' });
     window.localStorage.setItem(AUTO_APPROVE_KEY('u1'), JSON.stringify({ g1: Date.now() + AUTO_APPROVE_MS }));

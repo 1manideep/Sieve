@@ -167,7 +167,8 @@ service cloud.firestore {
     function isAnswer(uid, before, after, keys) {
       return before.status == 'awaiting-person'
         && after.status == 'answered'
-        && keys.hasOnly(['status', 'answeredAt', 'response'])
+        && keys.hasOnly(['status', 'answeredAt', 'response', 'message'])
+        && validMessage(after)
         && after.answeredAt == request.time
         && validPayload(after.response, before.maxStep, uid, before.get('wantFile', false));
     }

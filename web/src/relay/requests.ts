@@ -49,7 +49,7 @@ const TOOLS = Object.values(MCP_TOOLS) as string[];
 /** The receipt is written with the request (receiptId = requestId), except for Playground requests (00 D1), whose
  * receipts stay in the Playground database on this device. */
 export type FinishInput =
-  | { status: 'answered'; response: RelayPayload; receipt?: Receipt }
+  | { status: 'answered'; response: RelayPayload; receipt?: Receipt; message?: string }
   | { status: 'declined'; message: string; receipt?: Receipt }
   | { status: 'blocked'; message: string; receipt?: Receipt }
   | { status: 'no-match' | 'unsupported' | 'error'; message: string };
@@ -215,7 +215,7 @@ export async function finishRequest(uid: string, id: string, deviceId: string, f
       const response: DocumentData = { step: f.response.step, text: f.response.text, chars: f.response.chars, itemCount: f.response.itemCount };
       if (f.response.image) response.image = f.response.image;
       if (f.response.file) response.file = { name: f.response.file.name, mime: f.response.file.mime, bytes: f.response.file.bytes, path: f.response.file.path };
-      tx.update(ref, { status: 'answered', answeredAt: serverTimestamp(), response });
+      tx.update(ref, { status: 'answered', answeredAt: serverTimestamp(), response, ...(f.message ? { message: f.message.slice(0, 300) } : {}) });
     } else {
       tx.update(ref, { status: f.status, message: f.message.slice(0, 300) });
     }

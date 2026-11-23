@@ -380,9 +380,11 @@ def finish(deps: Any, ctx: CallCtx, request_id: str, data: dict | None, t0: floa
                 mark_receipt(deps.db, ctx.uid, request_id, "delivered")
             if got.payload.file is not None:
                 wire = make_file_link(deps, ctx, request_id, got.payload.file)
-                return tools.answered_result(request_id, got.payload.step, got.payload.text, file=wire)
-            return tools.answered_result(request_id, got.payload.step, got.payload.text, got.payload.image,
-                                         file_asked=bool(data.get("wantFile")))
+                return tools.with_pick(tools.answered_result(request_id, got.payload.step, got.payload.text, file=wire),
+                                       data.get("message"))
+            return tools.with_pick(tools.answered_result(request_id, got.payload.step, got.payload.text,
+                                                         got.payload.image, file_asked=bool(data.get("wantFile"))),
+                                   data.get("message"))
         if got.kind == "missing":
             return tools.unknown_request_result()
         if got.kind == "revoked" and not ctx.playground:

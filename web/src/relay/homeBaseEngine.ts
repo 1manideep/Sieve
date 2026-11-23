@@ -1313,8 +1313,12 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
         }
         const withId = { ...receipt, id };
         const firestoreReceipt = playground ? {} : { receipt: withId };
+        // Testing mode: the answer carries which candidate it came from, so a test round can tell a wrong pick from a
+        // wrong reading without asking the person (Nov 23, 2026). A code only, never content.
+        const testing = !playground && deps.autoApprove?.(entry.request.requester.grantId) === true;
+        const picked = testing && proposal.pickCode ? { message: MSG.picked(proposal.pickCode) } : {};
         const finish: FinishInput = input.approved
-          ? { status: 'answered', response: payload!, ...firestoreReceipt }
+          ? { status: 'answered', response: payload!, ...firestoreReceipt, ...picked }
           : { status: 'declined', message: MSG.declined, ...firestoreReceipt };
         // Marked before the receipt is written, so What has AI seen? never shows it as approved by the person.
         if (input.approved && autoDeciding.has(id)) deps.markAutoApproved?.(id, true);

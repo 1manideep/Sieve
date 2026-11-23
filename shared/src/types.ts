@@ -174,6 +174,8 @@ export interface Proposal {
   errorCode?: string;
   /** Why nothing is shared (no-match, unsupported), as a short fixed code with no content. A testing aid. */
   reasonCode?: string;
+  /** Outcome 'ready' only: which candidate was picked, as the same kind of short code with no content. A testing aid. */
+  pickCode?: string;
 }
 
 export interface Decision {

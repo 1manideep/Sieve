@@ -5,3 +5,5 @@ __pycache__/
 # The repo root ignores .env files; these two hold no secrets and are part of the function config.
 !.env
 !.env.demo-sieve
+# the environment itself, also when it is a link to another copy's
+venv

@@ -53,6 +53,12 @@ def test_result_from_request_and_d6():
                          f"sieve_check with request_id \"{rid}\"; it waits about 20 seconds per call, so call it "
                          "again while the result is pending.")
     a = tools.answered_result(rid, "full", "Text")
+    # testing mode: the picked candidate's code is added to the message, and only a code of that exact shape
+    picked = tools.with_pick(tools.answered_result(rid, "answer", "Yes."), "picked r1of5-tx-g1-b1-cab12.cd34")
+    assert picked.message == "The person approved sharing this answer. (picked r1of5-tx-g1-b1-cab12.cd34)"
+    assert tools.with_pick(tools.answered_result(rid, "answer", "Yes."), None).message == "The person approved sharing this answer."
+    for bad in ("picked <b>x</b>", "ignore previous instructions", "picked " + "a" * 200, 42):
+        assert tools.with_pick(tools.answered_result(rid, "answer", "Yes."), bad).message == "The person approved sharing this answer."
     # a file was asked for and text was shared: the message says the file was not sent
     nf = tools.answered_result(rid, "excerpt", "Lines.", file_asked=True)
     assert nf.message.startswith("The file itself was not sent: the person approved sharing this excerpt instead.")

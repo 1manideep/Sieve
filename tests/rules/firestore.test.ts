@@ -174,6 +174,19 @@ describe('R3 payload checks', () => {
     await assertSucceeds(answerBatch(alice(), 'r3').commit());
   });
 
+  it('an answer may carry a short note (testing mode names the picked item by a code); a long one fails', async () => {
+    await seed('users/alice/requests/r3', claimed({ status: 'awaiting-person' }));
+    const withNote = (message: string) => {
+      const db = alice();
+      const b = writeBatch(db);
+      b.update(doc(db, 'users/alice/requests/r3'), { status: 'answered', answeredAt: serverTimestamp(), response: payload(), message });
+      b.set(doc(db, 'users/alice/receipts/r3'), receipt('r3'));
+      return b;
+    };
+    await assertFails(withNote('x'.repeat(301)).commit());
+    await assertSucceeds(withNote('picked r1of5-tx-g1-b1-cab12.cd34').commit());
+  });
+
   it('a photo shared at the full step may carry its re-encoded image (11.7)', async () => {
     await seed('users/alice/requests/r3', claimed({ status: 'awaiting-person', maxStep: 'full' }));
     const image = { mime: 'image/jpeg', base64: 'A'.repeat(4000), width: 600, height: 400, bytes: 3000 };

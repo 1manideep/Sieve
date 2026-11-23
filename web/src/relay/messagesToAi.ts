@@ -21,6 +21,8 @@ export const MSG = {
     const c = (code ?? '').replace(/[^A-Za-z0-9.-]/g, '').slice(0, 96);
     return c ? `${line} (${c})` : line;
   },
+  /** Testing mode only: which candidate an approved answer came from, as a code with no content (the relay shows it). */
+  picked: (code: string) => `picked ${code.replace(/[^A-Za-z0-9.-]/g, '').slice(0, 96)}`,
   /** The same line with which step failed, as a short code with no content ("model-timeout", "search-TypeError"). */
   errorWith: (code: string) => `Sieve couldn't prepare an answer on the person's device. Try again later. (${code.replace(/[^A-Za-z0-9-]/g, '').slice(0, 48) || 'unknown'})`,
   badRequest: "Sieve couldn't read this request. Ask again.",
