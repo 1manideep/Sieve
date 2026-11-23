@@ -1,5 +1,5 @@
 // PromptCard (the final design, F2): one glass card with the question as a bare field and a bottom row: attach, the
-// ladder (Answer / Excerpt / Full) with a hint per step, the Nano pill, the mic, and the big white Ask button that the
+// ladder (Answer / Excerpt / Full), the small Nano label, the mic, and the big white Ask button that the
 // screen passes in (it holds the submit rules). Also the round submit and the step chip of the follow-up pill (F3).
 import { forwardRef, useId, type ReactNode } from 'react';
 import { LADDER_STEPS, type LadderStep } from '@sieve/shared';
@@ -119,7 +119,8 @@ export const PromptCard = forwardRef<QuestionInputHandle, PromptCardProps>(funct
             <div className={styles.ladder}>
               <Segmented<LadderStep> label={ASK_COPY.ladderLabel} options={options} value={step} onChange={onStepChange} describedBy={hintId} />
             </div>
-            <span id={hintId} className={styles.hint}>
+            {/* what the chosen step lets out: read to a screen reader with the control, no longer shown beside it */}
+            <span id={hintId} className="visually-hidden">
               {ASK_COPY.ladderHints[step]}
             </span>
           </>

@@ -55,17 +55,18 @@ describe('Ask', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Ask your own data. Only one line leaves.' })).toBeInTheDocument();
     expect(screen.getByText('Searched and answered on this computer by Gemini Nano. Outside AIs get what you approve, nothing more.')).toBeInTheDocument();
     const card = screen.getByRole('region', { name: 'Ask about your own data' });
-    expect(within(card).getByLabelText('What are you looking for?')).toHaveAttribute('placeholder', "e.g. my landlord's email about the deposit");
+    expect(within(card).getByLabelText('What are you looking for?')).toHaveAttribute('placeholder', 'Ask your own data');
     expect(within(card).getByRole('button', { name: 'Ask' })).toBeInTheDocument();
     expect(within(card).getByRole('button', { name: 'Add a source' })).toBeInTheDocument();
     expect(within(card).getByText('Nano · on this computer')).toBeInTheDocument();
     // The ladder chooses the step before the question; each step says what it sends.
     expect(within(card).getByRole('radiogroup', { name: 'How much may leave' })).toBeInTheDocument();
     expect(within(card).getByRole('radio', { name: 'Answer' })).toHaveAttribute('aria-checked', 'true');
-    expect(within(card).getByText('one sentence, written here')).toBeInTheDocument();
+    // what the chosen step lets out is read with the control, and no longer shown beside it
+    expect(within(card).getByText('one sentence, written here')).toHaveClass('visually-hidden');
     await userEvent.click(within(card).getByRole('radio', { name: 'Excerpt' }));
     expect(within(card).getByText('the lines that hold the answer, masked')).toBeInTheDocument();
-    for (const name of ["Landlord's email about the deposit", 'The photo with five hot dogs in my mouth', 'What does my lease say about pets?']) {
+    for (const name of ['How much is my auto insurance this month?', 'How much was my utility bill this month?', 'Did my doctor get back to me about my test?']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
     expect(await screen.findByText('Ask a question, or pick an example above. Sieve searches only this device.')).toBeInTheDocument();
@@ -77,10 +78,10 @@ describe('Ask', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Ask' }));
     expect(screen.getByText('Type a question first.')).toBeInTheDocument();
     expect(ask).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole('button', { name: "Landlord's email about the deposit" }));
-    expect(ask).toHaveBeenCalledWith('What did my landlord say about the deposit? Draft a reply.');
-    expect(useAskReal.getState().question).toBe('What did my landlord say about the deposit? Draft a reply.');
-    expect(screen.getByRole('button', { name: "Landlord's email about the deposit" })).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(screen.getByRole('button', { name: 'How much is my auto insurance this month?' }));
+    expect(ask).toHaveBeenCalledWith('How much is my auto insurance this month?');
+    expect(useAskReal.getState().question).toBe('How much is my auto insurance this month?');
+    expect(screen.getByRole('button', { name: 'How much is my auto insurance this month?' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('notices: an empty index, and a model to set up that blocks Ask with its reason', async () => {
@@ -136,7 +137,7 @@ describe('Ask', () => {
     expect(askNotices({ ...base, sourcesConnected: false, text: 'downloadable', cloudFallback: false, indexing: 'running', left: 3 })).toHaveLength(2);
   });
 
-  it('indexing (F2): the indexing card under the chips while it runs, in place of the one-line notice', async () => {
+  it('indexing (F2): the indexing card above the examples while it runs, in place of the one-line notice', async () => {
     useIndexing.setState({ state: 'running', left: 1204, done: 296, total: 1500, etaMs: 4 * 60_000 });
     renderAsk();
     const card = await screen.findByRole('region', { name: 'Indexing on this device' });
@@ -144,9 +145,11 @@ describe('Ask', () => {
     expect(within(card).getByText(/^296 of 1,500 items · about/)).toBeInTheDocument();
     expect(within(card).getByText(/Your questions always go first/)).toBeInTheDocument();
     expect(screen.queryByText(/Indexing on this device: 1,204 items left/)).toBeNull();
-    // The card sits after the chips, inside the home.
-    const chip = screen.getByRole('button', { name: "Landlord's email about the deposit" });
-    expect(chip.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // The card sits above the examples, and the question box is the last of the three.
+    const chip = screen.getByRole('button', { name: 'How much is my auto insurance this month?' });
+    expect(chip.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+    const prompt = screen.getByRole('region', { name: 'Ask about your own data' });
+    expect(chip.compareDocumentPosition(prompt) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.queryByText('Ask a question, or pick an example above. Sieve searches only this device.')).toBeNull();
     await expectNoAxeViolations();
     act(() => useIndexing.setState({ state: 'paused', left: 1204 }));

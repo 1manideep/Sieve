@@ -1,11 +1,13 @@
-/* F2: the headline at 104 px (clamped), the lead, the prompt card, the chips. */
+/* F2: a small headline and lead in the middle, then the chips and the prompt card at the bottom of the page. */
 .home {
   position: relative;
-  display: grid;
-  gap: 28px;
-  justify-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-items: center;
   min-width: 0;
-  padding: clamp(24px, 8vh, 96px) 0 24px;
+  min-height: calc(100dvh - 128px);
+  padding: 16px 0 8px;
 }
 
 /* The two locked ribbons cross behind the headline and the card. Each one stays inside this block with its
@@ -15,17 +17,18 @@
 .ribbonRight { right: -2%; top: 170px; width: 64%; height: 200px; transform: rotate(14deg); }
 .home > :not(.ribbons) { position: relative; z-index: 1; }
 
-.hero { display: grid; gap: 18px; justify-items: center; text-align: center; max-width: 1100px; min-width: 0; }
+/* the hero takes the free space and stands in its middle; everything after it gathers at the bottom */
+.hero { display: grid; gap: 12px; justify-items: center; align-content: center; text-align: center; max-width: 760px; min-width: 0; flex: 1 0 auto; }
 .headline {
   margin: 0;
-  font: 400 clamp(40px, 7.2vw, 104px)/1 var(--font-display);
-  letter-spacing: -0.03em;
+  font: 400 clamp(26px, 3.2vw, 42px)/1.12 var(--font-display);
+  letter-spacing: -0.02em;
   color: var(--color-text);
   text-shadow: 0 2px 40px rgba(0, 0, 0, 0.8);
   overflow-wrap: anywhere;
 }
 .headlineLine { display: block; }
-.lead { margin: 0; max-width: 760px; font-size: clamp(16px, 1.6vw, 21px); line-height: 1.45; color: rgba(255, 255, 255, 0.88); }
+.lead { margin: 0; max-width: 620px; font-size: 15px; line-height: 1.5; color: rgba(255, 255, 255, 0.7); }
 
 .notices { display: grid; gap: var(--space-2); width: 100%; max-width: 850px; min-width: 0; }
 
@@ -53,9 +56,9 @@
 .chip[aria-pressed='true'] { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.4); }
 .chipGlyph { flex: none; color: var(--color-accent, #8AB4F8); }
 
+.cardSlot { width: 100%; min-width: 0; }
 .footer { width: 100%; }
 
 @media (max-width: 767px) {
-  .home { gap: 22px; padding-top: 24px; }
-  .headline { letter-spacing: -0.02em; }
+  .home { gap: 16px; min-height: calc(100dvh - 160px); }
 }

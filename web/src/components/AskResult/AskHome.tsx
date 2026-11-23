@@ -1,6 +1,6 @@
-// AskHome (the final design, F2): the page before a question. The headline, the lead, quiet rows for notices, the
-// prompt card, the suggestion chips and whatever the screen puts under them (the Playground's "What is on this
-// computer" row). The two ribbons sit behind the headline, clipped by this block so nothing scrolls sideways.
+// AskHome (the final design, F2): the page before a question. A small headline and lead in the middle of the page,
+// quiet rows for notices, whatever the screen adds (the Playground's "What is on this computer" row), then at the
+// bottom the suggestion chips and the prompt card. The two ribbons sit behind, clipped so nothing scrolls sideways.
 import { Fragment, type ReactNode } from 'react';
 import { Glyph } from './glyphs';
 import styles from './AskHome.module.css';
@@ -42,7 +42,7 @@ export function AskHome({ headlineLines, lead, notices, card, chipsLabel, chips,
         <p className={styles.lead}>{lead}</p>
       </div>
       {notices ? <div className={styles.notices}>{notices}</div> : null}
-      {card}
+      {children}
       {chips.length > 0 ? (
         <div className={styles.chipsBlock}>
           <p className={styles.chipsLabel}>{chipsLabel}</p>
@@ -56,7 +56,8 @@ export function AskHome({ headlineLines, lead, notices, card, chipsLabel, chips,
           </div>
         </div>
       ) : null}
-      {children}
+      {/* The question box sits at the bottom of the page, like the field of a chat (Nov 22, 2026). */}
+      <div className={styles.cardSlot}>{card}</div>
       {footer ? <div className={styles.footer}>{footer}</div> : null}
     </div>
   );
