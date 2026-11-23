@@ -1,6 +1,7 @@
 // The connect panel (40 section 13.8.2; design handoff of Nov 20, 2026): pressing an assistant that has no
-// connection opens this in place. Step 1 sets the limits; step 2 shows the connector link, once. The link lives
-// only in this component's state (10.5): never in a store, a log, localStorage, the URL or an error message.
+// connection opens this in place, and so does New connection on one that has. Step 1 sets the limits; step 2 shows
+// the connector link, once. The link lives only in this component's state (10.5): never in a store, a log,
+// localStorage, the URL or an error message.
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { CATEGORIES, GRANT_DEFAULT_DAYS, LADDER_STEPS, type Category, type LadderStep } from '@sieve/shared';
 import { AssistantMark } from '@/components/AssistantMark/AssistantMark';
@@ -42,9 +43,11 @@ export interface ConnectPanelProps {
   connected: RealSource[];
   /** The link is on screen (and whether it was copied), so the row of marks can ask before leaving it. */
   onLinkChange(state: LinkState): void;
+  /** Back to the assistant's live connections; when given, step 1 shows Cancel. */
+  onCancel?(): void;
 }
 
-export function ConnectPanel({ kind, connected, onLinkChange }: ConnectPanelProps) {
+export function ConnectPanel({ kind, connected, onLinkChange, onCancel }: ConnectPanelProps) {
   const rules = useSettings((s) => s.settings.categoryRules);
   const online = useNetwork((s) => s.online);
   const spec = ASSISTANTS[kind];
@@ -297,6 +300,11 @@ export function ConnectPanel({ kind, connected, onLinkChange }: ConnectPanelProp
             <Button variant="primary" tone="blue" type="submit" busy={creating} disabled={creating}>
               {creating ? SETTINGS.creating : SETTINGS.create}
             </Button>
+            {onCancel ? (
+              <button type="button" className={kit.textButton} disabled={creating} onClick={onCancel}>
+                {SETTINGS.cancel}
+              </button>
+            ) : null}
           </div>
         </div>
       </form>

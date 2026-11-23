@@ -1,9 +1,10 @@
 // "Assistants" (40 sections 13.8.1 to 13.8.3 and 13.8.9; design handoff of Nov 20, 2026): a row of bare assistant
 // marks, in colour when that assistant has a live connection and grey when it has none. No panel shows until a mark
-// is pressed. Pressing one opens it in one panel in place, and pressing it again closes it: a live assistant shows
-// what it can get, its expiry, the Auto-approve answers switch, Change limits and Revoke; an assistant with no
-// connection shows the connect steps (ConnectPanel). ?connect=1 opens the first assistant that is not connected,
-// and is then removed from the URL.
+// is pressed. Pressing one opens it in place, and pressing it again closes it: a live assistant shows one panel per
+// live connection, each with what it can get, its expiry, the Auto-approve answers switch, Change limits, Revoke and
+// New connection; an assistant with no connection shows the connect steps (ConnectPanel). New connection shows the
+// same steps for a live assistant, and the connections it has stay as they are. ?connect=1 opens the first
+// assistant that is not connected, and is then removed from the URL.
 import { useEffect, useId, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
@@ -50,13 +51,15 @@ export function daysLeftText(g: GrantView, now: number): string {
   return left === 0 ? SETTINGS.expiresToday : left === 1 ? SETTINGS.dayLeft : fillText(SETTINGS.daysLeft, { n: left });
 }
 
-function GrantPanel({ grant, now, autoUntil, onNarrow }: { grant: GrantView; now: number; autoUntil?: number; onNarrow(): void }) {
+/** One live connection. `others`: the same assistant has another live connection, so Revoke names this one by its link. */
+function GrantPanel({ grant, now, autoUntil, others, onNarrow, onNew }: { grant: GrantView; now: number; autoUntil?: number; others: boolean; onNarrow(): void; onNew(): void }) {
   const rules = useSettings((s) => s.settings.categoryRules);
   const online = useNetwork((s) => s.online);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const confirmRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const metaId = useId();
   const autoId = useId();
   const autoNoteId = useId();
   const span = Math.max(1, grant.expiresAt - grant.createdAt);
@@ -73,7 +76,7 @@ function GrantPanel({ grant, now, autoUntil, onNarrow }: { grant: GrantView; now
     useAutoApprove.getState().turnOff(grant.id);   // at once, whatever the call returns
     try {
       await useGrants.getState().revoke(grant.id);
-      useToasts.getState().push({ tone: 'success', title: fillText(SETTINGS.revoked, { aiName: grant.aiName }) });
+      useToasts.getState().push({ tone: 'success', title: fillText(others ? SETTINGS.revokedOne : SETTINGS.revoked, { aiName: grant.aiName, hint: grant.linkHint }) });
     } catch (e) {
       useToasts.getState().push({ tone: 'error', title: callableMessage(e, online) });
     }
@@ -82,14 +85,14 @@ function GrantPanel({ grant, now, autoUntil, onNarrow }: { grant: GrantView; now
   };
 
   return (
-    <article className={ground.panel} aria-labelledby={titleId}>
+    <article className={ground.panel} aria-labelledby={titleId} aria-describedby={metaId}>
       <div className={ground.ph}>
         <AssistantMark kind={assistantKindOf(grant.aiName)} size={44} />
         <span className={ground.pt}>
           <h3 id={titleId} className={ground.pn}>
             <bdi>{grant.aiName}</bdi>
           </h3>
-          <span className={ground.pmeta}>{grantMeta(grant, now)}</span>
+          <span id={metaId} className={ground.pmeta}>{grantMeta(grant, now)}</span>
         </span>
         {auto ? <span className={styles.autoPill}>{fillText(SETTINGS.autoApproveUntil, { time: formatClock(autoUntil) })}</span> : null}
       </div>
@@ -101,6 +104,9 @@ function GrantPanel({ grant, now, autoUntil, onNarrow }: { grant: GrantView; now
             <p>
               {CAP_NOTES[grant.maxStep]} {SETTINGS.narrowNote}
             </p>
+            <Button variant="secondary" size="sm" onClick={onNew}>
+              {SETTINGS.newConnection}
+            </Button>
           </div>
           <div className={ground.grp}>
             <span className={ground.label}>{SETTINGS.categories}</span>
@@ -195,6 +201,8 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
   const [link, setLink] = useState<{ kind: AssistantKind; state: LinkState } | null>(null);
   // Where a press would go while a link is not copied yet: another assistant, or none (the open one pressed again).
   const [leaving, setLeaving] = useState<{ to: AssistantKind | null } | null>(null);
+  // New connection was pressed: the open live assistant shows the connect steps until Cancel, Done or another press.
+  const [adding, setAdding] = useState(false);
   const [narrowing, setNarrowing] = useState<GrantView | null>(null);
 
   const current = grants.filter((g) => g.state === 'active' || g.state === 'expiring');
@@ -205,7 +213,10 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
   const [handledConnect, setHandledConnect] = useState(false);
   if (wantsConnect !== handledConnect) {
     setHandledConnect(wantsConnect);
-    if (wantsConnect) setSelected(ASSISTANT_KINDS.find((k) => !live.includes(k)) ?? 'other');
+    if (wantsConnect) {
+      setSelected(ASSISTANT_KINDS.find((k) => !live.includes(k)) ?? 'other');
+      setAdding(false);
+    }
   }
   useEffect(() => {
     if (!wantsConnect) return;
@@ -221,6 +232,7 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
     if (link?.state === 'uncopied') setLeaving({ to: next });
     else {
       setLink(null);
+      setAdding(false);
       setSelected(next);
     }
   };
@@ -231,7 +243,7 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
     current.length === 0
       ? SETTINGS.aisNoteNone
       : autoNames.length > 0
-        ? fillText(SETTINGS.aisNoteAuto, { n: current.length, names: autoNames.map((g) => g.aiName).join(', '), time: formatClock(lastAuto) })
+        ? fillText(SETTINGS.aisNoteAuto, { n: current.length, names: [...new Set(autoNames.map((g) => g.aiName))].join(', '), time: formatClock(lastAuto) })
         : fillText(SETTINGS.aisNote, { n: current.length });
 
   let panel;
@@ -246,12 +258,25 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
     );
   } else if (status === 'error') {
     panel = <p className={`${ground.panel} ${kit.text}`}>{SETTINGS.aisError}</p>;
-  } else if (!live.includes(selected) || link?.kind === selected) {
-    panel = <ConnectPanel key={selected} kind={selected} connected={connected} onLinkChange={(state) => setLink(state === 'none' ? null : { kind: selected, state })} />;
+  } else if (!live.includes(selected) || link?.kind === selected || adding) {
+    panel = (
+      <ConnectPanel
+        key={selected}
+        kind={selected}
+        connected={connected}
+        onCancel={adding ? () => setAdding(false) : undefined}
+        onLinkChange={(state) => {
+          setLink(state === 'none' ? null : { kind: selected, state });
+          if (state === 'none') setAdding(false);
+        }}
+      />
+    );
   } else {
-    panel = current
-      .filter((g) => assistantKindOf(g.aiName) === selected)
-      .map((g) => <GrantPanel key={g.id} grant={g} now={now} autoUntil={autoUntil[g.id]} onNarrow={() => setNarrowing(g)} />);
+    // Every live connection of this assistant, newest first; each one has its own limits, switch and Revoke.
+    const mine = current.filter((g) => assistantKindOf(g.aiName) === selected);
+    panel = mine.map((g) => (
+      <GrantPanel key={g.id} grant={g} now={now} autoUntil={autoUntil[g.id]} others={mine.length > 1} onNarrow={() => setNarrowing(g)} onNew={() => setAdding(true)} />
+    ));
   }
 
   return (
@@ -291,6 +316,7 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
           onCancel={() => setLeaving(null)}
           onConfirm={() => {
             setLink(null);
+            setAdding(false);
             setSelected(leaving?.to ?? null);
             setLeaving(null);
           }}

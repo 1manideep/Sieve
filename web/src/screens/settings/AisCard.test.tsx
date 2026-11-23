@@ -1,7 +1,7 @@
 // Assistants (40 sections 13.8.1 to 13.8.3 and 13.8.9; design handoff of Nov 20, 2026): the marks, the pressed
-// assistant opened in one panel in place and closed by a second press, Auto-approve answers, Revoke, and connecting
-// in place.
-import { render, screen, within } from '@testing-library/react';
+// assistant opened in place and closed by a second press, Auto-approve answers, Revoke, connecting in place, and a
+// second connection for an assistant that has one.
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
@@ -347,5 +347,117 @@ describe('Assistants: connecting in place (40 section 13.8.2)', () => {
     await user.click(within(cursor).getByRole('button', { name: SETTINGS.create }));
     expect(await within(cursor).findByRole('status')).not.toBeEmptyDOMElement();
     expect(within(cursor).getByText(SETTINGS.step1of2)).toBeInTheDocument();
+  });
+});
+
+describe('Assistants: a new connection for a live assistant', () => {
+  const claudePanels = () => screen.getAllByRole('article', { name: 'Claude' });
+  const connectClaude = fillText(SETTINGS.connectHeading, { name: 'Claude' });
+
+  it('offers New connection, next to the note, only on a live connection', async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(claudeMark());
+    const claude = panel('Claude');
+    expect(within(claude).getByText(`${SETTINGS.capNoteAnswer} ${SETTINGS.narrowNote}`)).toBeInTheDocument();
+    expect(within(claude).getByRole('button', { name: SETTINGS.newConnection })).toBeInTheDocument();
+
+    await user.click(mark(/^Gemini CLI/));
+    expect(panel(fillText(SETTINGS.connectHeading, { name: 'Gemini CLI' }))).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: SETTINGS.newConnection })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: SETTINGS.cancel })).not.toBeInTheDocument();
+  });
+
+  it('opens the connect steps for that assistant in place of its connections, and Cancel goes back', async () => {
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(claudeMark());
+    await user.click(within(panel('Claude')).getByRole('button', { name: SETTINGS.newConnection }));
+    const connect = panel(connectClaude);
+    expect(within(connect).getByText(SETTINGS.step1of2)).toBeInTheDocument();
+    expect(within(connect).getByRole('radio', { name: SETTINGS.capAnswer })).toBeChecked();
+    expect(screen.queryByRole('article', { name: 'Claude' })).not.toBeInTheDocument();
+    expect(claudeMark()).toHaveAttribute('aria-pressed', 'true');
+    await expectNoAxeViolations();
+
+    await user.click(within(connect).getByRole('button', { name: SETTINGS.cancel }));
+    expect(panel('Claude')).toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: connectClaude })).not.toBeInTheDocument();
+    expect(create).not.toHaveBeenCalled();
+
+    // Closing the assistant and opening it again shows its connections, not the steps.
+    await user.click(within(panel('Claude')).getByRole('button', { name: SETTINGS.newConnection }));
+    await user.click(claudeMark());
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
+    await user.click(claudeMark());
+    expect(panel('Claude')).toBeInTheDocument();
+  });
+
+  it('makes a second connection with a higher limit; both are listed and the first keeps its Auto-approve', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    renderCard();
+    await user.click(claudeMark());
+    await user.click(within(panel('Claude')).getByRole('switch', { name: SETTINGS.autoApprove }));
+    await user.click(within(panel('Claude')).getByRole('button', { name: SETTINGS.newConnection }));
+    await user.click(within(panel(connectClaude)).getByRole('radio', { name: SETTINGS.capFull }));
+    await user.click(within(panel(connectClaude)).getByRole('button', { name: SETTINGS.create }));
+    expect(create).toHaveBeenCalledWith({
+      aiName: 'Claude',
+      maxStep: 'full',
+      allowedCategories: CATEGORIES.filter((c) => c !== 'Health'),
+      allowedSources: ['gmail'],
+      days: 30,
+    });
+    expect(await within(panel(connectClaude)).findByText(SETTINGS.step2of2)).toBeInTheDocument();
+    expect(within(panel(connectClaude)).queryByRole('button', { name: SETTINGS.cancel })).not.toBeInTheDocument();
+
+    // The new connection is live already, but the link stays on screen until Done.
+    const second = grant({ id: 'new', maxStep: 'full', linkHint: 'cret', createdAt: NOW });
+    useGrants.setState({ grants: [second, ...useGrants.getState().grants] });
+    expect(within(panel(connectClaude)).getByRole('textbox', { name: SETTINGS.linkLabel })).toHaveValue(LINK);
+    await user.click(within(panel(connectClaude)).getByRole('button', { name: SETTINGS.copyLink }));
+    await user.click(within(panel(connectClaude)).getByRole('button', { name: SETTINGS.done }));
+
+    expect(claudePanels()).toHaveLength(2);
+    const [newer, older] = claudePanels();
+    expect(newer).toHaveAccessibleDescription(grantMeta(second, NOW));
+    expect(within(newer).getByText(SETTINGS.capFull)).toBeInTheDocument();
+    expect(within(newer).getByRole('switch', { name: SETTINGS.autoApprove })).toHaveAttribute('aria-checked', 'false');
+    expect(older).toHaveAccessibleDescription(grantMeta(grant({}), NOW));
+    expect(within(older).getByText(SETTINGS.capAnswer)).toBeInTheDocument();
+    expect(within(older).getByRole('switch', { name: SETTINGS.autoApprove })).toHaveAttribute('aria-checked', 'true');
+    expect(autoApproveOn('u1', 'g1')).toBe(true);
+    expect(autoApproveOn('u1', 'new')).toBe(false);
+    expect(revoke).not.toHaveBeenCalled();
+    await expectNoAxeViolations();
+  });
+
+  it('Revoke on one of two connections leaves the other, with its Auto-approve', async () => {
+    const user = userEvent.setup();
+    useGrants.setState({ grants: [grant({ id: 'g4', maxStep: 'full', linkHint: 'p7qa', createdAt: NOW }), ...useGrants.getState().grants] });
+    renderCard();
+    await user.click(claudeMark());
+    const [newer, older] = claudePanels();
+    await user.click(within(older).getByRole('switch', { name: SETTINGS.autoApprove }));
+    await user.click(within(newer).getByRole('switch', { name: SETTINGS.autoApprove }));
+    const { until } = useAutoApprove.getState();
+    expect(screen.getByText(fillText(SETTINGS.aisNoteAuto, { n: 3, names: 'Claude', time: formatClock(Math.max(until.g1, until.g4)) }))).toBeInTheDocument();
+
+    await user.click(within(newer).getByRole('button', { name: SETTINGS.revoke }));
+    const confirm = within(newer).getByRole('group', { name: fillText(SETTINGS.revokeTitle, { aiName: 'Claude' }) });
+    await user.click(within(confirm).getByRole('button', { name: SETTINGS.revokeConfirm }));
+    expect(revoke).toHaveBeenCalledTimes(1);
+    expect(revoke).toHaveBeenCalledWith('g4');
+    expect(autoApproveOn('u1', 'g4')).toBe(false);
+    expect(autoApproveOn('u1', 'g1')).toBe(true);
+    expect(useToasts.getState().toasts.at(-1)?.title).toBe(fillText(SETTINGS.revokedOne, { aiName: 'Claude', hint: 'p7qa' }));
+
+    act(() => useGrants.setState({ grants: useGrants.getState().grants.map((g) => (g.id === 'g4' ? { ...g, state: 'revoked', revokedAt: NOW } : g)) }));
+    expect(claudePanels()).toHaveLength(1);
+    expect(claudePanels()[0]).toHaveAccessibleDescription(grantMeta(grant({}), NOW));
+    expect(within(claudePanels()[0]).getByRole('switch', { name: SETTINGS.autoApprove })).toHaveAttribute('aria-checked', 'true');
+    expect(claudeMark()).toHaveTextContent(SETTINGS.markLiveAuto);
   });
 });

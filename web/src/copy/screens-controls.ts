@@ -558,12 +558,15 @@ export const SETTINGS = {
   // 13.8.3
   narrowTitle: "Narrow {aiName}'s access",
   narrowNote: 'To give more access, make a new connection.',
+  newConnection: 'New connection',
   save: 'Save',
   narrowed: "{aiName}'s access was narrowed.",
   revokeTitle: "Revoke {aiName}'s connection?",
   revokeBody: 'Its link stops working right away. Waiting requests from it are cancelled. Receipts stay in What has AI seen?',
   revokeConfirm: 'Revoke',
   revoked: "{aiName} can't ask any more.",
+  /** When the same assistant still has another live connection. */
+  revokedOne: "{aiName}'s link ending in …{hint} was revoked.",
   // 13.8.4
   rulesHeading: 'Your rules',
   rulesSub: 'Sieve applies these on this device before any model reads an item.',
