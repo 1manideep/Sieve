@@ -345,6 +345,15 @@ describe('R8 anonymous owners', () => {
 });
 
 describe('R9 receipts', () => {
+  it('a receipt may say the size of a file sent as itself, on a full-step share only (Nov 22)', async () => {
+    const db = alice();
+    await seed('users/alice/requests/r9', claimed({ status: 'awaiting-person', maxStep: 'full' }));
+    await assertSucceeds(setDoc(doc(db, 'users/alice/receipts/r9'), receipt('r9', { step: 'full', fileBytes: 182_000 })));
+    await assertFails(setDoc(doc(db, 'users/alice/receipts/r9b'), receipt('r9b', { step: 'answer', fileBytes: 182_000 })));
+    await assertFails(setDoc(doc(db, 'users/alice/receipts/r9c'), receipt('r9c', { step: 'full', fileBytes: 0 })));
+    await assertFails(setDoc(doc(db, 'users/alice/receipts/r9d'), receipt('r9d', { step: 'full', fileBytes: 20 * 1024 * 1024 + 1 })));
+  });
+
   it('rejects a wrong id, a delivered outside receipt, a client createdAt, updates and deletes', async () => {
     const db = alice();
     await assertFails(setDoc(doc(db, 'users/alice/receipts/r9'), receipt('r9', { id: 'other' })));

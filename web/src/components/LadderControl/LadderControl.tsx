@@ -2,7 +2,7 @@
 // arrow keys and ignored on click; each one gets a reason line. Selection follows focus (roving tabIndex).
 import { useId, useRef, type KeyboardEvent } from 'react';
 import { LADDER_LABELS, LADDER_STEPS, fullStepLabel, ladderSegmentLabel, type ItemKind, type LadderStep, type StepOption } from '@sieve/shared';
-import { LADDER_COPY, fill } from '@/copy/screens-main';
+import { LADDER_COPY, OUTGOING_COPY, fill } from '@/copy/screens-main';
 import { nextRadioIndex, tabStopIndex } from '../Segmented/rovingRadio';
 import styles from './LadderControl.module.css';
 
@@ -87,7 +87,7 @@ export function LadderControl({ label, options, value, onChange, kind, requested
                 onChange(step);
               }}
             >
-              {ladderSegmentLabel(step, kind)}
+              {step === 'full' && byStep[i]?.file ? `3 · ${OUTGOING_COPY.fileStep}` : ladderSegmentLabel(step, kind)}
             </button>
           );
         })}

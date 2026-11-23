@@ -434,6 +434,7 @@ export const SEEN = {
   leftAnswer: 'An answer of {chars} characters.',
   leftExcerpt: 'An excerpt of {chars} characters.',
   leftFull: 'The full item, {chars} characters.',
+  leftFile: 'The file itself, {size}.',
   leftKept: 'Sieve keeps the receipt, never the text',
   nothingBlocked: 'Nothing. {category} is never shared, not even an answer.',
   nothingBlockedUnknown: 'Nothing. Your rules never share it.',

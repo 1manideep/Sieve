@@ -1,7 +1,7 @@
 // OutgoingPreview (40 section 16.5): the exact outgoing text, rendered from option.text and nothing else
 // (40 section 1.2: what the person sees is what is sent).
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { SharedImage, StepOption } from '@sieve/shared';
+import { sharedFileSize, type SharedImage, type StepOption } from '@sieve/shared';
 import { formatCount } from '@/copy/format';
 import { OUTGOING_COPY, fill } from '@/copy/screens-main';
 import { RedactedText } from '../RedactedText/RedactedText';
@@ -35,6 +35,8 @@ function SharedPhoto({ image }: { image: SharedImage }) {
 }
 
 export function footerText(option: StepOption, instruction?: string): string {
+  // a file is not text: its size, and the plain fact that nothing in it was masked (never "No personal details found")
+  if (option.file) return fill(OUTGOING_COPY.fileFooter, { size: sharedFileSize(option.file.bytes) });
   const parts = [fill(OUTGOING_COPY.chars, { chars: formatCount(option.chars) })];
   parts.push(
     option.redactions === 0
@@ -67,6 +69,7 @@ export function OutgoingPreview({ id, label, option, instruction, overLimit = fa
           <RedactedText text={option.text} />
         </p>
         {option.image ? <SharedPhoto image={option.image} /> : null}
+        {option.file ? <p className={styles.over}>{OUTGOING_COPY.fileNote}</p> : null}
       </div>
       {instruction !== undefined ? (
         <div className={styles.instruction}>

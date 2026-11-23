@@ -62,6 +62,10 @@ export const OUTGOING_COPY = {
   total: '{n} characters in total',
   overLimit: 'This is more than Sieve sends at once (8,000 characters). Untick an item or pick a lower step.',
   imageAlt: 'The photo that would be shared, without location data',
+  /** A file sent as itself: what the footer and the line under the name say in place of the character and mask counts. */
+  fileFooter: '{size} · sent as it is, nothing inside it is masked',
+  fileNote: 'The file itself is sent, through a link that works for 10 minutes. Sieve cannot hide personal details inside a file.',
+  fileStep: 'The file itself',
 } as const;
 
 export const WARNING_COPY = {

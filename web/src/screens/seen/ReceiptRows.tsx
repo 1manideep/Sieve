@@ -3,7 +3,7 @@
 // pressed, it opens in place with what left, where it came from, what happened step by step, and Revoke. A receipt
 // never holds the text that left, so the row shows the question and the count, not the answer.
 import { useState, type ReactNode } from 'react';
-import { LADDER_LABELS } from '@sieve/shared';
+import { LADDER_LABELS, sharedFileSize } from '@sieve/shared';
 import { AssistantMark } from '@/components/AssistantMark/AssistantMark';
 import { assistantKindOf } from '@/components/AssistantMark/assistants';
 import { CategoryIcon } from '@/components/CategoryIcon/CategoryIcon';
@@ -141,7 +141,9 @@ function Detail({ r, meta, now, auto, revoked, onRevoke, id }: { r: ReceiptView;
   let quote = ground.quote;
   if (shared) {
     const chars = formatCount(r.chars);
-    left = fillText(r.step === 'full' ? SEEN.leftFull : r.step === 'excerpt' ? SEEN.leftExcerpt : SEEN.leftAnswer, { chars });
+    left = r.fileBytes
+      ? fillText(SEEN.leftFile, { size: sharedFileSize(r.fileBytes) })
+      : fillText(r.step === 'full' ? SEEN.leftFull : r.step === 'excerpt' ? SEEN.leftExcerpt : SEEN.leftAnswer, { chars });
   } else if (r.status === 'blocked') {
     left = category ? fillText(SEEN.nothingBlocked, { category }) : SEEN.nothingBlockedUnknown;
     quote = `${ground.quote} ${ground.quoteNever}`;

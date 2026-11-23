@@ -637,6 +637,85 @@ describe('home base engine: decisions', () => {
     expect(h.deps.announce).toHaveBeenCalledWith('Sent the answer to Gemini CLI.', 'polite');
   });
 
+  describe('a file sent as itself (Nov 22)', () => {
+    const FILE = { name: 'Lease_2026.pdf', mime: 'application/pdf', bytes: 182_000 };
+    const LINE = 'Lease_2026.pdf (PDF, 178 KB)';
+    const blob = new Blob([new Uint8Array(8)], { type: 'application/pdf' });
+    const PLACE = `handoffs/u1/req1/${'o'.repeat(24)}`;
+
+    async function fileHarness(files: Partial<NonNullable<EngineDeps['files']>> = {}, over: Partial<EngineDeps> = {}) {
+      const store = {
+        upload: vi.fn(async () => PLACE),
+        remove: vi.fn(async () => undefined),
+        stashed: vi.fn((): Blob | undefined => blob),
+        drop: vi.fn(),
+        ...files,
+      };
+      const h = await activeHarness({ files: store, ...over });
+      h.prepare.mockImplementation(async () => proposal({ requestedStep: 'full', options: [option('answer', 'Your deposit was $1,200.'), option('excerpt', 'The deposit of $1,200 was received.'), option('full', LINE, { file: FILE })] }));
+      (h.deps.pipeline.finalizeDecision as ReturnType<typeof vi.fn>).mockImplementation(async (p: Proposal, d: Decision) => {
+        const out = await fakeFinalize(p, d);
+        return d.approved && d.step === 'full' ? { ...out, file: FILE } : out;
+      });
+      h.push([request({ tool: 'sieve_full_item', requestedStep: 'full', wantFile: true })]);
+      await flush();
+      h.push([request({ tool: 'sieve_full_item', requestedStep: 'full', wantFile: true, status: 'awaiting-person', claimedBy: 'dev1' })]);
+      await flush();
+      return { h, store };
+    }
+
+    it('asks the pipeline for the file, uploads it only after the approval, and sends its place with the answer', async () => {
+      const { h, store } = await fileHarness();
+      expect(h.prepare.mock.calls[0][0]).toMatchObject({ wantFile: true, requestedStep: 'full' });
+      expect(store.upload).not.toHaveBeenCalled();
+      const r = await h.engine.decide({ requestId: 'req1', approved: true, step: 'full', decidedBy: 'app' });
+      expect(r).toEqual({ ok: true });
+      expect(store.upload).toHaveBeenCalledWith('u1', 'req1', blob, 'application/pdf');
+      const f = h.finish.mock.calls[0][3] as Extract<FinishInput, { status: 'answered' }>;
+      expect(f.response).toMatchObject({ step: 'full', text: LINE, file: { ...FILE, path: PLACE } });
+      expect(store.remove).not.toHaveBeenCalled();
+    });
+
+    it('a smaller step of the same request uploads nothing', async () => {
+      const { h, store } = await fileHarness();
+      await h.engine.decide({ requestId: 'req1', approved: true, step: 'answer', decidedBy: 'app' });
+      expect(store.upload).not.toHaveBeenCalled();
+      expect((h.finish.mock.calls[0][3] as Extract<FinishInput, { status: 'answered' }>).response).not.toHaveProperty('file');
+    });
+
+    it('an upload that fails sends nothing and leaves the card to try again', async () => {
+      const { h, store } = await fileHarness({ upload: vi.fn(async () => { throw Object.assign(new Error('offline'), { name: 'HandoffError' }); }) });
+      const r = await h.engine.decide({ requestId: 'req1', approved: true, step: 'full', decidedBy: 'app' });
+      expect(r).toMatchObject({ ok: false, message: DECIDE_ERRORS.fileUpload });
+      expect(h.finish).not.toHaveBeenCalled();
+      expect(h.state.entries!.req1.phase).toBe('awaiting-person');
+      expect(store.remove).not.toHaveBeenCalled();
+    });
+
+    it('a file the tab no longer holds is not sent', async () => {
+      const { h, store } = await fileHarness({ stashed: vi.fn(() => undefined) });
+      const r = await h.engine.decide({ requestId: 'req1', approved: true, step: 'full', decidedBy: 'app' });
+      expect(r).toMatchObject({ ok: false, message: DECIDE_ERRORS.fileGone });
+      expect(store.upload).not.toHaveBeenCalled();
+      expect(h.finish).not.toHaveBeenCalled();
+    });
+
+    it('an answer that could not be written takes the uploaded file back', async () => {
+      const { h, store } = await fileHarness();
+      h.finish.mockResolvedValueOnce('gone');
+      const r = await h.engine.decide({ requestId: 'req1', approved: true, step: 'full', decidedBy: 'app' });
+      expect(r.ok).toBe(false);
+      expect(store.remove).toHaveBeenCalledWith(PLACE);
+    });
+
+    it('without a place to upload to, the request is prepared as text', async () => {
+      const h = await activeHarness();
+      h.push([request({ tool: 'sieve_full_item', requestedStep: 'full', wantFile: true })]);
+      await flush();
+      expect(h.prepare.mock.calls[0][0]).not.toHaveProperty('wantFile');
+    });
+  });
+
   it('approves with related items ticked in the app', async () => {
     const h = await awaitingHarness();
     await h.engine.toggleRelated('req1', 'gmail:m2');

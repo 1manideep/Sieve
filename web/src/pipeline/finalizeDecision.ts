@@ -107,6 +107,9 @@ export async function finalizeDecision(proposal: Proposal, decision: Decision, e
     throw new DecisionError('option-unavailable', "That step isn't available for one of the items.");
   }
 
+  // A file is one item's original: it goes on its own.
+  if (main.file && ids.length > 1) throw new DecisionError('bad-items', 'A file is sent on its own. Untick the other items first.');
+
   // 9.
   const options = [main, ...(related as StepOption[])];
   const text = composeOutgoingText(options);
@@ -140,9 +143,8 @@ export async function finalizeDecision(proposal: Proposal, decision: Decision, e
     status: proposal.requester.kind === 'outside' ? 'pending-collection' : 'delivered',
     decidedBy: decision.decidedBy,
     chars: text.length,
-    ...(main.file && ids.length === 1 ? { fileBytes: main.file.bytes } : {}),
+    ...(main.file ? { fileBytes: main.file.bytes } : {}),
   };
   const approveStep: TraceStep = { kind: 'approve', label: LABELS.approved(step, ids.length), where: 'device', ms: 0, at: decision.decidedAt };
-  // a file is one item's original: with related items ticked the step is text, as always
-  return main.file && ids.length === 1 ? { payload, receipt, approveStep, file: main.file } : { payload, receipt, approveStep };
+  return main.file ? { payload, receipt, approveStep, file: main.file } : { payload, receipt, approveStep };
 }

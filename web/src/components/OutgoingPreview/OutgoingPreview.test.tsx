@@ -13,6 +13,16 @@ describe('OutgoingPreview', () => {
     await expectNoAxeViolations();
   });
 
+  it('a file sent as itself: its name and size, and never "No personal details found" (Nov 22)', async () => {
+    const file = option('full', 'Lease_2026.pdf (PDF, 178 KB)', { file: { name: 'Lease_2026.pdf', mime: 'application/pdf', bytes: 182_000 } });
+    render(<main><OutgoingPreview id="p" label="Exactly what Gemini CLI would receive" option={file} /></main>);
+    expect(screen.getByTestId('outgoing-text').textContent).toBe('Lease_2026.pdf (PDF, 178 KB)');
+    expect(screen.getByText('178 KB · sent as it is, nothing inside it is masked')).toBeInTheDocument();
+    expect(screen.getByText('The file itself is sent, through a link that works for 10 minutes. Sieve cannot hide personal details inside a file.')).toBeInTheDocument();
+    expect(screen.queryByText(/No personal details found/)).toBeNull();
+    await expectNoAxeViolations();
+  });
+
   it('shows redaction chips and the count of hidden details', async () => {
     const full = option('full', DEPOSIT_FULL, { redactions: 3 });
     render(<main><OutgoingPreview id="p" label="What would leave this device" option={full} /></main>);
