@@ -146,7 +146,7 @@ export async function checkOutgoing(
   const previous = (record as ShareCheckedRecord).shareChecks ?? [];
   const cached = previous.find((c) => c.key === key);
   const entry: ShareCheck = { key };
-  if (cached?.injection?.version === STAGE_VERSIONS.nanoInjection) entry.injection = cached.injection;
+  if (cached?.injection?.version === STAGE_VERSIONS.shareInjection) entry.injection = cached.injection;
   if (cached?.pii?.version === STAGE_VERSIONS.nanoPii) entry.pii = cached.pii;
   const fromCache = { injection: !!entry.injection, pii: !!entry.pii };
   const nano = fromCache.injection && fromCache.pii ? 'available' : await nanoText();
@@ -174,7 +174,7 @@ export async function checkOutgoing(
         if (at) quote = cutGraphemes(text.slice(at.start, at.end).trim(), INJECTION_QUOTE_MAX_CHARS);
         else ignored = true;
       }
-      entry.injection = { version: STAGE_VERSIONS.nanoInjection, ran: res.where, ms: res.ms, at: Date.now(), ...(quote ? { quote } : {}) };
+      entry.injection = { version: STAGE_VERSIONS.shareInjection, ran: res.where, ms: res.ms, at: Date.now(), ...(quote ? { quote } : {}) };
       changed = true;
       const label = quote ? SHARE_CHECK_LABELS.injectionFlagged : ignored ? SHARE_CHECK_LABELS.injectionIgnored : SHARE_CHECK_LABELS.injectionNone;
       injectionStep = { ...res.trace, kind: 'injection', label, ms: res.ms, charsSent: res.charsSent, at: Date.now() };

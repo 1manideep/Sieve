@@ -68,6 +68,7 @@ function buildModel(spec: ModelSpec): GenerativeModel {
     system: spec.system,
     image: spec.image,
     schema: spec.schema,
+    quietSchema: spec.purpose === 'injection-check',
     bindToScheduler: spec.mode !== 'PREFER_IN_CLOUD',
   });
   return new GenerativeModel(getAiInstance(), inCloudParams, undefined, adapter);

@@ -53,6 +53,9 @@ export const STAGE_VERSIONS = {
   nanoPii: 'nano-pii@1',
   patterns: 'patterns@1',
   nanoInjection: 'nano-injection@1',
+  // The same check at share time, on the text that would leave. Its own version: raising it re-reads a text the next
+  // time it is asked for, without re-reading every item of the index. @2: Chrome's schema line is kept out of the input.
+  shareInjection: 'share-injection@2',
 } as const;
 
 // 10 CR-5: prompt versions as numbers (the same versions as the stage stamps above)

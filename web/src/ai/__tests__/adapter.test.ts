@@ -39,6 +39,29 @@ describe('SieveDeviceAdapter with the real SDK (10 section 16.5)', () => {
     await deleteApp(app);
   });
 
+  it('the check for text aimed at an AI keeps Chrome\'s schema line out of the model\'s input; other tasks do not', async () => {
+    const seen: (object | undefined)[] = [];
+    const lm = installFakeLanguageModel({
+      availability: { text: 'available', image: 'available' },
+      respond: (_messages, options) => {
+        seen.push(options);
+        return '{"suspicious":false,"quote":""}';
+      },
+    });
+    setLanguageModelForTests(lm);
+    await getNanoAvailability();
+    const schema = { type: 'object', properties: { suspicious: { type: 'boolean' }, quote: { type: 'string' } }, required: ['suspicious', 'quote'] };
+    await modelFor(spec({ purpose: 'injection-check', schema })).generateContent(request('Your flight departs on Saturday.'));
+    expect(seen[0]).toMatchObject({ responseConstraint: schema, omitResponseConstraintInput: true });
+    await modelFor(spec({ purpose: 'verify-answer', schema })).generateContent(request('Your flight departs on Saturday.'));
+    expect(seen[1]).toMatchObject({ responseConstraint: schema });
+    expect(seen[1]).not.toHaveProperty('omitResponseConstraintInput');
+    // no schema: nothing about one is passed at all
+    await modelFor(spec({ purpose: 'draft' })).generateContent(request('Say a fruit'));
+    expect(seen[2]).not.toHaveProperty('responseConstraint');
+    expect(seen[2]).not.toHaveProperty('omitResponseConstraintInput');
+  });
+
   it('AD-1: ONLY_ON_DEVICE runs on the fake Nano with one clone and one destroy, and no fetch', async () => {
     const lm = installFakeLanguageModel({ availability: { text: 'available', image: 'available' }, respond: () => 'BANANA' });
     setLanguageModelForTests(lm);

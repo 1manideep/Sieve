@@ -14,6 +14,12 @@ export interface DeviceAdapterOptions {
   image: boolean;
   schema?: object;
   bindToScheduler: boolean;       // true: read the signal from currentDeviceCall(); false: run unbound (draft fallback)
+  /**
+   * Keep Chrome's own line about the schema ("Remember to respond in JSON that follows this JSON Schema ...") out of
+   * the model's input. The check for text aimed at an AI read that line as part of the text it was checking and
+   * flagged clean one-sentence texts 9 times in 70; without it 3 in 70, and it caught more real ones (Nov 23, 2026).
+   */
+  quietSchema?: boolean;
 }
 
 const DEVICE_IMAGE_TYPES = new Set(['image/jpeg', 'image/png']);
@@ -77,7 +83,8 @@ export class SieveDeviceAdapter implements ChromeAdapter {
   }
 
   private promptOptions(signal: AbortSignal): LMPromptOptions {
-    return { signal, ...(this.opts.schema ? { responseConstraint: this.opts.schema } : {}) };
+    if (!this.opts.schema) return { signal };
+    return { signal, responseConstraint: this.opts.schema, ...(this.opts.quietSchema ? { omitResponseConstraintInput: true } : {}) };
   }
 
   async generateContent(request: GenerateContentRequest): Promise<Response> {

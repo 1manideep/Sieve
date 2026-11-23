@@ -29,6 +29,8 @@ export interface LMCreateOptions extends LMCoreOptions {
 export interface LMPromptOptions {
   signal?: AbortSignal;
   responseConstraint?: object;
+  /** Chrome then enforces the schema without writing a line about it into the model's input. */
+  omitResponseConstraintInput?: boolean;
 }
 export interface LanguageModelSession {
   prompt(input: string | LMMessage[], options?: LMPromptOptions): Promise<string>;
