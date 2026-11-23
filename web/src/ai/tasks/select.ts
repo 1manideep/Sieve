@@ -17,7 +17,7 @@ import {
 } from '../config';
 import { extractFacts, normFact, normalizedFacts } from '../facts';
 import { partialJsonString } from '../json';
-import { RESHAPE_REMINDER, RETRY_REMINDER, SELECT_CLOUD_SCHEMA, SELECT_SCHEMA, SELECT_SYSTEM, YES_NO_REMINDER } from '../prompts';
+import { RESHAPE_REMINDER, RETRY_REMINDER, SELECT_CLOUD_SCHEMA, SELECT_EXAMPLE, SELECT_SCHEMA, SELECT_SYSTEM, YES_NO_REMINDER, madeUpReminder } from '../prompts';
 import { runModel } from '../runModel';
 import { cleanModelSentence, collapseWhitespace, escapeDelimiters, localDay, promptField, sentences, stems, type Range } from '../text';
 import { codeTrace } from '../trace';
@@ -121,6 +121,64 @@ export function answersKind(question: string, answer: string): boolean {
   if (!money) return false;
   if (MONEY_HELD.test(answer) || NO_CHARGE.test(answer)) return true;
   return /\d/.test(answer.replace(DATE_ALL, ' ').replace(/\b(?:19|20)\d{2}\b/g, ' '));
+}
+
+const LONG_DAY: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'long', day: 'numeric' };
+const DAY_MS = 86_400_000;
+const MONTH_KEYS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const NUMERIC_DAY = /\b(\d{1,2})[/-](\d{1,2})(?:[/-](?:\d{4}|\d{2}))?\b|\b\d{4}-(\d{2})-(\d{2})\b/g;
+const RELATIVE_DAY =
+  /\b(?:today|tonight|tomorrow|yesterday|(?:mon|tues|wednes|thurs|fri|satur|sun)day|(?:this|next|last)\s+(?:week|month)|in\s+(?:a|an|one|two|three|\d+)\s+(?:days?|weeks?))\b/i;
+
+/**
+ * The dates and amounts of money in an answer that nothing the model was given holds: not the item's text or subject,
+ * not the day the item is dated, not the question, not today's date. A day the item writes in digits ("11/24") counts
+ * as held, read either way round; so does a day up to two weeks after the item's date when the item says "tomorrow",
+ * "next week" or a weekday, because the model may work that day out. Other numbers are left to the excerpt's own check.
+ */
+export function madeUpFacts(answer: string, record: IndexRecord, question: string, today: number): string[] {
+  const body = recordBody(record);
+  const day = (t: number) => new Date(t).toLocaleDateString('en-US', LONG_DAY);
+  const known = new Set<string>();
+  for (const given of [body, record.title, record.from ?? '', question, day(record.date), day(today)]) {
+    for (const f of normalizedFacts(given)) known.add(f);
+  }
+  const hold = (month: number, d: number) => {
+    if (month >= 1 && month <= 12 && d >= 1 && d <= 31) known.add(`date:${MONTH_KEYS[month - 1]}-${d}`);
+  };
+  for (const m of `${body} ${record.title}`.matchAll(NUMERIC_DAY)) {
+    if (m[3]) hold(Number(m[3]), Number(m[4]));
+    else {
+      hold(Number(m[1]), Number(m[2]));
+      hold(Number(m[2]), Number(m[1]));
+    }
+  }
+  if (RELATIVE_DAY.test(body)) {
+    for (let i = -1; i <= 14; i++) {
+      const d = new Date(record.date + i * DAY_MS);
+      hold(d.getMonth() + 1, d.getDate());
+    }
+  }
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of extractFacts(answer)) {
+    const n = normFact(raw);
+    if (!(n.startsWith('date:') || raw.trim().startsWith('$')) || known.has(n) || seen.has(n)) continue;
+    seen.add(n);
+    out.push(raw.trim());
+  }
+  return out;
+}
+
+const EXAMPLE_FACTS = normalizedFacts(SELECT_EXAMPLE);
+
+/**
+ * A fact of the prompt's own example answer in an answer whose item does not hold it: the model repeated its
+ * instructions. "Paid on March 3rd" went out on an answer about another payment (Nov 22, 2026), the only invented
+ * detail in six test rounds. Such an answer is never shared.
+ */
+export function repeatsExample(answer: string, record: IndexRecord, question: string, today: number): string | undefined {
+  return madeUpFacts(answer, record, question, today).find((f) => EXAMPLE_FACTS.has(normFact(f)));
 }
 
 /** What the one retry says when the first answer lacked the kind of fact asked for. */
@@ -483,6 +541,13 @@ export async function selectAndAnswer(
           // "how much" answered with a date, "when" answered with no day in it: one more try, then the check after this call decides
           if (!isYesNoQuestion(question) && !answersKind(question, answer)) {
             reminder = kindReminder(question);
+            return null;
+          }
+          // A date or an amount that is in neither the item, its subject, its date, the question nor today's date is
+          // the model's own: one more try that names it. Whatever is left after that still gets its warning.
+          const made = madeUpFacts(answer, rec, question, today);
+          if (made.length > 0) {
+            reminder = madeUpReminder(made[0] as string);
             return null;
           }
         }

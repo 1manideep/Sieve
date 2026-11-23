@@ -189,6 +189,24 @@ describe('the tester cases (Nov 20)', () => {
     expect(p.reasonCode).toMatch(/^second-check-no-r2of5-tx-gx-b1-c(?:[\w-]{1,4}\.){4}[\w-]{1,4}$/);
   });
 
+  it('an answer that repeats the date of the prompt\'s own example shares nothing (Nov 22, R16)', async () => {
+    const order = record({ id: 'gmail:order-lumora', source: 'gmail', title: 'Your Lumora order', from: 'Lumora <no-reply@mail.lumora.example>', category: 'Shopping', date: T - 12 * DAY, text: 'Thanks for your order. We charged $18.40 to the card ending 4417. Your items arrive in 3 to 5 days.' });
+    idx.records.set(order.id, order);
+    idx.search.mockResolvedValue([idx.cand(order.id)]);
+    // the same on both tries: the item holds no "March 3", so the model took it from its instructions
+    model('P1', 'You were charged $18.40, paid on March 3rd.');
+    const p = await prepareProposal(input({ question: 'How much did Lumora charge me?' }));
+    expect(hybrid.callsFor('select-answer')).toHaveLength(2);
+    expect(p.outcome).toBe('no-match');
+    expect(p.reasonCode).toMatch(/^answer-repeats-prompt-example-r1-c[\w-]{1,4}$/);
+    expect(hybrid.callsFor('verify-answer')).toHaveLength(0);
+    expect(p.options.every((o) => !o.available)).toBe(true);
+    // without the added date, the same item answers
+    model('P1', 'You were charged $18.40.');
+    const ok = await prepareProposal(input({ question: 'How much did Lumora charge me?' }));
+    expect(ok.outcome).toBe('ready');
+  });
+
   it('a "when" question answered with no date or number in it shares nothing', async () => {
     const shop = record({ id: 'gmail:plan-shop', source: 'gmail', title: 'Your bike is ready Saturday', from: 'Dana Hill <dana@oakhillcycles.example>', category: 'Personal', date: T - 25 * DAY, text: 'Pickup is Saturday at 11 AM. The free service plan starts on pickup day, after you take it home.' });
     idx.records.set(shop.id, shop);

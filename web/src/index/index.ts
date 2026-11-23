@@ -34,7 +34,7 @@ export type { IndexDoc } from './keywordIndex';
 export { tokenize, processTerm, sStem, STOP_WORDS } from './tokenize';
 export { parseDates, mentionedDays, dayFirst } from './dates';
 export type { DateHint } from './dates';
-export { preloadDictionary, isEnglishWord, dictionaryCandidates, loadDictionaryText } from './dictionary';
+export { preloadDictionary, dictionaryReady, isEnglishWord, dictionaryCandidates, loadDictionaryText } from './dictionary';
 export { osaDistance, correctQuery } from './typos';
 export { relativeWhen, reasonFor } from './reasons';
 export { buildPreview } from './preview';

@@ -25,7 +25,7 @@ export function loadDictionaryText(tsv: string): void {
   byLength = buckets;
 }
 
-/** Fetch and parse the list (called at app start for the real db and the Playground). */
+/** Fetch and parse the list, once per tab (dictionaryReady calls it before a question is read). */
 export function preloadDictionary(): Promise<void> {
   if (words) return Promise.resolve();
   loading ??= (async () => {
@@ -43,6 +43,16 @@ export function preloadDictionary(): Promise<void> {
 
 export function isDictionaryLoaded(): boolean {
   return words !== null;
+}
+
+/**
+ * For one question: resolves when the list is loaded, or after `capMs` without it (the fetch goes on, so the next
+ * question has it). Until Nov 22, 2026 nothing in the app called preloadDictionary: the running app corrected no typo
+ * and knew no sender or company word, while every test and the search eval loaded the list themselves.
+ */
+export function dictionaryReady(capMs = 4000): Promise<void> {
+  if (words) return Promise.resolve();
+  return Promise.race([preloadDictionary(), new Promise<void>((resolve) => setTimeout(resolve, capMs))]);
 }
 
 export function isEnglishWord(w: string): boolean {

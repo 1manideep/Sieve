@@ -5,7 +5,7 @@ import { SELECT_TARGET_TOKENS, TIMING } from '../config';
 import { setLanguageModelForTests } from '../device/languageModel';
 import { setHybridForTests } from '../hybrid';
 import { SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
-import { answerKind, answersKind, bestWindow, deriveExcerpt, fitPassages, selectAndAnswer, selectPrompt } from '../tasks/select';
+import { answerKind, answersKind, bestWindow, deriveExcerpt, fitPassages, madeUpFacts, repeatsExample, selectAndAnswer, selectPrompt } from '../tasks/select';
 import { parseWords } from '../tasks/words';
 import { createFakeHybrid, promptText, type FakeReply } from '../testing/fakeHybrid';
 import { installFakeLanguageModel } from '../testing/fakeLanguageModel';
@@ -133,6 +133,54 @@ describe('selectAndAnswer (10 section 16.7)', () => {
     const plain = useReplies(reply('P1', 'Your deposit was $1,200.'));
     await selectAndAnswer('How much was my deposit?', [RECORDS.deposit], 'sample', { today: TODAY });
     expect(plain.calls).toHaveLength(1);
+  });
+
+  it('Nov 22: a date or an amount the item does not hold gets one more try that names it', async () => {
+    const order = record({
+      id: 'gmail:order-lumora', source: 'gmail', title: 'Your Lumora order', from: 'Lumora <no-reply@mail.lumora.example>', date: new Date(2026, 10, 10, 9).getTime(),
+      text: 'Thanks for your order. We charged $18.40 to the card ending 4417. Your items arrive in 3 to 5 days.',
+    });
+    // the date of the prompt's own example on another payment: asked again, with the added date named
+    const fake = useReplies(reply('P1', 'You were charged $18.40, paid on March 3rd.'), reply('P1', 'You were charged $18.40.'));
+    const res = await selectAndAnswer('How much did Lumora charge me?', [order], 'sample', { today: TODAY });
+    expect(res.ok && res.value.answer).toBe('You were charged $18.40.');
+    expect(fake.calls).toHaveLength(2);
+    expect(promptText(fake.calls[1].parts)).toContain('it says "March 3rd", which the passage does not say');
+    // only what the item holds: no second call
+    const plain = useReplies(reply('P1', 'You were charged $18.40.'));
+    await selectAndAnswer('How much did Lumora charge me?', [order], 'sample', { today: TODAY });
+    expect(plain.calls).toHaveLength(1);
+    // the same on the second try: one retry, never a third call (the pipeline refuses the example's facts after this)
+    const stuck = useReplies(reply('P1', 'You were charged $18.40, paid on March 3rd.'));
+    const again = await selectAndAnswer('How much did Lumora charge me?', [order], 'sample', { today: TODAY });
+    expect(again.ok && again.value.answer).toBe('You were charged $18.40, paid on March 3rd.');
+    expect(stuck.calls).toHaveLength(2);
+  });
+
+  it('madeUpFacts and repeatsExample: what an item holds, and what is the model\'s own', () => {
+    const q = 'When does my order ship?';
+    const item = record({
+      id: 'gmail:order-ships', source: 'gmail', title: 'Order update', from: 'Lumora <no-reply@mail.lumora.example>', date: new Date(2026, 10, 10, 9).getTime(),
+      text: 'Your order ships tomorrow. Total on 11/24: $18.40. The pickup window opens 2026-12-02 and takes 45 minutes.',
+    });
+    expect(madeUpFacts('It ships on November 11.', item, q, TODAY)).toEqual([]);                 // "tomorrow", from the day it is dated
+    expect(madeUpFacts('The total on November 24 was $18.40.', item, q, TODAY)).toEqual([]);     // "11/24"
+    expect(madeUpFacts('Pickup opens on December 2.', item, q, TODAY)).toEqual([]);              // "2026-12-02"
+    expect(madeUpFacts('The email is dated November 10.', item, q, TODAY)).toEqual([]);          // the item's own date
+    expect(madeUpFacts('As of today, November 16, it has not shipped.', item, q, TODAY)).toEqual([]);
+    expect(madeUpFacts('It was charged on June 5.', item, 'What was charged on June 5?', TODAY)).toEqual([]);   // the question's own day
+    expect(madeUpFacts('It takes 50 minutes.', item, q, TODAY)).toEqual([]);                     // other numbers are the excerpt check's
+    expect(madeUpFacts('You paid $1,200 on March 3.', item, q, TODAY)).toEqual(['$1,200', 'March 3']);
+    expect(madeUpFacts('It ships on July 9 for $21.00.', item, q, TODAY)).toEqual(['July 9', '$21.00']);
+    // with no "tomorrow" or weekday in the item, a nearby day is not worked out from anything
+    const plain = record({ ...item, id: 'gmail:order-plain', text: 'Your order has shipped. Total: $18.40.' });
+    expect(madeUpFacts('It ships on November 11.', plain, q, TODAY)).toEqual(['November 11']);
+
+    // the prompt's own example: only when the item does not hold the fact
+    expect(repeatsExample('You were charged $18.40, paid on March 3rd.', item, q, TODAY)).toBe('March 3rd');
+    expect(repeatsExample('Your total was $1,200.', item, q, TODAY)).toBe('$1,200');
+    expect(repeatsExample('It ships on July 9.', item, q, TODAY)).toBeUndefined();                // made up, but not the example's
+    expect(repeatsExample('Your deposit was $1,200, paid on March 3.', RECORDS.deposit, 'How much was my deposit?', TODAY)).toBeUndefined();
   });
 
   it('Nov 22: an answer with several facts, or one copied from the item, gets one more try that says what to change', async () => {

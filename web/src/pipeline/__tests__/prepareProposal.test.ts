@@ -75,6 +75,26 @@ describe('prepareProposal (10 section 16.10)', () => {
     selects({ item: 'P1' });
   });
 
+  it('has the word list before the question is read or searched (20 section 9.2)', async () => {
+    const order: string[] = [];
+    idx.dictionaryReady.mockImplementation(async () => {
+      await Promise.resolve();
+      order.push('word list');
+    });
+    idx.parseQuestion.mockImplementation((q) => {
+      order.push('read');
+      return { normalized: q, corrected: q, hints: {} };
+    });
+    idx.search.mockImplementation(async () => {
+      order.push('search');
+      return [];
+    });
+    await run();
+    expect(order.slice(0, 2)).toEqual(['word list', 'read']);
+    expect(order).toContain('search');
+    expect(idx.dictionaryReady).toHaveBeenCalledTimes(1);
+  });
+
   it('PP-1: the golden path in the Playground', async () => {
     idx.search.mockResolvedValue([
       idx.cand('playground:deposit', 'vector', { start: 0, end: BODIES.deposit.length }),

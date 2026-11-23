@@ -10,10 +10,10 @@ import type {
 } from '@sieve/shared';
 import {
   CANDIDATE_POOL, CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, answerKind, answersKind, codeTrace, deriveExcerpt, excerptBasis, fitPassages, getNanoAvailability, hasFreshConsent,
-  recordBody, searchWords, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
+  recordBody, repeatsExample, searchWords, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
 } from '@/ai';
 import {
-  asksCount, asksLatest, asksSeveral, asksState, clockFor, flushUrgentEmbeds, getRecord, identifierTerms, knownOrgsOf, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
+  asksCount, asksLatest, asksSeveral, asksState, clockFor, dictionaryReady, flushUrgentEmbeds, getRecord, identifierTerms, knownOrgsOf, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
   type HardFilter, type ParsedQuestion, type SearchReport, type SieveDb,
 } from '@/index';
 import { asksSaid, describesOnlySender, holdsTopic, titleSaysAskedKind, topicTerms } from '@/index/cues';
@@ -408,6 +408,10 @@ async function prepare(run: Run): Promise<Proposal> {
   if (stepIndex(input.requestedStep) > stepIndex(input.maxStep)) return run.fail(LABELS.overGrant);
   if (run.aborted) return run.stopped();
 
+  // 2. The word list, fetched once per tab: typo correction and the sender and company words all read it (20 section 9.2).
+  await dictionaryReady();
+  if (run.aborted) return run.stopped();
+
   // 3. The lookup (drafting words removed) and hints.
   let lookup = splitDraftRequest(q).lookup;
   // 3.0 Words that read as instructions to Sieve ("SYSTEM:", "pre-approved") are left out of the search and of every
@@ -734,6 +738,12 @@ async function prepare(run: Run): Promise<Proposal> {
     if (!pick) {
       run.errorCode = 'pick-not-listed';
       return run.finish('error');
+    }
+    // A fact of the answer prompt's own example in the answer, when the item does not hold it: the model repeated its
+    // instructions ("paid on March 3rd" on another payment, Nov 22, 2026). It had one more try; this is never shared.
+    if (repeatsExample(res.value.answer, pick.rec, lookup, today)) {
+      run.code('rule', LABELS.exampleRepeated);
+      return run.why(`answer-repeats-prompt-example-r${list.indexOf(pick) + 1}-c${readCode(list)}`).blockedOrNoMatch(neverBlocked);
     }
 
     // 12a. Freshness, before any step option is built.
