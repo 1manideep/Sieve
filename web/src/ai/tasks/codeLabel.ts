@@ -29,8 +29,26 @@ export function isPetCare(item: Pick<IndexRecord, 'title' | 'from' | 'preview'>)
   return PET_CARE.test(fold(`${item.from ?? ''}\n${item.title}\n${item.preview ?? ''}`));
 }
 
+/**
+ * A hair salon, a barber or a nail salon, and the booking systems they send from. The label prompt files
+ * "appointments" under Health, so a haircut's booking, forms and receipts were never shared (Nov 23, 2026: a
+ * salon's receipt could not answer what was paid there). Such mail is Personal, unless it also holds a strong
+ * health word (a clinic, a doctor, a prescription), which keeps it in Health.
+ */
+const SELF_CARE = /\b(hair (salon|loft|studio|bar|lounge|cut|cuts|color|colour)|haircuts?|salon|barbers?|barbershop|blow ?outs?|curly cut|nail (salon|bar|studio)|manicures?|pedicures?|lash (studio|bar|extensions?)|brow (bar|studio|wax\w*)|meevo|meevomail|vagaro|booksy|styleseat|fresha|glossgenius)\b/i;
+
+export function isSelfCare(item: Pick<IndexRecord, 'title' | 'from' | 'preview'>): boolean {
+  const text = fold(`${item.from ?? ''}\n${item.title}\n${item.preview ?? ''}`);
+  return SELF_CARE.test(text) && !HEALTH_STRONG.some((r) => r.test(text));
+}
+
+/** Mail that reads like Health but is not the person's own health: a pet's care, or a salon or a barber. */
+export function notOwnHealth(item: Pick<IndexRecord, 'title' | 'from' | 'preview'>): boolean {
+  return isPetCare(item) || isSelfCare(item);
+}
+
 /** Raised whenever the rules below change, so a testing readout can say which rules a page runs. */
-export const CODE_LABEL_VERSION = 4;
+export const CODE_LABEL_VERSION = 5;
 
 // Order matters: the first category with a matching pattern wins.
 export const CODE_LABEL_RULES: [Category, RegExp[]][] = [
@@ -129,7 +147,7 @@ export function codeLabel(item: LabelInput): { category: Category; matched: bool
     return { category: 'Photos', matched: true };
   }
   const text = fold(`${item.from ?? ''}\n${item.title}\n${item.preview ?? ''}`);
-  if (isPetCare(item)) return { category: 'Personal', matched: true };
+  if (notOwnHealth(item)) return { category: 'Personal', matched: true };
   const system = item.kind === 'email' && isSystemSender(item.from);
   // Sent to many: a company's system by its address, or the source's own word for it (Gmail's tabs).
   const many = system || (item.kind === 'email' && item.bulk === true);
@@ -148,13 +166,13 @@ export function codeLabel(item: LabelInput): { category: Category; matched: bool
  * The category an indexed item should have under the current rules, when it differs from the one it has; else
  * null. Two kinds of item qualify: one that only plain code has sorted, and one whose model label plain code
  * disagreed with. A model label plain code agreed with, a rule (the Health safety net) and a seed are never
- * touched, and nothing is moved out of Health except mail about a pet (isPetCare).
+ * touched, and nothing is moved out of Health except mail about a pet or a salon (notOwnHealth).
  */
 export function codeRelabel(
   rec: Pick<IndexRecord, 'title' | 'from' | 'preview' | 'kind' | 'bulk' | 'category' | 'categoryBy' | 'enrich'>,
 ): Category | null {
   if (rec.kind === 'photo') return null;
-  if (rec.category === 'Health' && rec.categoryBy !== 'seed' && isPetCare(rec)) return 'Personal';
+  if (rec.category === 'Health' && rec.categoryBy !== 'seed' && notOwnHealth(rec)) return 'Personal';
   // A model's label that plain code disagreed with (marked low): plain code's category is the better one, measured.
   const disputed = (rec.categoryBy === 'device' || rec.categoryBy === 'cloud') && rec.enrich?.label?.confidence === 'low';
   if (rec.categoryBy !== 'code' && !disputed) return null;

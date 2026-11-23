@@ -9,7 +9,7 @@ import { runModel } from '../runModel';
 import { promptField } from '../text';
 import { codeTrace } from '../trace';
 import type { Priority } from '../types';
-import { codeLabel, isHealthStrong, isPetCare } from './codeLabel';
+import { codeLabel, isHealthStrong, notOwnHealth } from './codeLabel';
 
 export { CODE_LABEL_RULES, HEALTH_STRONG, codeLabel, isHealthStrong } from './codeLabel';
 export { LABEL_CLOUD_SCHEMA, LABEL_SCHEMA, LABEL_SYSTEM } from '../prompts';
@@ -185,8 +185,8 @@ export async function labelBatch(
       // The model and plain code disagree. Measured on 225 labelled emails (Nov 21, 2026): in these cases the model
       // was right 21% of the time and plain code 74%, so plain code's category is kept, marked low. An item the
       // model filed under Health stays there: Health is never shared, and that rule fails closed. The one exception
-      // is mail about a pet (isPetCare), which is not the person's health.
-      if (label !== 'Health' || isPetCare(item)) label = code.category;
+      // is mail about a pet or a salon (notOwnHealth), which is not the person's health.
+      if (label !== 'Health' || notOwnHealth(item)) label = code.category;
       confidence[item.id] = 'low';
     }
     labels[item.id] = label;

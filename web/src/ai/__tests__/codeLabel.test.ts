@@ -2,7 +2,7 @@
 // matching no category's words was all filed under Personal. Senders and subjects here are made up.
 import { describe, expect, it } from 'vitest';
 import type { Category, IndexRecord } from '@sieve/shared';
-import { codeLabel, codeRelabel, isBulkTab, isHealthStrong, isPetCare, isSystemSender } from '../tasks/codeLabel';
+import { codeLabel, codeRelabel, isBulkTab, isHealthStrong, isPetCare, isSelfCare, isSystemSender } from '../tasks/codeLabel';
 
 const email = (from: string, title: string, over: Partial<IndexRecord> = {}) => ({ kind: 'email' as const, from, title, preview: '', ...over });
 const label = (from: string, title: string, over: Partial<IndexRecord> = {}) => codeLabel(email(from, title, over));
@@ -129,6 +129,38 @@ describe('codeRelabel: the index catches up with better rules', () => {
     expect(codeRelabel({ ...pet, categoryBy: 'seed' })).toBeNull();
     const own = { ...email('Marlow Clinic <noreply@marlowclinic.example>', 'Your lab results are ready'), category: 'Health' as Category, categoryBy: 'device' as const };
     expect(codeRelabel({ ...own, enrich: { label: high } })).toBeNull();
+  });
+});
+
+describe('salon and barber mail (Nov 23, 2026)', () => {
+  it('is Personal, is moved out of Health whoever filed it there, and a strong health word keeps it in Health', () => {
+    const high = { v: 1, by: 'device' as const, at: 1, confidence: 'high' as const };
+    for (const [from, title] of [
+      ['The Hair Studio On Elm <noreply@meevomail.com>', 'Sale Receipt'],
+      ['The Hair Studio On Elm <noreply@meevomail.com>', 'Forms for your appt on Tue 9/1/26'],
+      ['Kestrel Barbershop <bookings@kestrelbarber.example>', 'Your haircut is booked'],
+      ['Polished Nail Bar <hello@polishednails.example>', 'Your manicure on Saturday'],
+      ['Vagaro <no-reply@vagaro.com>', 'Appointment reminder'],
+    ] as const) {
+      const item = email(from, title);
+      expect(isSelfCare(item), title).toBe(true);
+      expect(isHealthStrong(item), title).toBe(false);
+      expect(codeLabel(item), title).toEqual({ category: 'Personal', matched: true });
+      const filed = { ...item, category: 'Health' as Category };
+      for (const categoryBy of ['device', 'cloud', 'rule', 'code'] as const) expect(codeRelabel({ ...filed, categoryBy, enrich: { label: high } }), title).toBe('Personal');
+      expect(codeRelabel({ ...filed, categoryBy: 'seed' })).toBeNull();
+    }
+    // a strong health word wins: a clinic that also does hair removal, a dermatologist's salon-sounding name
+    for (const [from, title] of [
+      ['Laser Salon Medical Clinic <hi@laserclinic.example>', 'Your appointment'],
+      ['Dr. Okafor Dermatology <frontdesk@skinsalon.example>', 'Your prescription is ready'],
+    ] as const) {
+      const item = email(from, title);
+      expect(isSelfCare(item), title).toBe(false);
+      expect(codeRelabel({ ...item, category: 'Health' as Category, categoryBy: 'device', enrich: { label: high } }), title).toBeNull();
+    }
+    // nothing about a salon: untouched
+    expect(isSelfCare(email('Marlow Clinic <noreply@marlowclinic.example>', 'Your lab results are ready'))).toBe(false);
   });
 });
 
