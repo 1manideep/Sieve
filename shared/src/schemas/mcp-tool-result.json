@@ -8,13 +8,13 @@
     "message": { "type": "string", "description": "One sentence explaining the result and what to do next." },
     "file": {
       "type": "object",
-      "description": "Present when the person approved sending a file itself. The link works for a few minutes; give it to the person, or fetch it with your own tools.",
+      "description": "Present when the person approved sending a file itself. The link works for expires_in_seconds seconds; give it to the person, or fetch it with your own tools.",
       "properties": {
         "name": { "type": "string", "description": "The file's name." },
         "mime": { "type": "string", "description": "Its media type, for example application/pdf." },
         "bytes": { "type": "integer", "description": "Its size in bytes." },
-        "url": { "type": "string", "description": "A download link that stops working after a few minutes." },
-        "expires_in_seconds": { "type": "integer", "description": "How long the link works from now." }
+        "url": { "type": "string", "description": "A download link. It works for expires_in_seconds seconds and for at most 3 downloads." },
+        "expires_in_seconds": { "type": "integer", "description": "How many seconds the link works from now." }
       },
       "required": ["name", "mime", "bytes", "url", "expires_in_seconds"],
       "additionalProperties": false

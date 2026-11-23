@@ -365,14 +365,15 @@ def _nothing_delay(deps: Any, data: Mapping[str, Any], t0: float) -> None:
 
 
 def finish(deps: Any, ctx: CallCtx, request_id: str, data: dict | None, t0: float,
-           seen: Mapping[str, Any] | None = None) -> ToolResult:
-    """`seen`: the latest request doc a wait that ran out read; its status picks the pending message."""
+           seen: Mapping[str, Any] | None = None, *, again: bool = False) -> ToolResult:
+    """`seen`: the latest request doc a wait that ran out read; its status picks the pending message.
+    `again`: the call is a sieve_check, so a pending result does not ask the assistant to tell the person once more."""
     if data is None:
-        return tools.pending_result(request_id, seen, deps.now())
+        return tools.pending_result(request_id, seen, deps.now(), again=again)
     status = data.get("status")
     if status == "answered":
         if deps.monotonic() - t0 >= config.COLLECT_CUTOFF_SECONDS:
-            return tools.pending_result(request_id)   # the payload stays for sieve_check
+            return tools.pending_result(request_id, again=again)   # the payload stays for sieve_check
         got = collect_answer(deps.db, ctx.uid, request_id, ctx.grant.max_step, deps.now())
         if got.kind == "delivered" and got.payload is not None:
             if not ctx.playground:
@@ -385,10 +386,10 @@ def finish(deps: Any, ctx: CallCtx, request_id: str, data: dict | None, t0: floa
             return tools.unknown_request_result()
         if got.kind == "revoked" and not ctx.playground:
             mark_receipt(deps.db, ctx.uid, request_id, "revoked")
-        return tools.result_from_request(request_id, got.data or {}, deps.now())
+        return tools.result_from_request(request_id, got.data or {}, deps.now(), again=again)
     if status in ("blocked", "no-match"):
         _nothing_delay(deps, data, t0)
-    return tools.result_from_request(request_id, data, deps.now())
+    return tools.result_from_request(request_id, data, deps.now(), again=again)
 
 
 # ---------- sieve_check ----------
@@ -433,7 +434,7 @@ def handle_check(deps: Any, ctx: CallCtx, request_id: str, *, t0: float) -> Tool
                                seen=seen)
     elif status == "collected":
         return tools.error_result(tools.MSG_COLLECTED, request_id)
-    return finish(deps, ctx, request_id, data, t0, seen=seen.get("data"))
+    return finish(deps, ctx, request_id, data, t0, seen=seen.get("data"), again=True)
 
 
 # ---------- receipts ----------

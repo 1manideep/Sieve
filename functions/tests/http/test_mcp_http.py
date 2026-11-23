@@ -59,7 +59,8 @@ def test_h4_wait_then_check(db):
         assert 5 < time.monotonic() - t < 12
         assert first["status"] == "pending"
         rid = first["request_id"]
-        assert first["message"] == tools.pending_result(rid).message
+        # the first pending result asks the assistant to tell the person, once
+        assert first["message"].startswith(tools.MSG_PENDING.replace("{id}", rid))
         _, second = check(s, rid)
         assert second["status"] == "answered" and second["text"] == PAYLOAD
         _, third = check(s, rid)
@@ -173,7 +174,9 @@ def test_h12b_pending_says_when_there_is_nothing_to_approve(db):
     assert all(r["status"] == "pending" and r["request_id"] == rid for rid, r in out.items())
     assert out[young]["message"] == tools.MSG_PREPARING.replace("{id}", young)
     assert out[old]["message"] == tools.MSG_PREPARING_SLOW.replace("{id}", old)
-    assert out[waiting]["message"] == tools.pending_result(waiting).message
+    # a check on a request that waits for the person: not told again, and how long it can still be approved
+    assert out[waiting]["message"] == (tools.MSG_PENDING_AGAIN.replace("{id}", waiting)
+                                       + tools.MSG_PENDING_LEFT.replace("{left}", "117"))
     # a new question that no home base picks up stays queued: the ladder tool says it is still being prepared
     _, fresh = ladder(s, question="A question nobody prepares?")
     assert fresh["status"] == "pending"

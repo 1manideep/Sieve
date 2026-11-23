@@ -72,8 +72,21 @@ def test_pending_says_whether_there_is_anything_to_approve():
             "status": "pending", "request_id": rid, "message": slow}
     approve = tools.pending_result(rid).message
     assert approve.startswith("The person has not approved this yet. Tell them a request is waiting in Sieve")
-    assert tools.result_from_request(rid, {"status": "awaiting-person", "createdAt": old}, now).message == approve
-    assert tools.pending_result(rid, {"status": "awaiting-person", "createdAt": young}, now).message == approve
+    # a request that waits for the person says how long it can still be approved (120 minutes from when it was made)
+    left = " It can be approved for about 118 more minutes."
+    assert tools.result_from_request(rid, {"status": "awaiting-person", "createdAt": old}, now).message == approve + left
+    assert tools.pending_result(rid, {"status": "awaiting-person", "createdAt": young}, now).message == approve + left
+    late = now - timedelta(minutes=119, seconds=30)
+    assert tools.pending_result(rid, {"status": "awaiting-person", "createdAt": late}, now).message.endswith("about 1 more minutes.")
+    # a later sieve_check does not ask the assistant to tell the person again
+    again = tools.result_from_request(rid, {"status": "awaiting-person", "createdAt": old}, now, again=True).message
+    assert again == ("Still waiting for the person to approve in Sieve. You have told them already: do not tell them "
+                     f"again. Call sieve_check with request_id \"{rid}\" again." + left)
+    assert "Tell them a request is waiting" not in again
+    # while it is still being prepared the wording is the same on every check: there is nothing to approve yet
+    assert tools.result_from_request(rid, {"status": "claimed", "createdAt": young}, now, again=True).message == preparing
+    for message in (approve + left, again):
+        assert config.utf16_len(message) <= config.MESSAGE_MAX_CHARS
     # no age to go by (no time, no clock, or a naive time): still preparing, never the background line
     assert tools.result_from_request(rid, {"status": "queued"}, now).message == preparing
     assert tools.result_from_request(rid, {"status": "claimed", "createdAt": old}).message == preparing
