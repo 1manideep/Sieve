@@ -19,7 +19,7 @@ import { collapseSpaces, ensureWellFormed, isAbortError, plural, type Range } fr
 import type { BuildStepOptions } from '../types';
 import { answerKeepTypes, cleanAnswer } from './answer';
 import { dropSubject, leaksStructure, shapeAnswer } from './answerShape';
-import { keepAskerWords, notTheCompany, personSender, senderEntities, senderWordsOf } from './asker';
+import { keepAskerWords, notAnOrganisation, notTheCompany, personSender, senderEntities, senderWordsOf } from './asker';
 import { excerptHeader, locateExcerpt } from './excerpt';
 import { capFull, fullHeader, lastCutBefore } from './full';
 import { copiesTooMuch, hiddenLeak } from './invariants';
@@ -183,7 +183,7 @@ export async function buildStepOption(
     const actors = step === 'answer' ? findActorNames(text) : notTheCompany(text, findActorNames(text), rec);
     const senders = senderWordsOf(rec, opts.knownSenders);
     const finalized = finalizeSpans(text, [...runValidators(text), ...findSecretCodes(text), ...actors, ...locateEntities(text, known)], { senders });
-    const found = dropPublicValues(text, step === 'answer' ? notTheCompany(text, finalized, rec) : finalized, scanText(rec));
+    const found = dropPublicValues(text, step === 'answer' ? notAnOrganisation(text, notTheCompany(text, finalized, rec), opts.knownOrgs) : finalized, scanText(rec));
     const asked = [opts.question, ...(opts.terms ?? [])].filter((t) => t?.trim()).join('\n');
     const spans = keepAskerWords(text, found, asked || undefined);
 

@@ -111,6 +111,45 @@ export function knownSenderWords(froms: Iterable<string | undefined>): Set<strin
   return out;
 }
 
+/** Mailboxes a company's system sends from, as the start of the part before the @. A person rarely writes from one. */
+const SYSTEM_MAILBOX = /^(?:no-?reply|do-?not-?reply|donotreply|info|support|help|hello|team|news|newsletters?|notifications?|notify|alerts?|orders?|billing|receipts?|invoices?|service|services|customer|care|accounts?|mailer|mail|email|updates?|store|shop|sales|marketing|security|admin|contact|digest|bookings?|reservations?|tickets?|feedback|members?|rewards?)(?![a-z])/;
+/** Hosts that carry anyone's mail: their name says nothing about who wrote. */
+const MAIL_HOSTS = new Set('gmail googlemail yahoo ymail outlook hotmail live msn icloud me mac aol proton protonmail pm gmx zoho fastmail hey inbox relay privaterelay'.split(' '));
+
+/**
+ * Words that name an organisation in this index: a label of the domain a company's system mails from ("lumora" in
+ * no-reply@mail.lumora.example). Not a mail host, not an English word, and only from a system mailbox, so a person
+ * who writes from a domain of their own is not counted. The privacy pipeline does not mask such a word as a person's
+ * name: a merchant in "a failed payment for Lumora" came out as "[name]" (Nov 22, 2026).
+ */
+export function knownOrgWords(froms: Iterable<string | undefined>): Set<string> {
+  const out = new Set<string>();
+  if (!isDictionaryLoaded()) return out;
+  for (const f of froms) {
+    const addr = f ? fromAddress(f) : '';
+    if (!addr) continue;
+    const [local = '', domain = ''] = addr.toLowerCase().split('@');
+    if (!SYSTEM_MAILBOX.test(local)) continue;
+    for (const label of domain.split('.').filter(Boolean).slice(0, -1)) {
+      const t = label.replace(/[^\p{L}\p{N}]/gu, '');
+      if (t.length < 3 || /^\d+$/.test(t) || GENERIC.has(t) || MAIL_HOSTS.has(t) || STOP_WORDS.has(t) || isEnglishWord(t)) continue;
+      out.add(t);
+    }
+  }
+  return out;
+}
+
+const orgCache = new WeakMap<object, { size: number; set: Set<string> }>();
+
+/** knownOrgWords over a metadata map, cached until the map's size changes. */
+export function knownOrgWordsOf(meta: Map<string, { from?: string }>): Set<string> {
+  const hit = orgCache.get(meta);
+  if (hit && hit.size === meta.size && hit.set.size > 0) return hit.set;
+  const set = knownOrgWords([...meta.values()].map((m) => m.from));
+  orgCache.set(meta, { size: meta.size, set });
+  return set;
+}
+
 const knownCache = new WeakMap<object, { size: number; set: Set<string> }>();
 
 /** knownSenderWords over a metadata map, cached until the map's size changes. */

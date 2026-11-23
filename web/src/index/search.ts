@@ -9,7 +9,7 @@ import type { EmbedInput, EmbedOutput } from '../ml/protocol';
 import { errorLine } from '../robust/errorLine';
 import { BOOST, GMAIL_LIVE_K, RERANK_TEXT_CHARS, SEARCH_TUNING } from './config';
 import { repairOrphanHit } from './consistency';
-import { asksLatest, holdsTopic, isRoleCue, knownSenderWordsOf, senderMatches, topicTerms } from './cues';
+import { asksLatest, holdsTopic, isRoleCue, knownOrgWordsOf, knownSenderWordsOf, senderMatches, topicTerms } from './cues';
 import { clockFor, type SieveDb } from './db';
 import { iso } from './dates';
 import { getRecord } from './ingest';
@@ -626,6 +626,11 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
 /** The words that name a sender in this index (cues.ts), for the privacy pipeline's ID-number rule (11 section 5.6). */
 export function knownSendersOf(db: SieveDb): Set<string> {
   return knownSenderWordsOf(getRuntime(db).meta);
+}
+
+/** The words that name an organisation in this index (cues.ts): never masked as a person's name in an answer. */
+export function knownOrgsOf(db: SieveDb): Set<string> {
+  return knownOrgWordsOf(getRuntime(db).meta);
 }
 
 /** Same contentHash, other ids: 40's "also in old/" line (01 invariant 3). */

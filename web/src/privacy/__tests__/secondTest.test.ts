@@ -27,7 +27,7 @@ function rec(over: Partial<IndexRecord> & Pick<IndexRecord, 'id' | 'from' | 'tex
   };
 }
 
-const opts = (question: string, extra: { extraEntities?: KnownEntity[]; knownSenders?: Set<string> } = {}) => ({ question, maxStep: 'answer' as const, ...extra });
+const opts = (question: string, extra: { extraEntities?: KnownEntity[]; knownSenders?: Set<string>; knownOrgs?: Set<string> } = {}) => ({ question, maxStep: 'answer' as const, ...extra });
 const isPerson = () => false;
 
 const CHECKR = rec({
@@ -157,6 +157,16 @@ describe('B09: a brand with a digit or two is not an ID number', () => {
     // an amount of money or a whole sentence is never an ID, however many digits it holds
     for (const v of ['$40.00 USD', '$2,480.00', '2,480.00 INR', 'under $40.00 USD', 'Your pass credit is under $40.00 USD today']) expect(looksLikeIdNumber(v), v).toBe(false);
     for (const v of ['member 4471 2209', 'policy number AB-448812']) expect(looksLikeIdNumber(v), v).toBe(true);
+  });
+
+  it('a company of the index is not masked as a person in an answer; a person still is (Nov 22)', async () => {
+    const mail = rec({ id: 'gmail:club', from: 'Clubdesk <noreply@clubdesk.example>', title: 'A payment did not go through', text: 'Your payment to Lumora did not go through. Ask Dana Okafor at the desk.' });
+    const found: KnownEntity[] = [{ text: 'Lumora', type: 'name', by: 'nano' }, { text: 'Dana Okafor', type: 'name', by: 'nano' }];
+    const q = 'What was my most recent Clubdesk email about?';
+    const masked = await buildStepOption('answer', { answer: 'Dana Okafor wrote that your payment to Lumora did not go through.' }, mail, 'own', opts(q, { extraEntities: found }));
+    expect(masked.text).toBe('[name 1] wrote that your payment to [name 2] did not go through.');
+    const kept = await buildStepOption('answer', { answer: 'Dana Okafor wrote that your payment to Lumora did not go through.' }, mail, 'own', opts(q, { extraEntities: found, knownOrgs: new Set(['lumora']) }));
+    expect(kept.text).toBe('[name] wrote that your payment to Lumora did not go through.');
   });
 
   it('"N3stra" stays in the answer; the AWS account ID is still masked', async () => {

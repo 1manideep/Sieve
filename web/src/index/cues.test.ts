@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { asksCount, asksLatest, asksSaid, asksState, describesOnlySender, holdsTopic, identifierTerms, isRoleCue, knownSenderWords, senderCue, senderMatches, titleSaysAskedKind, topicTerms } from './cues';
+import { asksCount, asksLatest, asksSaid, asksState, describesOnlySender, holdsTopic, identifierTerms, isRoleCue, knownOrgWords, knownSenderWords, senderCue, senderMatches, titleSaysAskedKind, topicTerms } from './cues';
 import { loadDictionaryText } from './dictionary';
 
 beforeAll(() => {
@@ -50,6 +50,24 @@ describe('senderMatches', () => {
     expect(isRoleCue('my landlord')).toBe(true);
     expect(isRoleCue('the bank')).toBe(true);
     expect(isRoleCue('Delta')).toBe(false);
+  });
+});
+
+describe('knownOrgWords', () => {
+  it("takes a company's name from the domain its system mails from, and nothing from a person's address", () => {
+    const orgs = knownOrgWords([
+      'Lumora <no-reply@mail.lumora.example>',
+      'Clubdesk Billing <billing@clubdesk.example>',
+      'orders@northgear.example',
+      // people, whatever their domain: not counted
+      'Benji Okoro <benji@okorofamily.example>',
+      'Ivo Lindqvist <ivo.l@gmail.com>',
+      // a system mailbox on a mail host, or on a domain that is an English word
+      'noreply@gmail.com',
+      'News <news@garden.example>',
+      undefined,
+    ]);
+    expect([...orgs].sort()).toEqual(['clubdesk', 'lumora', 'northgear']);
   });
 });
 
