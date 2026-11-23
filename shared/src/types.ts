@@ -141,10 +141,14 @@ export interface StepOption {
   available: boolean;                     // false when above maxStep or not producible
   unavailableReason?: string;
   image?: SharedImage;                    // photos, full step only: re-encoded JPEG without EXIF/GPS, at most 600 KB
+  file?: OfferedFile;                     // full step of a request that asked for the file itself: what would be sent
   trace?: TraceStep[];                    // what ran to build this text
 }
 
 export interface SharedImage { mime: 'image/jpeg'; base64: string; width: number; height: number; bytes: number }
+
+/** The original a person is asked to send as itself: shown on the card by name, kind and size before anything is uploaded. */
+export interface OfferedFile { name: string; mime: string; bytes: number }
 
 /** A file sent as itself: its name, type and size as approved, and where the home base put it for the relay's link. */
 export interface SharedFile { name: string; mime: string; bytes: number; path: string }
@@ -198,6 +202,7 @@ export interface RelayRequest {
   allowedSources: SourceKind[];           // copied from the grant; enforced on the device
   question: string;
   hints?: QueryHints;
+  wantFile?: boolean;                     // sieve_full_item with file: true: the original itself, as a link
   status: RequestStatus;
   createdAt: Timestamp;                   // firebase Timestamp
   claimedAt?: Timestamp;
@@ -222,6 +227,7 @@ export interface Receipt {
   status: ReceiptStatus;
   decidedBy?: 'app' | 'extension' | 'rule';
   chars: number;                          // characters that left the device
+  fileBytes?: number;                     // the size of a file sent as itself, when one was
   createdAt: number;                      // epoch ms (Timestamp in Firestore)
 }
 

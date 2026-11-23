@@ -149,6 +149,11 @@ export function getMessage(id: string, format: 'minimal' | 'metadata' | 'full', 
   return gmailFetch(`/messages/${encodeURIComponent(id)}`, { units: format === 'full' ? GMAIL_COST.getFull : GMAIL_COST.get, priority: p, signal, query });
 }
 
+/** The bytes of one attachment, as Gmail holds them (base64url). Costs what a small read costs. */
+export function getAttachment(messageId: string, attachmentId: string, p: Priority = 'interactive', signal?: AbortSignal): Promise<{ data?: string; size?: number }> {
+  return gmailFetch(`/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`, { units: GMAIL_COST.get, priority: p, signal });
+}
+
 export function listHistory(startHistoryId: string, pageToken?: string, signal?: AbortSignal):
   Promise<{ history?: GmailHistory[]; nextPageToken?: string; historyId: string }> {
   const query: Record<string, string | string[] | number> = {
