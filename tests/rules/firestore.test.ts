@@ -180,6 +180,36 @@ describe('R3 payload checks', () => {
     await assertSucceeds(answerBatch(alice(), 'r3', payload({ step: 'full', image })).commit());
   });
 
+  describe('a file sent as itself (Nov 22)', () => {
+    const sent = (path: string, over: DocumentData = {}) => ({ name: 'Lease_2026.pdf', mime: 'application/pdf', bytes: 182_000, path, ...over });
+    const own = `handoffs/alice/r3/${'o'.repeat(24)}`;
+
+    it('rides on the full step when the request asked for it, from this request\'s own place', async () => {
+      await seed('users/alice/requests/r3', claimed({ status: 'awaiting-person', maxStep: 'full', wantFile: true }));
+      await assertSucceeds(answerBatch(alice(), 'r3', payload({ step: 'full', file: sent(own) })).commit());
+    });
+
+    it.each([
+      ['a request that did not ask for a file', { maxStep: 'full' }, payload({ step: 'full', file: sent(own) })],
+      ['a smaller step', { maxStep: 'full', wantFile: true }, payload({ step: 'excerpt', file: sent(own) })],
+      ["another person's place", { maxStep: 'full', wantFile: true }, payload({ step: 'full', file: sent(`handoffs/bob/r3/${'o'.repeat(24)}`) })],
+      ["another request's place", { maxStep: 'full', wantFile: true }, payload({ step: 'full', file: sent(`handoffs/alice/r4/${'o'.repeat(24)}`) })],
+      ['a place outside the handoffs', { maxStep: 'full', wantFile: true }, payload({ step: 'full', file: sent(`users/alice/r3/${'o'.repeat(24)}`) })],
+      ['a file over 20 MB', { maxStep: 'full', wantFile: true }, payload({ step: 'full', file: sent(own, { bytes: 20 * 1024 * 1024 + 1 }) })],
+      ['an extra field on the file', { maxStep: 'full', wantFile: true }, payload({ step: 'full', file: sent(own, { url: 'https://x.example/f' }) })],
+      ['an image beside the file', { maxStep: 'full', wantFile: true }, payload({ step: 'full', file: sent(own), image: { mime: 'image/jpeg', base64: 'AAAA', width: 1, height: 1, bytes: 3 } })],
+    ])('fails with %s', async (_name, request, response) => {
+      await seed('users/alice/requests/r3', claimed({ status: 'awaiting-person', ...request }));
+      await assertFails(answerBatch(alice(), 'r3', response).commit());
+    });
+
+    it('no client reads or writes a file link', async () => {
+      await seed('fileLinks/abc', { uid: 'alice', path: own });
+      await assertFails(getDoc(doc(alice(), 'fileLinks/abc')));
+      await assertFails(setDoc(doc(alice(), 'fileLinks/mine'), { uid: 'alice', path: own }));
+    });
+  });
+
   it('V5: 3,000 Japanese characters and 7,999 units of emoji are allowed', async () => {
     await seed('users/alice/requests/v5a', claimed({ status: 'awaiting-person', maxStep: 'full' }));
     await seed('users/alice/requests/v5b', claimed({ status: 'awaiting-person', maxStep: 'full' }));

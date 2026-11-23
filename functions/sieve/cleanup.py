@@ -23,12 +23,20 @@ class CleanupReport:
     expired_answered: int = 0
     receipts_expired: int = 0
     connectors_deleted: int = 0
+    files_removed: int = 0
 
 
 def run_scheduled() -> CleanupReport:
     report = run_cleanup(fb.db(), fb.now())
+    # Files sent as themselves: links past their time go, with their objects (filehttp.py).
+    try:
+        from . import filehttp
+        report.files_removed = filehttp.remove_expired(fb.db(), fb.now(), filehttp.delete_object)
+    except Exception:       # noqa: BLE001 - Storage not set up yet, or briefly away: the next run tries again
+        logs.log_event("cleanup_files_failed")
     logs.log_event("cleanup_run", expired_open=report.expired_open, expired_answered=report.expired_answered,
-                   receipts_expired=report.receipts_expired, connectors_deleted=report.connectors_deleted)
+                   receipts_expired=report.receipts_expired, connectors_deleted=report.connectors_deleted,
+                   files_removed=report.files_removed)
     return report
 
 

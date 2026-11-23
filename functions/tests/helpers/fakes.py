@@ -35,6 +35,9 @@ class FakeDocRef:
 
     create = set
 
+    def delete(self) -> None:
+        self._db.docs.pop(self.path, None)
+
     def update(self, data: dict[str, Any]) -> None:
         from google.cloud import firestore
         doc = self._db.docs.setdefault(self.path, {})
@@ -46,6 +49,14 @@ class FakeDocRef:
 
     def collection(self, name: str) -> "FakeCollection":
         return FakeCollection(self._db, f"{self.path}/{name}")
+
+
+def _matches(have: Any, op: str, want: Any) -> bool:
+    if op == "==":
+        return have == want
+    if op == "<":
+        return have is not None and have < want
+    return False
 
 
 class FakeQuery:
@@ -62,7 +73,7 @@ class FakeQuery:
     def stream(self):
         for snap in self._coll.stream():
             data = snap.to_dict() or {}
-            if all(op == "==" and data.get(f) == v for f, op, v in self._filters):
+            if all(_matches(data.get(f), op, v) for f, op, v in self._filters):
                 yield snap
 
 

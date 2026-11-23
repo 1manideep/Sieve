@@ -33,6 +33,13 @@
         }
       },
       {
+        "source": "/f/**",
+        "function": {
+          "functionId": "file",
+          "region": "us-central1"
+        }
+      },
+      {
         "source": "!/assets/**",
         "destination": "/index.html"
       }

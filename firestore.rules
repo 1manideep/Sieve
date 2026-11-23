@@ -113,16 +113,29 @@ service cloud.firestore {
         && i.height is int && i.height >= 1 && i.height <= 10000
         && i.bytes is int && i.bytes >= 1 && i.bytes <= 614400;
     }
-    function validPayload(p, maxStep) {
+    // A file sent as itself (functions/sieve/files.py): its name, type and size as approved, and the place in Cloud
+    // Storage the home base put it, which must be this person's own place for this very request.
+    function validFile(f, uid) {
+      return f is map
+        && f.keys().hasAll(['name', 'mime', 'bytes', 'path'])
+        && f.keys().hasOnly(['name', 'mime', 'bytes', 'path'])
+        && isNonEmptyString(f.name, 120)
+        && isNonEmptyString(f.mime, 100)
+        && f.bytes is int && f.bytes >= 1 && f.bytes <= 20971520
+        && f.path is string
+        && f.path.matches('^handoffs/' + uid + '/' + request.resource.id + '/[A-Za-z0-9_-]{16,64}$');
+    }
+    function validPayload(p, maxStep, uid, wantFile) {
       return p is map
         && p.keys().hasAll(['step', 'text', 'chars', 'itemCount'])
-        && p.keys().hasOnly(['step', 'text', 'chars', 'itemCount', 'image'])
+        && p.keys().hasOnly(['step', 'text', 'chars', 'itemCount', 'image', 'file'])
         && isStep(p.step)
         && stepRank(p.step) <= stepRank(maxStep)
         && isNonEmptyString(p.text, 8000)
         && p.chars is int && p.chars >= 1 && p.chars <= 8000
         && p.itemCount is int && p.itemCount >= 1 && p.itemCount <= 20
-        && (!('image' in p) || (p.step == 'full' && validImage(p.image)));
+        && (!('image' in p) || (p.step == 'full' && validImage(p.image)))
+        && (!('file' in p) || (p.step == 'full' && wantFile == true && !('image' in p) && validFile(p.file, uid)));
     }
     function isClaim(uid, before, after, keys) {
       return before.status == 'queued'
@@ -151,12 +164,12 @@ service cloud.firestore {
         && keys.hasOnly(['status', 'message'])
         && validMessage(after);
     }
-    function isAnswer(before, after, keys) {
+    function isAnswer(uid, before, after, keys) {
       return before.status == 'awaiting-person'
         && after.status == 'answered'
         && keys.hasOnly(['status', 'answeredAt', 'response'])
         && after.answeredAt == request.time
-        && validPayload(after.response, before.maxStep);
+        && validPayload(after.response, before.maxStep, uid, before.get('wantFile', false));
     }
     function isDecline(before, after, keys) {
       return before.status == 'awaiting-person'
@@ -182,7 +195,7 @@ service cloud.firestore {
                 || isReclaim(uid, before, after, keys)
                 || isPresent(before, after, keys)
                 || isClaimedOutcome(before, after, keys)
-                || isAnswer(before, after, keys)
+                || isAnswer(uid, before, after, keys)
                 || isDecline(before, after, keys)));
     }
 

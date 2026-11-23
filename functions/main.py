@@ -1,7 +1,7 @@
 """Cloud Functions for Sieve (docs/spec/30-relay-server.md section 2.5). Declarations only."""
 from firebase_functions import https_fn, options, scheduler_fn
 
-from sieve import callables, cleanup, config, fb, mcp_server
+from sieve import callables, cleanup, config, fb, filehttp, mcp_server
 
 options.set_global_options(region=config.REGION, max_instances=10)
 
@@ -16,6 +16,12 @@ fb.app()
 )
 def mcp(req: https_fn.Request) -> https_fn.Response:
     return mcp_server.handle_http(req)
+
+
+@https_fn.on_request(memory=options.MemoryOption.MB_512, cpu=1, concurrency=10, timeout_sec=60, max_instances=5, invoker="public")
+def file(req: https_fn.Request) -> https_fn.Response:
+    """The download address of a file a person approved (sieve/filehttp.py): GET /f/<token>."""
+    return filehttp.handle_http(req)
 
 
 _CALLABLE = dict(
