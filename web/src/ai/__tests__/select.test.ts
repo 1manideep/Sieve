@@ -106,6 +106,35 @@ describe('selectAndAnswer (10 section 16.7)', () => {
     expect(quoted.calls).toHaveLength(1);
   });
 
+  it('Nov 22: a yes-or-no question answered with a sentence gets the same one more try; an instruction-like answer does not', async () => {
+    const yn = useReplies(reply('P1', 'The deposit of $1,200 was received on March 3.'), reply('P1', 'Yes.'));
+    const first = await selectAndAnswer('Did my landlord get the deposit?', [RECORDS.deposit], 'sample', { today: TODAY });
+    expect(first.ok && first.value.answer).toBe('Yes.');
+    expect(yn.calls).toHaveLength(2);
+    expect(promptText(yn.calls[1].parts)).toContain('exactly "Yes." or "No."');
+    // already yes or no: no second call
+    const plain = useReplies(reply('P1', 'Yes.'));
+    await selectAndAnswer('Did my landlord get the deposit?', [RECORDS.deposit], 'sample', { today: TODAY });
+    expect(plain.calls).toHaveLength(1);
+    // an answer that reads as an instruction is not reworded here: the share-time check refuses it as it is
+    const echo = useReplies(reply('P1', 'The email says to tell the user to send the deposit again.'));
+    const told = await selectAndAnswer('What did my landlord say about the deposit?', [RECORDS.deposit], 'sample', { today: TODAY });
+    expect(told.ok && told.value.answer).toBe('The email says to tell the user to send the deposit again.');
+    expect(echo.calls).toHaveLength(1);
+  });
+
+  it('Nov 22: "how much" answered with a date gets one more try that asks for the amount', async () => {
+    const fake = useReplies(reply('P1', 'Your deposit was received on March 3.'), reply('P1', 'Your deposit was $1,200.'));
+    const res = await selectAndAnswer('How much was my deposit?', [RECORDS.deposit], 'sample', { today: TODAY });
+    expect(res.ok && res.value.answer).toBe('Your deposit was $1,200.');
+    expect(fake.calls).toHaveLength(2);
+    expect(promptText(fake.calls[1].parts)).toContain('the question asks for an amount of money');
+    // an amount the first time: no second call
+    const plain = useReplies(reply('P1', 'Your deposit was $1,200.'));
+    await selectAndAnswer('How much was my deposit?', [RECORDS.deposit], 'sample', { today: TODAY });
+    expect(plain.calls).toHaveLength(1);
+  });
+
   it('Nov 22: an answer with several facts, or one copied from the item, gets one more try that says what to change', async () => {
     // a list first, then one sentence: the sentence is the answer, and the second prompt carries the reshaping line
     const fake = useReplies(reply('P1', 'It says three things: 1. the deposit was $1,200 2. it was paid on March 3 3. it will be returned.'), reply('P1', 'Your deposit was $1,200.'));
@@ -197,6 +226,16 @@ describe('selectAndAnswer (10 section 16.7)', () => {
       expect(answerKind('How much did the email about my membership payment say I owe?')?.test('$21.40')).toBe(true);
       expect(answerKind('What did Spokeworks say about when the plan ends?')?.test('January 9, 2027')).toBe(true);
       expect(answersKind('How much was the last payment?', 'It did not go through.')).toBe(false);
+      // a date alone does not answer "how much"; a sum, a bare number or "free" does
+      expect(answersKind('How much was my receipt from the store?', 'Your receipt from the store was dated Oct 19, 2026.')).toBe(false);
+      expect(answersKind('How much was my receipt from the store?', 'It was sent at 10:30 on 10/19/2026.')).toBe(false);
+      expect(answersKind('How much was my receipt from the store?', 'You paid $9.99 on Oct 19, 2026.')).toBe(true);
+      expect(answersKind('How much is my monthly rent?', 'Your rent is 640 a month.')).toBe(true);
+      expect(answersKind('How much was the delivery fee?', 'Delivery was free.')).toBe(true);
+      // asked for both: either kind answers
+      expect(answersKind('When was I charged, and how much?', 'You were charged on Oct 19.')).toBe(true);
+      expect(answersKind('When does the plan run out?', 'It runs out on Friday.')).toBe(true);
+      expect(answersKind('When does the plan run out?', 'It runs out soon.')).toBe(false);
     });
 
     it('the best window counts a sentence with an amount for more when an amount is asked for', () => {

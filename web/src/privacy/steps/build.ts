@@ -36,6 +36,8 @@ export const UNAVAILABLE = {
   noPhoto: 'This photo is not available to share.',
   verbatim: 'The answer repeated too much of the original wording.',
   answerInstruction: 'The answer looked like an instruction, so it is not offered.',
+  /** The same refusal when it was the last check on this device, not a pattern, that read the answer so (its own words, so a test can tell the two apart). */
+  answerFlagged: 'The last check read the answer as an instruction, so it is not offered.',
   hidden: 'Hidden text was found in this step, so it is not offered.',
   stillInstruction: 'This text still looked like an instruction to an AI, so it is not offered.',
   empty: 'Nothing is left to share after hiding personal details.',
@@ -162,7 +164,7 @@ export async function buildStepOption(
     if (step === 'answer') {
       if (matchInjectionPatterns(text).suspicious) return unavailable(step, UNAVAILABLE.answerInstruction);
       const folded = collapseSpaces(text).toLowerCase();
-      if (extraQuotes.some((q) => q.trim() && folded.includes(collapseSpaces(q).toLowerCase()))) return unavailable(step, UNAVAILABLE.answerInstruction);
+      if (extraQuotes.some((q) => q.trim() && folded.includes(collapseSpaces(q).toLowerCase()))) return unavailable(step, UNAVAILABLE.answerFlagged);
     } else {
       const r = removeInjectedSentences(text, rec.injection?.quote, extraQuotes);
       text = r.text;

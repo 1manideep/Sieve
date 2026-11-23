@@ -18,6 +18,7 @@ import {
 } from '@/index';
 import { asksSaid, describesOnlySender, holdsTopic, titleSaysAskedKind, topicTerms } from '@/index/cues';
 import { iso } from '@/index/dates';
+import { anchorRelativeDays } from './relativeDays';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
 import { isYesNoQuestion } from '@/privacy/steps/answerShape';
 import { errorLine, errorName } from '@/robust/errorLine';
@@ -781,7 +782,9 @@ async function prepare(run: Run): Promise<Proposal> {
 
   // 13. The excerpt, chosen by plain code.
   const rec = chosen;
-  const answer = value.answer;
+  // "Today" and "tomorrow" in the answer mean the item's day: when the item is not from today, the date is written.
+  const answer = anchorRelativeDays(value.answer, rec.date, run.now);
+  if (answer !== value.answer) run.code('clean', LABELS.dayWritten);
   let excerpt = value.excerpt;
   let unsupported = value.unsupported ?? [];
   if (recomputeExcerpt) {
