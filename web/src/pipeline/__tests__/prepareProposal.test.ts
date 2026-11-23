@@ -414,6 +414,13 @@ describe('prepareProposal (10 section 16.10)', () => {
     expect(newestIsMeant(mixed, sender, "What did Parcelmoor Post's latest email say about the pickup point?")).toBe(false);
     expect(newestIsMeant(mixed, sender, "What did Parcelmoor Post's latest email say about the refund?")).toBe(false);
     expect(newestIsMeant([], sender, 'My most recent Parcelmoor Post email')).toBe(false);
+    // a verb for what the message does is not a subject: the sender's newest is the one meant
+    const person = (title: string, day: number) => ({ rec: record({ id: `gmail:${title}`, title, from: 'Ivo Lindqvist <ivo.lindqvist@gmail.com>', date: Date.parse(`2026-02-${String(day).padStart(2, '0')}T09:00:00-06:00`) }) });
+    const fromIvo = [person('Quick sync', 16), person('Moving our call', 3), person('Notes from Tuesday', 1)];
+    expect(newestIsMeant(fromIvo, { sender: 'Ivo' }, 'What did Ivo ask me in his latest email?')).toBe(true);
+    expect(newestIsMeant(fromIvo, { sender: 'Ivo' }, 'What did Ivo say in his most recent email?')).toBe(true);
+    expect(newestIsMeant(fromIvo, { sender: 'Ivo' }, "What did Ivo's latest email say about the call?")).toBe(false);   // another subject holds "call"
+    expect(newestIsMeant(fromIvo, { sender: 'Ivo' }, "What did Ivo's latest email say about the budget?")).toBe(false);
   });
 
   it('"the latest" about a named thing: the candidates whose title or sender holds two of its words go newest first (Nov 22)', () => {

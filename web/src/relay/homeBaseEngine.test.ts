@@ -1194,4 +1194,21 @@ describe('home base engine: the automatic-outcome floor (40 section 11.6, Nov 21
     expect((h.finish.mock.calls[0][3] as FinishInput).status).toBe('answered');
     window.localStorage.clear();
   });
+
+  it('with auto-approve on, a held item\'s line carries its step code, as a no-match line does; without it, neither does', async () => {
+    const held = async (i: PrepareInput) => proposal({ requestId: i.requestId, outcome: 'blocked-never', rule: 'never', reasonCode: 'model-picked-none-of3-b3-cab12.cd34.ef56' });
+    window.localStorage.setItem(AUTO_APPROVE_KEY('u1'), JSON.stringify({ g1: Date.now() + AUTO_APPROVE_MS }));
+    const testing = await activeHarness({ autoApprove: (grantId) => autoApproveOn('u1', grantId), markAutoApproved: vi.fn() });
+    testing.prepare.mockImplementationOnce(held);
+    testing.push([request()]);
+    await flush();
+    expect(testing.finish.mock.calls[0][3]).toMatchObject({ status: 'blocked', message: 'Nothing to share for that. (model-picked-none-of3-b3-cab12.cd34.ef56)' });
+    window.localStorage.clear();
+    // not testing: the line is the one a no-match gets, with nothing added
+    const plain = await activeHarness();
+    plain.prepare.mockImplementationOnce(held);
+    plain.push([request()]);
+    await flush();
+    expect(plain.finish.mock.calls[0][3]).toMatchObject({ status: 'blocked', message: 'Nothing to share for that.' });
+  });
 });

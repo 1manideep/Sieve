@@ -333,6 +333,11 @@ function titleTemplate(title: string): string {
     .trim();
 }
 
+/** Verbs for what a message does, in the form topicTerms gives them. They are not what a "latest" question is about. */
+const MESSAGE_VERBS: ReadonlySet<string> = new Set(
+  topicTerms('ask asks asked asking say says said saying tell tells told send sends sent write writes wrote written want wants wanted reply replies replied mention mentions mentioned'),
+);
+
 /**
  * Whether the first of a "latest" list (latestOrder) is surely the item the question means, so only it is read: the
  * sender's newest when the question asks about nothing but that sender ("my most recent Kestrelmoor email"), or the
@@ -351,7 +356,9 @@ export function newestIsMeant<T extends { rec: IndexRecord }>(list: T[], filters
   if (!first) return false;
   if (!filters?.sender) return holdsTopic(topic, first.rec.title, first.rec.from);
   const sender = topicTerms(filters.sender);
-  const rest = topic.filter((t) => !sender.includes(t));
+  // What a message does ("ask", "say", "send") names no subject: "what did Ivo ask me in his latest email" is about
+  // nothing but Ivo's newest email. Given his newest five, the model answered from an older one (Nov 22, 2026).
+  const rest = topic.filter((t) => !sender.includes(t) && !MESSAGE_VERBS.has(t));
   if (rest.length === 0) return true;
   const others = list.slice(1, SELECT_MAX_PASSAGES);
   const fit = (a: T): number => {

@@ -905,7 +905,8 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
         deps.toast({ tone: 'info', title: HOME_BASE.blockedToast(aiName) });
         await finishAuto(
           id,
-          { status: 'blocked', message: MSG.blocked, ...(playground ? {} : { receipt: { ...receipt, id: req.id } }) },
+          // in testing mode a held item's line carries its step code too; before, the missing code itself told it apart
+          { status: 'blocked', message: said(MSG.blocked), ...(playground ? {} : { receipt: { ...receipt, id: req.id } }) },
           'blocked',
           proposal,
           playground ? { ...receipt, id: req.id } : undefined,
