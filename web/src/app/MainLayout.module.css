@@ -36,9 +36,10 @@
 .main { flex: 1; min-width: 0; }
 .main:focus { outline: none; }
 
-/* Narrow screens: the rail lies along the top, the name first. */
+/* Narrow screens: the rail lies along the top, the name first; the content row takes the rest of the window, so a
+   short page never stretches the rail. */
 @media (max-width: 720px) {
-  .shell { grid-template-columns: minmax(0, 1fr); }
+  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
   .rail {
     flex-direction: row;
     height: auto;

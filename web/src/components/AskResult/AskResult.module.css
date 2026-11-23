@@ -38,3 +38,4 @@
 .reply { display: grid; gap: 8px; min-width: 0; }
 .replyText { margin: 0; font-size: 17px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .replyActions { display: flex; flex-wrap: wrap; gap: 4px; margin-left: -10px; }
+.decision { display: flex; flex-wrap: wrap; gap: 8px; }

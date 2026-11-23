@@ -6,7 +6,7 @@ import type { StepOption } from '@sieve/shared';
 import { createAskStore } from '@/state/ask';
 import { useRecords } from '@/state/records';
 import { expectNoAxeViolations } from '@/test/axe';
-import { DEPOSIT_ANSWER, landlordReady, traceSteps } from '../__fixtures__/proposals';
+import { DEPOSIT_ANSWER, landlordReady, noMatch, traceSteps } from '../__fixtures__/proposals';
 import { AskResult, likelyMatches, searchedLine } from './AskResult';
 
 vi.mock('@/index', () => ({ openDb: () => ({}), getRecord: async () => undefined }));
@@ -112,6 +112,17 @@ describe('AskResult', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(ask).toHaveBeenCalledOnce();
     await expectNoAxeViolations();
+  });
+
+  it('without chat (the Playground): the card at once for every outcome, with no reply line and no Details', () => {
+    act(() => {
+      useAsk.setState({ phase: 'ready', requestId: 'r1', proposal: noMatch, step: 'answer' });
+    });
+    renderResult();
+    expect(screen.getByRole('article', { name: 'Result' })).toHaveAttribute('data-outcome', 'no-match');
+    expect(screen.getByText('Nothing on this device matched')).toBeInTheDocument();
+    expect(screen.queryByText('Nothing on this device matched.')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Details' })).toBeNull();
   });
 
   it('the searched line uses real numbers only: the index size and the items a model read', () => {

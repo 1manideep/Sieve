@@ -2,7 +2,7 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { StepOption } from '@sieve/shared';
+import type { Proposal, StepOption } from '@sieve/shared';
 import { useAskReal } from '@/state/ask';
 import { useAvailability } from '@/state/availability';
 import { useIndexing } from '@/state/indexing';
@@ -11,7 +11,9 @@ import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
 import { expectNoAxeViolations } from '@/test/axe';
 import { makeFakeDb } from '@/components/__fixtures__/fakeDb';
-import { DEPOSIT_ANSWER, landlordReady } from '@/components/__fixtures__/proposals';
+import {
+  DEPOSIT_ANSWER, errorOutcome, healthBlocked, landlordReady, modelUnavailable, noMatch, unavailable, uploadNeedsConsent,
+} from '@/components/__fixtures__/proposals';
 import { askNotices, modelGate } from './askNotices';
 import { AskScreen } from './index';
 
@@ -215,12 +217,146 @@ describe('Ask', () => {
     await expectNoAxeViolations();
   });
 
-  it('an error card with Try again', async () => {
+  it('an error: the sentence with Try again under it; the error card only under Details', async () => {
     act(() => useAskReal.setState({ phase: 'error', error: 'Something went wrong on this device. Nothing was shared.' }));
     renderAsk();
-    expect(screen.getByRole('heading', { name: 'Something went wrong' })).toBeInTheDocument();
+    expect(screen.getByText('Something went wrong on this device. Nothing was shared.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Something went wrong' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(ask).toHaveBeenCalled();
+    await expectNoAxeViolations();
+    await userEvent.click(screen.getByRole('button', { name: 'Details' }));
+    expect(screen.getByRole('heading', { name: 'Something went wrong' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Try again' })).toHaveLength(1);
+  });
+});
+
+/** A finished question, as the store holds it once the pipeline has prepared it. */
+function answered(proposal: Proposal, requestId = proposal.requestId) {
+  act(() => useAskReal.setState({ phase: 'ready', requestId, question: proposal.question, proposal, step: 'answer' }));
+}
+
+const card = () => screen.queryByRole('article', { name: 'Result' });
+const details = () => screen.getByRole('button', { name: /^(Details|Hide details)$/ });
+
+describe('Ask as a chat', () => {
+  it('keeps the question box in the dock at the bottom of the page, before and after a question', () => {
+    renderAsk();
+    const dock = () => document.querySelector('main > [data-phase]')?.lastElementChild;
+    expect(dock()).toContainElement(screen.getByRole('region', { name: 'Ask about your own data' }));
+    expect(dock()).toHaveTextContent('Only what you approve leaves your computer. Sieve can make mistakes; the receipt never does.');
+    answered(noMatch);
+    expect(dock()).toContainElement(screen.getByLabelText('Ask a follow-up'));
+    expect(dock()).toHaveTextContent('Only what you approve leaves your computer. Sieve can make mistakes; the receipt never does.');
+    // The conversation starts with the question, then the reply, and the box comes after both.
+    const bubble = screen.getByText(noMatch.question);
+    const reply = screen.getByText('Nothing on this device matched.');
+    expect(bubble.compareDocumentPosition(reply) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(reply.compareDocumentPosition(screen.getByLabelText('Ask a follow-up')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('every outcome is a plain reply with Details closed; Details shows the card and hides it again', async () => {
+    const counts: Proposal = { ...noMatch, requestId: 'req-count', question: 'How many emails did I get?', outcome: 'unsupported' };
+    const oneFact: Proposal = {
+      ...counts, requestId: 'req-one-fact', question: 'What are my rent and my deposit?',
+      options: [unavailable('answer', 'Sieve shares one fact at a time at this level.'), unavailable('excerpt', ''), unavailable('full', '')],
+    };
+    const cases: [Proposal, string][] = [
+      [noMatch, 'Nothing on this device matched.'],
+      [healthBlocked, 'Health is never shared.'],
+      [counts, "Sieve answers from one item at a time, so counts aren't available."],
+      [oneFact, 'Sieve shares one fact at a time at this level.'],
+      [modelUnavailable, "The on-device model isn't available."],
+    ];
+    renderAsk();
+    for (const [proposal, sentence] of cases) {
+      answered(proposal);
+      expect(screen.getByText(sentence)).toBeInTheDocument();
+      expect(card()).toBeNull();
+      expect(details()).toHaveAttribute('aria-expanded', 'false');
+      // nothing to copy and no item to open: a Health item is never opened, even here
+      expect(screen.queryByRole('button', { name: 'Copy' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Open the item' })).toBeNull();
+      await userEvent.click(details());
+      expect(details()).toHaveAttribute('aria-expanded', 'true');
+      expect(card()).toHaveAttribute('data-outcome', proposal.outcome);
+      await userEvent.click(details());
+      expect(card()).toBeNull();
+    }
+    await expectNoAxeViolations();
+  });
+
+  it('a new question starts with Details closed', async () => {
+    renderAsk();
+    answered(landlordReady);
+    await userEvent.click(details());
+    expect(card()).toBeInTheDocument();
+    expect(screen.getByText(/^Searched .* picked 1/)).toBeInTheDocument();
+    act(() => useAskReal.setState({ phase: 'preparing', requestId: 'r2', proposal: undefined, liveSteps: [] }));
+    expect(details()).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('preparing-card')).toBeNull();
+    answered(landlordReady, 'r2');
+    expect(screen.getByText(DEPOSIT_ANSWER)).toBeInTheDocument();
+    expect(card()).toBeNull();
+    expect(screen.queryByText(/^Searched .* picked 1/)).toBeNull();
+  });
+
+  it('while preparing: one quiet line, then the answer as it is written; Details shows the steps', async () => {
+    act(() => {
+      useAskReal.setState({
+        phase: 'preparing', requestId: 'r1', question: 'deposit', answerPreview: '',
+        liveSteps: [{ id: 'r1:1', kind: 'retrieve', label: 'Searching this device…', where: 'code', status: 'running', startedAt: Date.now() }],
+      });
+    });
+    renderAsk();
+    expect(screen.getByRole('status')).toHaveTextContent('Searching this device…');
+    expect(screen.queryByTestId('preparing-card')).toBeNull();
+    act(() => useAskReal.setState({ answerPreview: 'Your deposit was' }));
+    expect(screen.getByText('Your deposit was')).toBeInTheDocument();
+    await userEvent.click(details());
+    expect(screen.getByTestId('preparing-card')).toBeInTheDocument();
+  });
+
+  it('a cloud consent question: the sentence with its two buttons right under it', async () => {
+    const allowCloudFor = vi.fn(async () => undefined);
+    const reset = vi.fn();
+    renderAsk();
+    act(() => useAskReal.setState({ allowCloudFor, reset }));
+    answered(uploadNeedsConsent);
+    expect(screen.getByText('Allow the cloud model to read this item?')).toBeInTheDocument();
+    expect(card()).toBeNull();
+    expect(screen.getByRole('button', { name: 'Open the item' })).toBeInTheDocument();
+    await expectNoAxeViolations();
+    await userEvent.click(screen.getByRole('button', { name: 'Allow the cloud for this item' }));
+    expect(allowCloudFor).toHaveBeenCalledWith('upload:upload-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Not now' }));
+    expect(reset).toHaveBeenCalled();
+  });
+
+  it('an error outcome: the sentence with Try again', async () => {
+    renderAsk();
+    answered(errorOutcome);
+    expect(screen.getByText('Something went wrong on this device. Nothing was shared.')).toBeInTheDocument();
+    expect(card()).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(ask).toHaveBeenCalled();
+  });
+
+  it('only a notice that blocks asking stays in view; the others show with Details', async () => {
+    await db.table('sources').clear();
+    useIndexing.setState({ state: 'running', left: 12 });
+    renderAsk();
+    answered(noMatch);
+    await userEvent.click(details());
+    expect(await screen.findByText('Your private index is empty. Connect Gmail or a folder first.')).toBeInTheDocument();
+    expect(screen.getByText(/^Indexing on this device: 12 items left/)).toBeInTheDocument();
+    await userEvent.click(details());
+    expect(screen.queryByText('Your private index is empty. Connect Gmail or a folder first.')).toBeNull();
+    expect(screen.queryByText(/^Indexing on this device/)).toBeNull();
+    act(() => useAvailability.setState({ text: 'downloadable', setup: { state: 'idle' } }));
+    const blocking = 'Set up the on-device model once to ask about your own data. It takes about 3 to 4 minutes.';
+    expect(screen.getByText(blocking)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ask' })).toHaveAccessibleDescription(blocking);
     await expectNoAxeViolations();
   });
 });

@@ -1,7 +1,9 @@
 // Ask (`/`, 40 section 13.4): the golden path on the person's own data, through useAskReal (40 section 12).
-// The final design: before a question, F2 (the headline, the glass prompt card, three chips); after one, F3 (the
-// conversation column with the follow-up pill at the bottom). Only the presentation changed; the store is the same.
-// While indexing runs (or is paused), the home shows the Sources screen's indexing row under the chips (13.4).
+// The final design: before a question, F2 (the headline and three chips); after one, a chat (the question, then a
+// plain reply, with the card under Details). The question box stays docked at the bottom of the window throughout:
+// the glass prompt card before the first question, the follow-up pill after it. Only notices that block asking stay
+// in view during a chat; the others open with Details. While indexing runs (or is paused), the home shows the
+// Sources screen's indexing row above the chips (13.4).
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from 'react-router-dom';
@@ -9,7 +11,7 @@ import { useShallow } from 'zustand/shallow';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
 import { AskHome } from '@/components/AskResult/AskHome';
 import { AskResult } from '@/components/AskResult/AskResult';
-import { FollowUp } from '@/components/AskResult/FollowUp';
+import { Dock, FollowUp } from '@/components/AskResult/FollowUp';
 import { askModelPill } from '@/components/AskResult/modelPill';
 import { NoticeRow } from '@/components/AskResult/NoticeRow';
 import { usePreferredStep } from '@/components/AskResult/preferredStep';
@@ -147,22 +149,71 @@ export function AskScreen() {
       ))}
     </div>
   );
-  const noticeRows = notices.length > 0 ? renderNotices(notices) : null;
-
   const onChange = (q: string) => useAskReal.getState().setQuestion(q);
 
+  let body: ReactNode;
   if (phase === 'idle') {
     // F2: the indexing card takes the place of the one-line 'indexing' notice; the other notices stay.
     const indexingShown = indexing.state !== 'idle';
     const homeNotices = notices.filter((n) => n.id !== 'indexing');
-    const homeNoticeRows = homeNotices.length > 0 ? renderNotices(homeNotices) : null;
-    return (
-      <div className={styles.page} data-phase={phase}>
-        <AskHome
-          headlineLines={ASK_COPY.headlineLines}
-          lead={ASK_COPY.lead}
-          notices={homeNoticeRows}
-          card={
+    body = (
+      <AskHome
+        headlineLines={ASK_COPY.headlineLines}
+        lead={ASK_COPY.lead}
+        notices={homeNotices.length > 0 ? renderNotices(homeNotices) : null}
+        chipsLabel={ASK_COPY.try}
+        chips={ASK_COPY.chips.map((chip) => ({
+          label: chip.label,
+          selected: question.trim() === chip.question,
+          onClick: () => {
+            useAskReal.getState().setQuestion(chip.question);
+            submit(chip.question);
+          },
+        }))}
+        footer={homeNotices.length === 0 && !indexingShown ? <p className={styles.idle}>{ASK_COPY.idleHint}</p> : null}
+      >
+        {indexingShown ? (
+          <div className={styles.indexing}>
+            <Suspense fallback={null}>
+              <IndexingCard />
+            </Suspense>
+          </div>
+        ) : null}
+      </AskHome>
+    );
+  } else {
+    // A chat: a notice that blocks asking stays in view; the others show with the card under Details.
+    const others = notices.filter((n) => n !== modelNotice);
+    body = (
+      <div className={styles.conversation}>
+        <h1 className="visually-hidden">{SCREENS.ask.heading}</h1>
+        {modelNotice ? renderNotices([modelNotice]) : null}
+        <AskResult
+          useAsk={useAskReal}
+          variant="in-app"
+          dbKind="real"
+          chat
+          notices={others.length > 0 ? renderNotices(others) : undefined}
+          online={online}
+          onSeeReceipts={() => navigate('/seen')}
+          receiptsHref="/seen"
+          onAskAgain={() => {
+            focusWhenIdle.current = true;
+            useAskReal.getState().reset();
+            useAskReal.getState().setQuestion('');
+          }}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.page} data-phase={phase}>
+      {body}
+      {/* The question box, docked at the bottom of the window before and after a question. */}
+      <div className={styles.dock}>
+        {phase === 'idle' ? (
+          <Dock>
             <PromptCard
               ref={inputRef}
               regionLabel={ASK_COPY.cardLabel}
@@ -179,67 +230,22 @@ export function AskScreen() {
             >
               {waitingRow}
             </PromptCard>
-          }
-          chipsLabel={ASK_COPY.try}
-          chips={ASK_COPY.chips.map((chip) => ({
-            label: chip.label,
-            selected: question.trim() === chip.question,
-            onClick: () => {
-              useAskReal.getState().setQuestion(chip.question);
-              submit(chip.question);
-            },
-          }))}
-          footer={
-            <div className={styles.homeFooter}>
-              {homeNotices.length === 0 && !indexingShown ? <p className={styles.idle}>{ASK_COPY.idleHint}</p> : null}
-              <p className={styles.footerLine}>{ASK_COPY.footer}</p>
-            </div>
-          }
-        >
-          {indexingShown ? (
-            <div className={styles.indexing}>
-              <Suspense fallback={null}>
-                <IndexingCard />
-              </Suspense>
-            </div>
-          ) : null}
-        </AskHome>
-      </div>
-    );
-  }
-
-  return (
-    <div className={styles.page} data-phase={phase}>
-      <div className={styles.conversation}>
-        <h1 className="visually-hidden">{SCREENS.ask.heading}</h1>
-        {noticeRows}
-        <AskResult
-          useAsk={useAskReal}
-          variant="in-app"
-          dbKind="real"
-          chat
-          online={online}
-          onSeeReceipts={() => navigate('/seen')}
-          receiptsHref="/seen"
-          onAskAgain={() => {
-            focusWhenIdle.current = true;
-            useAskReal.getState().reset();
-            useAskReal.getState().setQuestion('');
-          }}
-        />
-        <FollowUp
-          ref={inputRef}
-          label={ASK_COPY.followUpLabel}
-          placeholder={ASK_COPY.followUpPlaceholder}
-          value={question}
-          onChange={onChange}
-          onSubmit={submit}
-          button={submitButton(true)}
-          step={step}
-          disabled={approving || phase === 'drafting'}
-        >
-          {waitingRow}
-        </FollowUp>
+          </Dock>
+        ) : (
+          <FollowUp
+            ref={inputRef}
+            label={ASK_COPY.followUpLabel}
+            placeholder={ASK_COPY.followUpPlaceholder}
+            value={question}
+            onChange={onChange}
+            onSubmit={submit}
+            button={submitButton(true)}
+            step={step}
+            disabled={approving || phase === 'drafting'}
+          >
+            {waitingRow}
+          </FollowUp>
+        )}
       </div>
     </div>
   );

@@ -205,7 +205,7 @@ export const CONVERSATION_COPY = {
   metaCloudOwn: 'written in the cloud by Gemini, with your OK · {t}',
   metaCode: 'nothing has left this computer',
   whatHappened: 'What happened, step by step',
-  // the Ask page as a chat: the answer alone, with these under it
+  // the Ask page as a chat: the reply alone, with these under it
   looking: 'Looking on this computer…',
   copy: 'Copy',
   copied: 'Copied',
@@ -471,7 +471,6 @@ export const ASK_COPY = {
   nanoChecking: 'Checking Nano…',
   followUpLabel: 'Ask a follow-up',
   followUpPlaceholder: 'Ask a follow-up about your own data',
-  footer: 'Only what you approve leaves your computer.',
   questionLabel: 'What are you looking for?',
   placeholder: 'Ask your own data',
   find: 'Ask',

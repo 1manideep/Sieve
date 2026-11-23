@@ -6,7 +6,7 @@
   gap: 20px;
   align-items: center;
   min-width: 0;
-  min-height: calc(100dvh - 128px);
+  min-height: var(--home-min, calc(100dvh - 128px));
   padding: 16px 0 8px;
 }
 
@@ -60,5 +60,5 @@
 .footer { width: 100%; }
 
 @media (max-width: 767px) {
-  .home { gap: 16px; min-height: calc(100dvh - 160px); }
+  .home { gap: 16px; min-height: var(--home-min, calc(100dvh - 160px)); }
 }

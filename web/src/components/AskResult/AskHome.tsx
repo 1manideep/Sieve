@@ -1,6 +1,8 @@
 // AskHome (the final design, F2): the page before a question. A small headline and lead in the middle of the page,
 // quiet rows for notices, whatever the screen adds (the Playground's "What is on this computer" row), then at the
 // bottom the suggestion chips and the prompt card. The two ribbons sit behind, clipped so nothing scrolls sideways.
+// The Ask page leaves the card out (it keeps the card in its own dock at the bottom of the window) and sets
+// --home-min, so the home fills only the space above that dock.
 import { Fragment, type ReactNode } from 'react';
 import { Glyph } from './glyphs';
 import styles from './AskHome.module.css';
@@ -15,7 +17,8 @@ export interface AskHomeProps {
   headlineLines: readonly string[];
   lead: string;
   notices?: ReactNode;
-  card: ReactNode;
+  /** The prompt card; null keeps its place empty (the Playground while it sets up), undefined leaves it out. */
+  card?: ReactNode;
   chipsLabel: string;
   chips: AskChip[];
   children?: ReactNode;
@@ -57,7 +60,7 @@ export function AskHome({ headlineLines, lead, notices, card, chipsLabel, chips,
         </div>
       ) : null}
       {/* The question box sits at the bottom of the page, like the field of a chat (Nov 22, 2026). */}
-      <div className={styles.cardSlot}>{card}</div>
+      {card !== undefined ? <div className={styles.cardSlot}>{card}</div> : null}
       {footer ? <div className={styles.footer}>{footer}</div> : null}
     </div>
   );

@@ -1,5 +1,6 @@
 // FollowUp (the final design, F3): the pill fixed at the bottom of the conversation column: the question field again,
-// the ladder step as a small chip, the mic, the round white submit the screen passes in, and the footer line.
+// the ladder step as a small chip, the mic, the round white submit the screen passes in, and the footer line. Dock is
+// that bottom strip alone, so the Ask page can keep its prompt card in the same place before the first question.
 import { forwardRef, type ReactNode } from 'react';
 import type { LadderStep } from '@sieve/shared';
 import { ASK_COPY, CONVERSATION_COPY } from '@/copy/screens-main';
@@ -22,12 +23,22 @@ export interface FollowUpProps {
   disabled?: boolean;
 }
 
+/** The strip at the bottom of the conversation column: the question box, any rows under it, then the footer line. */
+export function Dock({ children }: { children: ReactNode }) {
+  return (
+    <div className={styles.followUp}>
+      {children}
+      <p className={styles.note}>{CONVERSATION_COPY.footer}</p>
+    </div>
+  );
+}
+
 export const FollowUp = forwardRef<QuestionInputHandle, FollowUpProps>(function FollowUp(
   { label, placeholder, value, onChange, onSubmit, button, step, describedBy, children, disabled = false },
   ref,
 ) {
   return (
-    <div className={styles.followUp}>
+    <Dock>
       <QuestionInput
         ref={ref}
         variant="followup"
@@ -51,7 +62,6 @@ export const FollowUp = forwardRef<QuestionInputHandle, FollowUpProps>(function 
         }
       />
       {children}
-      <p className={styles.note}>{CONVERSATION_COPY.footer}</p>
-    </div>
+    </Dock>
   );
 });

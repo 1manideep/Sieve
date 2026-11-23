@@ -1,17 +1,19 @@
 // AskResult (40 sections 12.4, 13.4 and 13.9): the result area of Ask and the Playground for one useAsk store, as the
 // final design's conversation (F3): the question as a bubble, "Searched N items on this computer · picked 1", then the
 // PreparingCard while the pipeline runs, the ApprovalCard in the same container without a layout jump (the container
-// keeps its height, then settles over --dur-base), or the error card.
+// keeps its height, then settles over --dur-base), or the error card. The Ask page shows it as a chat: a plain reply
+// for every state, and those cards only under Details.
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import type { StoreApi, UseBoundStore } from 'zustand';
 import { useShallow } from 'zustand/shallow';
-import type { TraceStep } from '@sieve/shared';
+import type { LadderStep, Proposal, TraceStep } from '@sieve/shared';
 import type { AskState } from '@/state/ask';
 import { useRecords } from '@/state/records';
 import type { DbKind } from '@/state/types';
 import { formatCount } from '@/copy/format';
-import { ASK_COPY, CONVERSATION_COPY, RELATED_COPY, fill } from '@/copy/screens-main';
+import { ASK_COPY, CONSENT_COPY, CONVERSATION_COPY, OUTCOME_COPY, RELATED_COPY, fill } from '@/copy/screens-main';
+import { ASK_FLOW } from '@/copy/strings';
 import { askCardView } from '../ApprovalCard/askView';
 import { ApprovalCard } from '../ApprovalCard/ApprovalCard';
 import type { Compose } from '../ApprovalCard/composedOptions';
@@ -20,6 +22,7 @@ import { tablesOf, useDb } from '../dbTables';
 import { DraftPanel } from '../DraftPanel/DraftPanel';
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary';
 import { ItemViewer } from '../ItemViewer/ItemViewer';
+import { outcomeTitle } from '../OutcomePanel/OutcomePanel';
 import { PreparingCard } from '../PreparingCard/PreparingCard';
 import { Glyph } from './glyphs';
 import styles from './AskResult.module.css';
@@ -42,10 +45,13 @@ export interface AskResultProps {
   sampleData?: boolean;
   nanoSettingUp?: boolean;
   /**
-   * The Ask page (Nov 22, 2026): a prepared answer shows as a plain chat reply with Copy, Open the item and Details
-   * under it; the card with the steps, the ladder and what may leave opens from Details.
+   * The Ask page (Nov 22, 2026): a chat. Every state gets a plain reply (the answer, or one sentence for any other
+   * outcome) with Copy, Open the item and Details under it; the card with the steps, the ladder and what may leave
+   * opens from Details, and the next question starts with it closed.
    */
   chat?: boolean;
+  /** Chat: the screen's notices, shown above the card while Details is open. */
+  notices?: ReactNode;
 }
 
 /** The pipeline's text composer, loaded on first use (the store has already loaded the pipeline by then). */
@@ -121,37 +127,71 @@ function PreparingSlot({ useAsk }: { useAsk: AskStore }) {
 }
 
 /** Chat: while the answer is prepared, one quiet line, or the answer as it is being written. */
-function ChatPreparing({ useAsk }: { useAsk: AskStore }) {
+function PreparingLine({ useAsk }: { useAsk: AskStore }) {
   const { liveSteps, answerPreview } = useAsk(useShallow((s) => ({ liveSteps: s.liveSteps, answerPreview: s.answerPreview })));
+  if (answerPreview) return <p className={styles.replyText} dir="auto">{answerPreview}</p>;
   return (
-    <div className={styles.reply} role="status">
-      {answerPreview ? (
-        <p className={styles.replyText} dir="auto">{answerPreview}</p>
-      ) : (
-        <p className={styles.searched}>
-          <Glyph name="sparkle" size={16} className={styles.sparkle} />
-          <span>{liveSteps[liveSteps.length - 1]?.label ?? CONVERSATION_COPY.looking}</span>
-        </p>
-      )}
-    </div>
+    <p className={styles.searched} role="status">
+      <Glyph name="sparkle" size={16} className={styles.sparkle} />
+      <span>{liveSteps[liveSteps.length - 1]?.label ?? CONVERSATION_COPY.looking}</span>
+    </p>
   );
 }
 
-function ChatReply({ text, open, onToggle, onOpenItem }: { text: string; open: boolean; onToggle(): void; onOpenItem?: () => void }) {
+/** Chat: the answer at the chosen step, else at the first step that has one. */
+function chatAnswer(p: Proposal, step: LadderStep): string | undefined {
+  const option = p.options.find((o) => o.step === step && o.available) ?? p.options.find((o) => o.available);
+  return option?.text.trim() ? option.text : undefined;
+}
+
+/** Chat: any outcome but an answer, in one plain sentence, in the words the card and the announcement use. */
+function chatSentence(p: Proposal): string {
+  const reason = p.options[0]?.unavailableReason;
+  switch (p.outcome) {
+    case 'ready':
+      return ASK_FLOW.foundMatch;
+    case 'needs-cloud-consent':
+      return CONSENT_COPY.title;
+    case 'unsupported':
+      return reason === OUTCOME_COPY.oneFactLine ? reason : ASK_FLOW.unsupported;
+    case 'error':
+      return ASK_FLOW.somethingWrong;
+    default:
+      return `${outcomeTitle(p.outcome, p.item?.category, reason === `${OUTCOME_COPY.secretTitle}.`)}.`;
+  }
+}
+
+interface ChatReplyProps {
+  /** The answer, a sentence, or the line while it is prepared. */
+  children: ReactNode;
+  /** The answer, when there is one to copy. */
+  copyText?: string;
+  onOpenItem?(): void;
+  /** The one or two buttons a decision needs (allow the cloud, try again), right under the reply. */
+  decision?: ReactNode;
+  open: boolean;
+  onToggle(): void;
+}
+
+/** Chat: the reply, then the quiet actions under it: Copy, Open the item and Details. */
+function ChatReply({ children, copyText, onOpenItem, decision, open, onToggle }: ChatReplyProps) {
   const [copied, setCopied] = useState(false);
   return (
     <div className={styles.reply}>
-      <p className={styles.replyText} dir="auto">{text}</p>
+      {children}
+      {decision ? <div className={styles.decision}>{decision}</div> : null}
       <div className={styles.replyActions}>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            navigator.clipboard?.writeText(text).then(() => setCopied(true), () => undefined);
-          }}
-        >
-          {copied ? CONVERSATION_COPY.copied : CONVERSATION_COPY.copy}
-        </Button>
+        {copyText !== undefined ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              navigator.clipboard?.writeText(copyText).then(() => setCopied(true), () => undefined);
+            }}
+          >
+            {copied ? CONVERSATION_COPY.copied : CONVERSATION_COPY.copy}
+          </Button>
+        ) : null}
         {onOpenItem ? (
           <Button variant="ghost" size="sm" onClick={onOpenItem}>
             {CONVERSATION_COPY.openItem}
@@ -165,7 +205,8 @@ function ChatReply({ text, open, onToggle, onOpenItem }: { text: string; open: b
   );
 }
 
-function ErrorCard({ message, onRetry }: { message: string; onRetry(): void }) {
+/** The error card; without onRetry when the chat reply above it already offers Try again. */
+function ErrorCard({ message, onRetry }: { message: string; onRetry?: () => void }) {
   const timeout = message === ASK_COPY.timeoutError;
   return (
     <section className={styles.errorCard} aria-labelledby="ask-error-title">
@@ -173,11 +214,13 @@ function ErrorCard({ message, onRetry }: { message: string; onRetry(): void }) {
         {timeout ? ASK_COPY.timeoutTitle : ASK_COPY.errorTitle}
       </h2>
       <p className={styles.errorBody}>{message}</p>
-      <div>
-        <Button variant="secondary" onClick={onRetry}>
-          {ASK_COPY.retry}
-        </Button>
-      </div>
+      {onRetry ? (
+        <div>
+          <Button variant="secondary" onClick={onRetry}>
+            {ASK_COPY.retry}
+          </Button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -213,7 +256,7 @@ function useAskedQuestion(useAsk: AskStore): string {
 }
 
 export function AskResult(props: AskResultProps) {
-  const { useAsk, variant, dbKind, compose: injectedCompose, online, onSeeReceipts, receiptsHref, onAskAgain, idle, headerSlot, sampleData = false, nanoSettingUp = false, chat = false } = props;
+  const { useAsk, variant, dbKind, compose: injectedCompose, online, onSeeReceipts, receiptsHref, onAskAgain, idle, headerSlot, sampleData = false, nanoSettingUp = false, chat = false, notices } = props;
   const s = useAsk(
     useShallow((st) => ({
       phase: st.phase,
@@ -234,8 +277,8 @@ export function AskResult(props: AskResultProps) {
   );
   const meta = useRecords((r) => r.meta);
   const [viewing, setViewing] = useState<string | null>(null);
-  /** Chat: the request whose details are open (closed again for the next question). */
-  const [detailsFor, setDetailsFor] = useState<string | undefined>(undefined);
+  /** Chat: the request whose details are open; null while they are closed, and a new request starts closed. */
+  const [detailsFor, setDetailsFor] = useState<string | undefined | null>(null);
   const containerRef = useSettle(s.phase);
   const asked = useAskedQuestion(useAsk);
   const indexCount = useIndexCount(dbKind, s.proposal !== undefined);
@@ -265,21 +308,15 @@ export function AskResult(props: AskResultProps) {
   const ask = () => {
     useAsk.getState().ask().catch((error: unknown) => console.error(error));
   };
-
-  // Chat: a prepared answer that waits for nothing is shown as a plain reply. Anything that needs the person (a
-  // consent, a draft under way, a result after approving) or has no answer keeps the card in view.
-  const chatOption =
-    chat && s.phase === 'ready' && s.proposal?.outcome === 'ready'
-      ? (s.proposal.options.find((o) => o.step === s.step && o.available) ?? s.proposal.options.find((o) => o.available))
-      : undefined;
-  const chatText = chatOption?.text.trim() ? chatOption.text : undefined;
-  const detailsOpen = chatText === undefined || detailsFor === s.requestId;
+  const allowCloud = (id: string) => {
+    useAsk.getState().allowCloudFor(id).catch((error: unknown) => console.error(error));
+  };
 
   let content: ReactNode = idle ?? null;
   if (s.phase === 'preparing') {
-    content = chat ? <ChatPreparing useAsk={useAsk} /> : <PreparingSlot key={s.requestId ?? 'preparing'} useAsk={useAsk} />;
+    content = <PreparingSlot key={s.requestId ?? 'preparing'} useAsk={useAsk} />;
   } else if (s.phase === 'error') {
-    content = <ErrorCard message={s.error ?? ASK_COPY.errorTitle} onRetry={ask} />;
+    content = <ErrorCard message={s.error ?? ASK_COPY.errorTitle} onRetry={chat ? undefined : ask} />;
   } else if (s.proposal && view) {
     const draftPanel = (
       <DraftPanel
@@ -324,9 +361,7 @@ export function AskResult(props: AskResultProps) {
           if (s.proposal?.outcome === 'needs-cloud-consent') useAsk.getState().reset();
           else useAsk.getState().keepLocal();
         }}
-        onAllowCloud={(id) => {
-          useAsk.getState().allowCloudFor(id).catch((error: unknown) => console.error(error));
-        }}
+        onAllowCloud={allowCloud}
         onOpenItem={setViewing}
         instructionSlot={draftPanel}
         resultSlot={view.cardPhase === 'decided' ? draftPanel : undefined}
@@ -346,6 +381,56 @@ export function AskResult(props: AskResultProps) {
   const readCount = matches === undefined ? undefined : matches + s.relatedSelected.length;
   const picked = s.proposal?.outcome === 'ready' && s.proposal.item !== undefined;
 
+  // Chat: one reply for every state, and the card only while Details is open. A decision the person has to make
+  // (allow the cloud, try again) sits under the reply; approving and drafting stay inside the card.
+  const p = s.proposal;
+  const detailsOpen = detailsFor === s.requestId;
+  const shown = !chat || detailsOpen;
+  let reply: ReactNode = null;
+  if (chat && conversation) {
+    const answer = p?.outcome === 'ready' ? chatAnswer(p, s.step) : undefined;
+    const sentence = s.phase === 'error' ? (s.error ?? ASK_FLOW.somethingWrong) : p ? (answer ?? chatSentence(p)) : '';
+    const consentItem = p?.outcome === 'needs-cloud-consent' ? p.item : undefined;
+    const openable = p?.item && p.rule !== 'never' ? p.item.recordId : undefined;
+    let decision: ReactNode;
+    if (s.phase === 'error' || p?.outcome === 'error') {
+      decision = (
+        <Button variant="secondary" size="sm" onClick={ask}>
+          {ASK_COPY.retry}
+        </Button>
+      );
+    } else if (consentItem) {
+      decision = (
+        <>
+          <Button variant="primary" tone="blue" size="sm" onClick={() => allowCloud(consentItem.recordId)}>
+            {CONSENT_COPY.allowItem}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => useAsk.getState().reset()}>
+            {CONSENT_COPY.notNow}
+          </Button>
+        </>
+      );
+    }
+    reply = (
+      <ChatReply
+        key={s.requestId}
+        copyText={answer}
+        onOpenItem={openable ? () => setViewing(openable) : undefined}
+        decision={decision}
+        open={detailsOpen}
+        onToggle={() => setDetailsFor(detailsOpen ? null : s.requestId)}
+      >
+        {s.phase === 'preparing' ? (
+          <PreparingLine useAsk={useAsk} />
+        ) : (
+          <p className={styles.replyText} dir="auto">
+            {sentence}
+          </p>
+        )}
+      </ChatReply>
+    );
+  }
+
   return (
     <div ref={containerRef} className={styles.container} data-phase={s.phase}>
       {conversation && asked ? (
@@ -356,21 +441,15 @@ export function AskResult(props: AskResultProps) {
           </p>
         </div>
       ) : null}
-      {chatText !== undefined ? (
-        <ChatReply
-          text={chatText}
-          open={detailsOpen}
-          onToggle={() => setDetailsFor(detailsOpen ? undefined : s.requestId)}
-          onOpenItem={s.proposal?.item ? () => setViewing(s.proposal?.item?.recordId ?? null) : undefined}
-        />
-      ) : null}
-      {picked && detailsOpen ? (
+      {reply}
+      {picked && shown ? (
         <p className={styles.searched}>
           <Glyph name="sparkle" size={16} className={styles.sparkle} />
           <span>{searchedLine(indexCount, readCount)}</span>
         </p>
       ) : null}
-      <ErrorBoundary onReset={() => useAsk.getState().reset()}>{detailsOpen || s.phase === 'preparing' ? content : null}</ErrorBoundary>
+      {shown ? notices : null}
+      <ErrorBoundary onReset={() => useAsk.getState().reset()}>{shown || !conversation ? content : null}</ErrorBoundary>
       <ItemViewer dbKind={dbKind} recordId={viewing} onClose={() => setViewing(null)} />
     </div>
   );
