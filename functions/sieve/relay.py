@@ -12,8 +12,8 @@ from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 from pydantic import ValidationError
 
-from . import config, fb, logs, push, tools
-from .models import GrantMeta, RelayPayload, ToolResult
+from . import config, fb, files, logs, push, tools
+from .models import FileLink, GrantMeta, RelayPayload, SharedFile, ToolResult
 
 WAIT_DONE = frozenset({"answered", "declined", "blocked", "no-match", "unsupported", "error", "expired", "revoked",
                        "collected", "offline"})
@@ -70,6 +70,8 @@ def request_key(grant_id: str, tool: str, args: tools.LadderArgs) -> str:
     else:
         hints = args.hints.to_firestore() if args.hints is not None else {}
         material = ["derived", grant_id, tool, question_key(args.question), hints]
+    if args.want_file and tool == "sieve_full_item":
+        material.append("file")     # the file itself is another ask than the item's text
     canonical = json.dumps(material, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
@@ -115,6 +117,8 @@ def request_data(ctx: CallCtx, *, tool: str, args: tools.LadderArgs, status: Lit
     }
     if args.hints is not None:
         data["hints"] = args.hints.to_firestore()
+    if args.want_file and tool == "sieve_full_item":
+        data["wantFile"] = True
     return data
 
 
@@ -291,7 +295,7 @@ class Collected:
     data: dict | None = None
 
 
-def _collect_txn(txn: Any, ref: Any, grant_ref: Any, now: datetime, max_step: str) -> Collected:
+def _collect_txn(txn: Any, ref: Any, grant_ref: Any, now: datetime, max_step: str, owner: tuple[str, str] | None = None) -> Collected:
     snap = ref.get(transaction=txn)
     if not snap.exists:
         return Collected("missing")
@@ -311,6 +315,9 @@ def _collect_txn(txn: Any, ref: Any, grant_ref: Any, now: datetime, max_step: st
     try:
         payload = RelayPayload.model_validate(data.get("response"))
         ok = rank[payload.step] <= cap
+        # a file rides on the full step only, and only from its own person's place for this very request
+        if ok and payload.file is not None:
+            ok = payload.step == "full" and owner is not None and payload.file.belongs_to(*owner)
     except ValidationError:
         payload, ok = None, False
     if not ok:
@@ -329,7 +336,19 @@ def collect_answer(db: Any, uid: str, request_id: str, max_step: str, now: datet
     if snap.exists:
         grant_id = ((snap.to_dict() or {}).get("requester") or {}).get("grantId")
     grant_ref = db.collection(f"users/{uid}/grants").document(str(grant_id or "-"))
-    return fb.transact(db, _collect_txn, ref, grant_ref, now, max_step, lock_key=ref.path)
+    return fb.transact(db, _collect_txn, ref, grant_ref, now, max_step, (uid, request_id), lock_key=ref.path)
+
+
+def make_file_link(deps: Any, ctx: CallCtx, request_id: str, file: SharedFile) -> dict[str, Any]:
+    """The link for an approved file: a random token whose hash keys fileLinks/{hash}. The token is in the link and
+    nowhere else. Returns what the assistant is given."""
+    token = files.new_file_token()
+    now = deps.now()
+    link = FileLink(uid=ctx.uid, grant_id=ctx.grant_id, request_id=request_id, path=file.path, name=file.name,
+                    mime=file.mime, bytes=file.bytes, created_at=now,
+                    expires_at=now + timedelta(seconds=files.FILE_LINK_TTL_SECONDS))
+    deps.db.collection("fileLinks").document(files.file_token_hash(token)).set(link.to_firestore())
+    return files.file_wire(file, files.build_file_url(config.public_base_url(), token))
 
 
 def _nothing_delay(deps: Any, data: Mapping[str, Any], t0: float) -> None:
@@ -358,6 +377,9 @@ def finish(deps: Any, ctx: CallCtx, request_id: str, data: dict | None, t0: floa
         if got.kind == "delivered" and got.payload is not None:
             if not ctx.playground:
                 mark_receipt(deps.db, ctx.uid, request_id, "delivered")
+            if got.payload.file is not None:
+                wire = make_file_link(deps, ctx, request_id, got.payload.file)
+                return tools.answered_result(request_id, got.payload.step, got.payload.text, file=wire)
             return tools.answered_result(request_id, got.payload.step, got.payload.text, got.payload.image)
         if got.kind == "missing":
             return tools.unknown_request_result()

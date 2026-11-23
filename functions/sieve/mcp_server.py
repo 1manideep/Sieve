@@ -336,7 +336,7 @@ def call_tool(msg: Mapping[str, Any], *, era: str, version: str, link_secret: st
         if name == config.MCP_TOOLS["check"]:
             request_id = tools.parse_check_args(arguments)
         else:
-            ladder = tools.parse_ladder_args(arguments, today=deps.now().date())
+            ladder = tools.parse_ladder_args(arguments, today=deps.now().date(), allow_file=name == "sieve_full_item")
     except tools.ArgError as exc:
         return done(tools.error_result(str(exc), refused=True))
 

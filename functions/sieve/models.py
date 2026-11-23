@@ -8,10 +8,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
 from .config import MAX_PAYLOAD_CHARS, utf16_len
+from .filerules import FILE_NAME_MAX_CHARS, SHARED_FILE_MAX_BYTES, file_owner, file_type_allowed, safe_file_name
 
 LadderStep = Literal["answer", "excerpt", "full"]
 Category = Literal["Home", "Work", "Money", "Health", "Travel", "Shopping", "Personal", "Newsletters", "Photos"]
@@ -48,12 +49,58 @@ class SharedImage(FsModel):
     bytes: int = Field(ge=1, le=SHARED_IMAGE_MAX_BYTES)
 
 
+class SharedFile(FsModel):
+    """The file part of an approved payload, as the home base wrote it."""
+    name: str = Field(min_length=1, max_length=FILE_NAME_MAX_CHARS)
+    mime: str
+    bytes: int = Field(ge=1, le=SHARED_FILE_MAX_BYTES)
+    path: str
+
+    @field_validator("name")
+    @classmethod
+    def _name_is_safe(cls, v: str) -> str:
+        if safe_file_name(v) != v:
+            raise ValueError("name must be a plain file name")
+        return v
+
+    @field_validator("path")
+    @classmethod
+    def _path_is_a_handoff(cls, v: str) -> str:
+        if file_owner(v) is None:
+            raise ValueError("path must be handoffs/{uid}/{requestId}/{object}")
+        return v
+
+    @model_validator(mode="after")
+    def _type_fits_name(self) -> "SharedFile":
+        if not file_type_allowed(self.mime, self.name):
+            raise ValueError("this kind of file cannot be sent")
+        return self
+
+    def belongs_to(self, uid: str, request_id: str) -> bool:
+        return file_owner(self.path) == (uid, request_id)
+
+
+class FileLink(FsModel):
+    """fileLinks/{sha256 of the token}: what the download endpoint needs, and nothing about the request's words."""
+    uid: str
+    grant_id: str
+    request_id: str
+    path: str
+    name: str
+    mime: str
+    bytes: int
+    created_at: datetime
+    expires_at: datetime
+    downloads: int = 0
+
+
 class RelayPayload(FsModel):
     step: LadderStep
     text: str
     chars: int = Field(ge=1, le=MAX_PAYLOAD_CHARS)
     item_count: int = Field(ge=1, le=20)
     image: SharedImage | None = None
+    file: SharedFile | None = None            # the original itself, full step only: uploaded by the home base, handed over as a link
 
     @field_validator("text")
     @classmethod
@@ -146,6 +193,7 @@ class ToolResult(BaseModel):           # MCP structuredContent; snake_case on pu
     text: str | None = None
     message: str
     image: SharedImage | None = Field(default=None, exclude=True)   # delivered as an image content block only
+    file: dict[str, Any] | None = None     # name, mime, bytes, url, expires_in_seconds: the link to an approved file
     refused: bool = Field(default=False, exclude=True)   # turned away before any work: not counted (30 section 11)
 
     def to_wire(self) -> dict[str, Any]:
