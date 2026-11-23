@@ -14,7 +14,7 @@ UID = "u" * 28
 REQ = "r" * 20
 PATH = f"handoffs/{UID}/{REQ}/{'o' * 24}"
 FILE = {"name": "Lease_2026.pdf", "mime": "application/pdf", "bytes": 182_000, "path": PATH}
-TEXT = "Lease_2026.pdf (PDF, 178 KB)"
+TEXT = "Lease_2026.pdf (PDF, 182 KB)"
 
 
 class Txn:

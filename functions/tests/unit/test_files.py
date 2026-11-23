@@ -118,6 +118,6 @@ def test_content_disposition_is_always_a_download_with_both_names():
 
 
 def test_describe_file_says_the_name_the_kind_and_the_size():
-    assert files.describe_file("Lease_2026.pdf", "application/pdf", 182_000) == "Lease_2026.pdf (PDF, 178 KB)"
-    assert files.describe_file("IMG_0042.jpg", "image/jpeg", 3_400_000) == "IMG_0042.jpg (image, 3.2 MB)"
+    assert files.describe_file("Lease_2026.pdf", "application/pdf", 182_000) == "Lease_2026.pdf (PDF, 182 KB)"
+    assert files.describe_file("IMG_0042.jpg", "image/jpeg", 3_400_000) == "IMG_0042.jpg (image, 3.4 MB)"
     assert files.describe_file("notes.txt", "text/plain", 812) == "notes.txt (text, 812 bytes)"

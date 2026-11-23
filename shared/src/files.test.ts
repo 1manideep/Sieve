@@ -26,8 +26,8 @@ describe('a file sent as itself', () => {
     expect(sharedFileTypeOf('IMG_0042.jpeg')).toBe('image/jpeg');
     expect(sharedFileTypeOf('page.html')).toBeUndefined();
     expect(sharedFileTypeOf('all.zip')).toBeUndefined();
-    expect(describeSharedFile('Lease_2026.pdf', 'application/pdf', 182_000)).toBe('Lease_2026.pdf (PDF, 178 KB)');
-    expect(describeSharedFile('IMG_0042.jpg', 'image/jpeg', 3_400_000)).toBe('IMG_0042.jpg (image, 3.2 MB)');
+    expect(describeSharedFile('Lease_2026.pdf', 'application/pdf', 182_000)).toBe('Lease_2026.pdf (PDF, 182 KB)');
+    expect(describeSharedFile('IMG_0042.jpg', 'image/jpeg', 3_400_000)).toBe('IMG_0042.jpg (image, 3.4 MB)');
     expect(describeSharedFile('notes.txt', 'text/plain', 812)).toBe('notes.txt (text, 812 bytes)');
   });
 });

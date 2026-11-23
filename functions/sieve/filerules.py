@@ -79,11 +79,12 @@ def content_disposition(name: str) -> str:
 
 
 def human_size(n: int) -> str:
-    if n < 1024:
+    # KB and MB of 1,000 and 1,000,000 bytes, as the web app writes them: the line agrees with the byte count
+    if n < 1000:
         return f"{n} bytes"
-    if n < 1024 * 1024:
-        return f"{round(n / 1024)} KB"
-    return f"{n / (1024 * 1024):.1f} MB"
+    if n < 1_000_000:
+        return f"{round(n / 1000)} KB"
+    return f"{n / 1_000_000:.1f} MB"
 
 
 def describe_file(name: str, mime: str, size: int) -> str:

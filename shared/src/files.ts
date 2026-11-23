@@ -39,9 +39,10 @@ const KIND_WORDS: Readonly<Record<string, string>> = {
 };
 
 export function sharedFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} bytes`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  // KB and MB of 1,000 and 1,000,000 bytes, so the line agrees with the byte count an assistant is given
+  if (bytes < 1000) return `${bytes} bytes`;
+  if (bytes < 1_000_000) return `${Math.round(bytes / 1000)} KB`;
+  return `${(bytes / 1_000_000).toFixed(1)} MB`;
 }
 
 /** One line for the card, the assistant and the receipt: "Lease_2026.pdf (PDF, 178 KB)". */

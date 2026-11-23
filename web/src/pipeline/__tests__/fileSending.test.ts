@@ -33,7 +33,7 @@ const OUTSIDE = { kind: 'outside' as const, grantId: 'g1', aiName: 'Gemini CLI' 
 const db = fakeDb();
 const blob = new Blob([new Uint8Array(182_000)], { type: 'application/pdf' });
 const LEASE: Original = { ok: true, name: 'Lease_2026.pdf', mime: 'application/pdf', bytes: 182_000, blob };
-const LINE = 'Lease_2026.pdf (PDF, 178 KB)';
+const LINE = 'Lease_2026.pdf (PDF, 182 KB)';
 
 async function ask(over: Partial<Parameters<typeof prepareProposal>[0]> = {}): Promise<Proposal> {
   idx.search.mockResolvedValue([idx.cand('playground:deposit', 'vector', { start: 0, end: BODIES.deposit.length })]);

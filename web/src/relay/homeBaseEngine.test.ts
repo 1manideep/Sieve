@@ -639,7 +639,7 @@ describe('home base engine: decisions', () => {
 
   describe('a file sent as itself (Nov 22)', () => {
     const FILE = { name: 'Lease_2026.pdf', mime: 'application/pdf', bytes: 182_000 };
-    const LINE = 'Lease_2026.pdf (PDF, 178 KB)';
+    const LINE = 'Lease_2026.pdf (PDF, 182 KB)';
     const blob = new Blob([new Uint8Array(8)], { type: 'application/pdf' });
     const PLACE = `handoffs/u1/req1/${'o'.repeat(24)}`;
 

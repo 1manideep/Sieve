@@ -45,7 +45,7 @@ describe('LadderControl', () => {
   });
 
   it('names the third step "The file itself" when that is what it would send (Nov 22)', () => {
-    const withFile: StepOption[] = [option('answer', 'A'), option('excerpt', 'B'), option('full', 'Lease_2026.pdf (PDF, 178 KB)', { file: { name: 'Lease_2026.pdf', mime: 'application/pdf', bytes: 182_000 } })];
+    const withFile: StepOption[] = [option('answer', 'A'), option('excerpt', 'B'), option('full', 'Lease_2026.pdf (PDF, 182 KB)', { file: { name: 'Lease_2026.pdf', mime: 'application/pdf', bytes: 182_000 } })];
     render(<Harness options={withFile} kind="document" />);
     expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual(['1 · Answer only', '2 · Excerpt', '3 · The file itself']);
   });
