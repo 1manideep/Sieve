@@ -25,6 +25,7 @@ export const startIngestQueue = vi.fn((_db: SieveDb): IngestQueue => fakeQueue);
 export const clockFor = vi.fn((_db: SieveDb): number => Date.now());
 export const flushUrgentEmbeds = vi.fn(async (_db: SieveDb, _o?: unknown): Promise<'done' | 'timeout' | 'skipped'> => 'done');
 export const knownSendersOf = vi.fn((_db: SieveDb): Set<string> => new Set());
+export const knownOrgsOf = vi.fn((_db: SieveDb): Set<string> => new Set());
 export const openDb = vi.fn();
 export const ingest = vi.fn();
 
@@ -44,6 +45,7 @@ export function resetIndexMock(list: IndexRecord[] = []): void {
   clockFor.mockReset().mockImplementation(() => Date.now());
   flushUrgentEmbeds.mockReset().mockImplementation(async () => 'done');
   knownSendersOf.mockReset().mockImplementation(() => new Set());
+  knownOrgsOf.mockReset().mockImplementation(() => new Set());
 }
 
 export function cand(recordId: string, matchedBy: Candidate['matchedBy'] = 'vector', chunk?: { start: number; end: number }): Candidate {

@@ -93,6 +93,7 @@ export const LABELS = {
   excerptNone: "Couldn't find lines in the item that hold this answer, so the excerpt step is off",
   excerptUnsupported: (facts: string[]) => `. Check the answer: ${facts.join(', ')} ${facts.length === 1 ? 'is' : 'are'} not in the item`,
   clean: 'Plain code removed hidden text from this item when it was indexed',
+  dayWritten: 'Wrote the date for "today" or "tomorrow", counted from the day the item is dated',
   sortedAt: (category: Category, wherePhrase: string) => `Sorted as ${category} ${wherePhrase} when it was indexed`,
   injectionChecked: (wherePhrase: string, flagged: boolean) =>
     `Checked for instructions aimed at an AI ${wherePhrase} when it was indexed: ${flagged ? 'one flagged' : 'none found'}`,

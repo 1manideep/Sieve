@@ -17,7 +17,7 @@ import {
 } from '../config';
 import { extractFacts, normFact, normalizedFacts } from '../facts';
 import { partialJsonString } from '../json';
-import { RESHAPE_REMINDER, RETRY_REMINDER, SELECT_CLOUD_SCHEMA, SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
+import { RESHAPE_REMINDER, RETRY_REMINDER, SELECT_CLOUD_SCHEMA, SELECT_SCHEMA, SELECT_SYSTEM, YES_NO_REMINDER } from '../prompts';
 import { runModel } from '../runModel';
 import { cleanModelSentence, collapseWhitespace, escapeDelimiters, localDay, promptField, sentences, stems, type Range } from '../text';
 import { codeTrace } from '../trace';
@@ -105,16 +105,29 @@ export function answerKind(question: string): RegExp | null {
   return money ? MONEY_HELD : date ? DATE_HELD : null;
 }
 
+const DATE_ALL = new RegExp(DATE_HELD.source, 'gi');
+const NO_CHARGE = /\b(?:free|no charge|not charged|nothing|none|waived|zero)\b/i;
+
 /**
- * Does an answer hold the kind of fact the question asked for? Any number counts, a weekday or "tomorrow" for a date,
- * "free" or "nothing" for an amount: this only tells "January 9" and "$18.00" from "it starts on arrival day". True
- * for a question that asks for neither.
+ * Does an answer hold the kind of fact the question asked for? For a date, any number counts, or a weekday or
+ * "tomorrow". For an amount: a sum of money, "free" or "nothing", or a number that is not a date or a time. A date
+ * alone does not answer "how much": a receipt question was answered with the day of the receipt (Nov 22, 2026).
+ * True for a question that asks for neither.
  */
 export function answersKind(question: string, answer: string): boolean {
   const { money, date } = kindsAsked(question);
-  if ((!money && !date) || /\d/.test(answer)) return true;
-  if (date && DATE_HELD.test(answer)) return true;
-  return money && (MONEY_HELD.test(answer) || /\b(?:free|no charge|not charged|nothing|none|waived|zero)\b/i.test(answer));
+  if (!money && !date) return true;
+  if (date && (/\d/.test(answer) || DATE_HELD.test(answer))) return true;
+  if (!money) return false;
+  if (MONEY_HELD.test(answer) || NO_CHARGE.test(answer)) return true;
+  return /\d/.test(answer.replace(DATE_ALL, ' ').replace(/\b(?:19|20)\d{2}\b/g, ' '));
+}
+
+/** What the one retry says when the first answer lacked the kind of fact asked for. */
+export function kindReminder(question: string): string {
+  const { money, date } = kindsAsked(question);
+  const wants = money && date ? 'an amount of money or a date' : money ? 'an amount of money' : 'a date or a time';
+  return `Your last answer cannot be shared: the question asks for ${wants}, and the answer gave none. Reply again with JSON only. "answer" is one short sentence that gives it as the passage states it. If the passage does not state it, "item" is "none".`;
 }
 
 /** A sentence that holds the kind of fact asked for counts like this many question words. */
@@ -430,6 +443,8 @@ export async function selectAndAnswer(
   // item) gets one more try with a line that says what to change. The second answer is taken as it comes: the checks
   // after this call still decide. Before, an open "what did they say about ..." question ended as unsupported in two test
   // runs of three because the first answer held several facts (Nov 22, 2026).
+  // The same one try for a yes-or-no question answered with a sentence, which the share-time check also refuses.
+  // An answer that reads as an instruction is never asked for again here: that refusal stands.
   let reminder: string | undefined;
   const run = () =>
     runModel<RawSelect>({
@@ -459,6 +474,15 @@ export async function selectAndAnswer(
           const shape = shapeAnswer(answer, rec, question, () => false);
           if ((!shape.ok && shape.reason === 'one-fact') || copiesTooMuch(answer, recordBody(rec))) {
             reminder = RESHAPE_REMINDER;
+            return null;
+          }
+          if (!shape.ok && shape.reason === 'not-yes-no') {
+            reminder = YES_NO_REMINDER;
+            return null;
+          }
+          // "how much" answered with a date, "when" answered with no day in it: one more try, then the check after this call decides
+          if (!isYesNoQuestion(question) && !answersKind(question, answer)) {
+            reminder = kindReminder(question);
             return null;
           }
         }

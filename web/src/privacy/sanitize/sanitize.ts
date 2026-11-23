@@ -16,6 +16,7 @@ import { nextTextStyle, ownOpacity, ownStyle, subtreeHidden, textHidden, type Te
 import { parseInert } from './prepare';
 import { stripQuotedHtml, stripQuotedText } from './quotes';
 import { fragmentText, LINE_TAGS, PARAGRAPH_TAGS, TextBuilder } from './text-builder';
+import { looksLikeHtmlDocument } from './htmlText';
 
 const SILENT_TAGS = new Set(['script', 'style', 'title', 'meta', 'link', 'base', 'iframe', 'frame', 'frameset', 'object', 'embed', 'svg', 'math', 'canvas', 'video', 'audio', 'map', 'area', 'source', 'track', 'head']);
 const ATTRIBUTE_TEXT = ['alt', 'title', 'aria-label', 'aria-description', 'placeholder'];
@@ -168,8 +169,11 @@ function sanitizeHtml(html: string, opts: SanitizeOptions): { text: string; hidd
   return { text, hiddenRemoved: finishFragments(fragments) };
 }
 
+export { looksLikeHtmlDocument };
+
 export function sanitizeIncoming(raw: { html?: string; text?: string }, opts: SanitizeOptions = {}): { text: string; hiddenRemoved: string[] } {
   if (raw.html !== undefined && /\S/.test(raw.html)) return sanitizeHtml(raw.html, opts);
+  if (raw.text !== undefined && looksLikeHtmlDocument(raw.text)) return sanitizeHtml(raw.text, opts);
   if (raw.text !== undefined) {
     const fragments: string[] = [];
     const base = raw.text.replace(/\r\n?/g, '\n');

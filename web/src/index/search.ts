@@ -9,10 +9,11 @@ import type { EmbedInput, EmbedOutput } from '../ml/protocol';
 import { errorLine } from '../robust/errorLine';
 import { BOOST, GMAIL_LIVE_K, RERANK_TEXT_CHARS, SEARCH_TUNING } from './config';
 import { repairOrphanHit } from './consistency';
-import { asksLatest, holdsTopic, isRoleCue, knownSenderWordsOf, senderMatches, topicTerms } from './cues';
+import { asksLatest, holdsTopic, isRoleCue, knownOrgWordsOf, knownSenderWordsOf, senderMatches, topicTerms } from './cues';
 import { clockFor, type SieveDb } from './db';
 import { iso } from './dates';
-import { getRecord } from './ingest';
+import { looksLikeHtmlDocument } from './deps';
+import { getRecord, ingestInternal } from './ingest';
 import { ready } from './lifecycle';
 import { parseQuestion, type ParsedQuestion } from './parseQuestion';
 import { queryWordsOf, reasonFor } from './reasons';
@@ -30,6 +31,7 @@ export interface SearchReport {
   keyword: { ms: number; added: number };
   live?: { q: string; found: number; added: number; ms: number; charsSent: number; skipped?: 'no-token' | 'error' | 'timeout' };
   hydrated?: { fetched: number; skipped: number };
+  reread?: number;                      // emails stored as raw HTML that were read again as HTML before this answer
   repaired: number;                     // orphan hits dropped (20 section 5.7)
   filters?: HardFilter;                 // the sender and dates every candidate had to fit (10.2)
   senderDropped?: string;               // a sender read from the question's words that no item is from, but titles hold: it only ranks
@@ -613,6 +615,28 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
     }
   }
 
+  // An email stored before Nov 22, 2026 whose body came as plain text but is an HTML document still holds the tags.
+  // It is read again as HTML here, before anyone reads it: the words without the tags, hidden text removed, and its
+  // checks start over on the new text. The place the search matched no longer fits the new text, so it is dropped.
+  for (const f of final) {
+    if (f.rec.kind !== 'email' || typeof f.rec.text !== 'string' || !looksLikeHtmlDocument(f.rec.text)) continue;
+    try {
+      const fresh = await ingestInternal(
+        db,
+        { source: f.rec.source, sourceRef: f.rec.sourceRef, kind: 'email', title: f.rec.title, from: f.rec.from, threadId: f.rec.threadId, date: f.rec.date, html: f.rec.text },
+        db.sieveKind === 'real' ? 'own' : 'sample',
+        { priority: 'high', sizeBytes: f.rec.sizeBytes, sourceModifiedAt: f.rec.sourceModifiedAt },
+      );
+      if (fresh) {
+        f.rec = fresh;
+        f.s.hit = undefined;
+        report.reread = (report.reread ?? 0) + 1;
+      }
+    } catch {
+      // it stays as it was stored
+    }
+  }
+
   const queryWords = queryWordsOf(p.corrected);
   const candidates: Candidate[] = final.map(({ s, rec }) => {
     const c: Omit<Candidate, 'reason'> = { recordId: rec.id, score: Math.max(0, Math.min(1, s.score)), matchedBy: s.matchedBy };
@@ -626,6 +650,11 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
 /** The words that name a sender in this index (cues.ts), for the privacy pipeline's ID-number rule (11 section 5.6). */
 export function knownSendersOf(db: SieveDb): Set<string> {
   return knownSenderWordsOf(getRuntime(db).meta);
+}
+
+/** The words that name an organisation in this index (cues.ts): never masked as a person's name in an answer. */
+export function knownOrgsOf(db: SieveDb): Set<string> {
+  return knownOrgWordsOf(getRuntime(db).meta);
 }
 
 /** Same contentHash, other ids: 40's "also in old/" line (01 invariant 3). */

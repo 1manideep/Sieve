@@ -136,4 +136,7 @@ export const DEFAULT_DRAFT_INSTRUCTION = 'Draft a short, polite reply.';
 /** The one retry for an answer that could not be shared as it was: several facts, or the passage's own wording. */
 export const RESHAPE_REMINDER = 'Your last answer cannot be shared: it held more than one fact, or it copied the wording of the passage. Reply again with JSON only. "answer" is one short sentence in your own words, with one fact.';
 
+/** The same one retry when a yes-or-no question got something else. */
+export const YES_NO_REMINDER = 'Your last answer cannot be shared: the question asks yes or no. Reply again with JSON only. "answer" is exactly "Yes." or "No.", as the passage shows. If the passage does not say, "item" is "none".';
+
 export const RETRY_REMINDER = 'Your last reply did not match the required JSON format. Reply again with JSON only, exactly as described.';

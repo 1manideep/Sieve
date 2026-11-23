@@ -3,6 +3,7 @@
 // loads the `@/ai` and `@/privacy` barrels with import() when it first needs a model.
 import { codeLabel, codeRelabel, isHealthStrong } from '@/ai/tasks/codeLabel';
 import { PROMPT_VERSIONS } from '@/ai/versions';
+import { looksLikeHtmlDocument as htmlDocument } from '@/privacy/sanitize/htmlText';
 import { sanitizeIncoming as sanitize } from '@/privacy/sanitize/sanitize';
 import type {
   Category, CategoryRule, DataClass, IndexRecord, InjectionFinding, NanoAvailability, PiiSpan, PiiStage, PrivacyScanStamp, TraceStep, Where,
@@ -124,4 +125,9 @@ export function privacyScanApi(): PrivacyScanApi | null {
 
 export function sanitizeIncoming(raw: { html?: string; text?: string }): { text: string; hiddenRemoved: string[] } {
   return sanitize(raw);
+}
+
+/** A stored body that is an HTML document kept as plain text (see the sanitizer). */
+export function looksLikeHtmlDocument(text: string): boolean {
+  return htmlDocument(text);
 }

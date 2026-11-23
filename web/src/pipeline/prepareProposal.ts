@@ -13,11 +13,12 @@ import {
   recordBody, searchWords, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
 } from '@/ai';
 import {
-  asksCount, asksLatest, asksSeveral, asksState, clockFor, flushUrgentEmbeds, getRecord, identifierTerms, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
+  asksCount, asksLatest, asksSeveral, asksState, clockFor, flushUrgentEmbeds, getRecord, identifierTerms, knownOrgsOf, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
   type HardFilter, type ParsedQuestion, type SearchReport, type SieveDb,
 } from '@/index';
 import { asksSaid, describesOnlySender, holdsTopic, titleSaysAskedKind, topicTerms } from '@/index/cues';
 import { iso } from '@/index/dates';
+import { anchorRelativeDays } from './relativeDays';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
 import { isYesNoQuestion } from '@/privacy/steps/answerShape';
 import { errorLine, errorName } from '@/robust/errorLine';
@@ -320,12 +321,27 @@ export function latestOrder<T extends { rec: IndexRecord }>(list: T[], filters: 
   return [...list.slice(0, LATEST_RELEVANT).sort(newest), ...list.slice(LATEST_RELEVANT)];
 }
 
+/** A subject line with its numbers and its day and month words taken out: issues of one recurring email share it. */
+function titleTemplate(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/\b(?:mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun|jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b\.?/g, ' ')
+    .replace(/[\d#]+(?:[/:.,-][\d]+)*/g, ' ')
+    .replace(/[^\p{L}]+/gu, ' ')
+    .trim();
+}
+
 /**
  * Whether the first of a "latest" list (latestOrder) is surely the item the question means, so only it is read: the
  * sender's newest when the question asks about nothing but that sender ("my most recent Kestrelmoor email"), or the
  * newest whose title or sender holds the thing named. Given the newest five, the on-device model answered from the
  * third, the one whose words fit the question best (Nov 22, 2026: 2 of 2 on real mail; 1 of 5 with invented copies
  * of it, and 0 of 5 once only the newest was read).
+ *
+ * With a sender and more words ("how many items are in Parcelmoor's latest daily digest"), the newest is still the one
+ * meant when no other candidate's subject fits those words better: when its subject holds some of them and no other
+ * holds more, or when the candidates are issues of one recurring email (the same subject but for its date). Given five
+ * daily digests, the model answered from the one of four days earlier (Nov 22, 2026).
  */
 export function newestIsMeant<T extends { rec: IndexRecord }>(list: T[], filters: HardFilter | undefined, question: string): boolean {
   const topic = topicTerms(question);
@@ -333,7 +349,17 @@ export function newestIsMeant<T extends { rec: IndexRecord }>(list: T[], filters
   if (!first) return false;
   if (!filters?.sender) return holdsTopic(topic, first.rec.title, first.rec.from);
   const sender = topicTerms(filters.sender);
-  return topic.every((t) => sender.includes(t));
+  const rest = topic.filter((t) => !sender.includes(t));
+  if (rest.length === 0) return true;
+  const others = list.slice(1, SELECT_MAX_PASSAGES);
+  const fit = (a: T): number => {
+    const have = new Set(topicTerms(a.rec.title));
+    return rest.filter((t) => have.has(t)).length;
+  };
+  const best = fit(first);
+  if (best > 0 && others.every((a) => fit(a) <= best)) return true;
+  const template = titleTemplate(first.rec.title);
+  return others.length > 0 && template.length > 0 && others.every((a) => titleTemplate(a.rec.title) === template);
 }
 
 function clockOf(db: SieveDb, fallback: number): number {
@@ -781,7 +807,9 @@ async function prepare(run: Run): Promise<Proposal> {
 
   // 13. The excerpt, chosen by plain code.
   const rec = chosen;
-  const answer = value.answer;
+  // "Today" and "tomorrow" in the answer mean the item's day: when the item is not from today, the date is written.
+  const answer = anchorRelativeDays(value.answer, rec.date, run.now);
+  if (answer !== value.answer) run.code('clean', LABELS.dayWritten);
   let excerpt = value.excerpt;
   let unsupported = value.unsupported ?? [];
   if (recomputeExcerpt) {
@@ -823,8 +851,10 @@ async function prepare(run: Run): Promise<Proposal> {
   const photo = rec.kind === 'photo' ? await photoBlobFor(db, rec.id) : undefined;
   const data = recordDataClass(rec);
   let knownSenders: Set<string> | undefined;
+  let knownOrgs: Set<string> | undefined;
   try {
     knownSenders = knownSendersOf(db);
+    knownOrgs = knownOrgsOf(db);
   } catch {
     knownSenders = undefined;   // a stand-in index: the item's own sender still counts (11 section 5.6)
   }
@@ -839,6 +869,7 @@ async function prepare(run: Run): Promise<Proposal> {
           rule,
           allowNano: false,
           ...(knownSenders ? { knownSenders } : {}),
+          ...(knownOrgs ? { knownOrgs } : {}),
           ...extra,
           ...(photo ? { photo } : {}),
           ...(input.signal ? { signal: input.signal } : {}),

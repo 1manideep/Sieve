@@ -56,6 +56,11 @@ export const NAV = {
   /** The ring at the bottom of the rail. */
   neverShared: (pct: number) => `${pct}% of your items never shared`,
   neverSharedTip: (never: string, total: string) => `Never shared · ${never} of ${total} items`,
+  /** The same ring while items are still being made searchable, and the two captions under it. */
+  indexing: (pct: number) => `Indexing: ${pct}% of your items can be searched`,
+  indexingTip: (done: string, total: string) => `Indexing · ${done} of ${total} items can be searched`,
+  ringIndexing: 'indexing',
+  ringNever: 'unshared',
 } as const;
 
 /** The Nano meter card at the bottom of the rail: short words next to "Gemini Nano", the index and the home base. */

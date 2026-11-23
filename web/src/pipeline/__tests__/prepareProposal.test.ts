@@ -10,7 +10,7 @@ import { fakeDb } from '@/ai/__tests__/fakeDb';
 import { BODIES, RECORDS, record } from '@/ai/__tests__/fixtures';
 import { clearCloudConsentRequestsForTests, getCloudConsentRequest, grantCloudConsent } from '../consent';
 import { finalizeDecision } from '../finalizeDecision';
-import { LATEST_RELEVANT, latestOrder, prepareProposal } from '../prepareProposal';
+import { LATEST_RELEVANT, latestOrder, newestIsMeant, prepareProposal } from '../prepareProposal';
 import type { PipelineProgress, PrepareInput } from '../types';
 import * as idx from './mocks/index';
 import * as privacy from './mocks/privacy';
@@ -377,6 +377,23 @@ describe('prepareProposal (10 section 16.10)', () => {
     // with a sender filter every candidate fits, so all of them go newest first, the newest five
     const six = [3, 13, 1, 9, 12, 7].map((d) => at(`benji-${d}`, d));
     expect(idsOf(latestOrder(six, { sender: 'Benji' }))).toEqual(['benji-13', 'benji-12', 'benji-9', 'benji-7', 'benji-3']);
+  });
+
+  it('with a sender, the newest is the one meant unless another subject fits the question better (Nov 22)', () => {
+    const mail = (title: string, day: number) => ({ rec: record({ id: `gmail:${title}`, title, from: 'Parcelmoor Post <digest@parcelmoor.example>', date: Date.parse(`2026-11-${String(day).padStart(2, '0')}T09:00:00-06:00`) }) });
+    const sender = { sender: 'Parcelmoor Post' };
+    // issues of one recurring email, newest first: only the newest is read, whatever else the question says
+    const digests = [21, 20, 19, 18, 17].map((d) => mail(`Your Daily Digest for ${['Sat', 'Fri', 'Thu', 'Wed', 'Tue'][21 - d]}, 11/${d} is ready to view`, d));
+    expect(newestIsMeant(digests, sender, 'What is in my latest Parcelmoor Post daily digest?')).toBe(true);
+    expect(newestIsMeant(digests, sender, 'How many parcels does the latest email from Parcelmoor Post list?')).toBe(true);
+    expect(newestIsMeant(digests, sender, 'My most recent Parcelmoor Post email')).toBe(true);
+    // different emails: the newest is meant when its subject holds the thing asked about and no other holds more
+    const mixed = [mail('Your parcel is on its way', 21), mail('Rate your delivery', 20), mail('New pickup point near you', 19)];
+    expect(newestIsMeant(mixed, sender, "What did Parcelmoor Post's latest email say about my parcel?")).toBe(true);
+    // another subject fits better, or none says anything about it: the newest five are read, as before
+    expect(newestIsMeant(mixed, sender, "What did Parcelmoor Post's latest email say about the pickup point?")).toBe(false);
+    expect(newestIsMeant(mixed, sender, "What did Parcelmoor Post's latest email say about the refund?")).toBe(false);
+    expect(newestIsMeant([], sender, 'My most recent Parcelmoor Post email')).toBe(false);
   });
 
   it('"the latest" about a named thing: the candidates whose title or sender holds two of its words go newest first (Nov 22)', () => {

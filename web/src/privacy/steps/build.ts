@@ -19,7 +19,7 @@ import { collapseSpaces, ensureWellFormed, isAbortError, plural, type Range } fr
 import type { BuildStepOptions } from '../types';
 import { answerKeepTypes, cleanAnswer } from './answer';
 import { dropSubject, leaksStructure, shapeAnswer } from './answerShape';
-import { keepAskerWords, notTheCompany, personSender, senderEntities, senderWordsOf } from './asker';
+import { keepAskerWords, notAnOrganisation, notTheCompany, personSender, senderEntities, senderWordsOf } from './asker';
 import { excerptHeader, locateExcerpt } from './excerpt';
 import { capFull, fullHeader, lastCutBefore } from './full';
 import { copiesTooMuch, hiddenLeak } from './invariants';
@@ -36,6 +36,8 @@ export const UNAVAILABLE = {
   noPhoto: 'This photo is not available to share.',
   verbatim: 'The answer repeated too much of the original wording.',
   answerInstruction: 'The answer looked like an instruction, so it is not offered.',
+  /** The same refusal when it was the last check on this device, not a pattern, that read the answer so (its own words, so a test can tell the two apart). */
+  answerFlagged: 'The last check read the answer as an instruction, so it is not offered.',
   hidden: 'Hidden text was found in this step, so it is not offered.',
   stillInstruction: 'This text still looked like an instruction to an AI, so it is not offered.',
   empty: 'Nothing is left to share after hiding personal details.',
@@ -162,7 +164,7 @@ export async function buildStepOption(
     if (step === 'answer') {
       if (matchInjectionPatterns(text).suspicious) return unavailable(step, UNAVAILABLE.answerInstruction);
       const folded = collapseSpaces(text).toLowerCase();
-      if (extraQuotes.some((q) => q.trim() && folded.includes(collapseSpaces(q).toLowerCase()))) return unavailable(step, UNAVAILABLE.answerInstruction);
+      if (extraQuotes.some((q) => q.trim() && folded.includes(collapseSpaces(q).toLowerCase()))) return unavailable(step, UNAVAILABLE.answerFlagged);
     } else {
       const r = removeInjectedSentences(text, rec.injection?.quote, extraQuotes);
       text = r.text;
@@ -181,7 +183,7 @@ export async function buildStepOption(
     const actors = step === 'answer' ? findActorNames(text) : notTheCompany(text, findActorNames(text), rec);
     const senders = senderWordsOf(rec, opts.knownSenders);
     const finalized = finalizeSpans(text, [...runValidators(text), ...findSecretCodes(text), ...actors, ...locateEntities(text, known)], { senders });
-    const found = dropPublicValues(text, step === 'answer' ? notTheCompany(text, finalized, rec) : finalized, scanText(rec));
+    const found = dropPublicValues(text, step === 'answer' ? notAnOrganisation(text, notTheCompany(text, finalized, rec), opts.knownOrgs) : finalized, scanText(rec));
     const asked = [opts.question, ...(opts.terms ?? [])].filter((t) => t?.trim()).join('\n');
     const spans = keepAskerWords(text, found, asked || undefined);
 

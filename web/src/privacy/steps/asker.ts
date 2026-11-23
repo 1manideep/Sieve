@@ -55,6 +55,19 @@ export function senderWordsOf(record: Pick<IndexRecord, 'from'>, known?: Readonl
   return out;
 }
 
+/**
+ * "A failed payment for Lumora": a name that is an organisation of this index (a company's own mail domain) is not a
+ * person's name, so it is not masked. Organisation names stay in an answer; they are often the answer.
+ */
+export function notAnOrganisation(text: string, spans: readonly PiiSpan[], orgs: ReadonlySet<string> | undefined): PiiSpan[] {
+  if (!orgs || orgs.size === 0) return [...spans];
+  return spans.filter((s) => {
+    if (s.type !== 'name') return true;
+    const words = text.slice(s.start, s.end).toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+    return !(words.length > 0 && (words.every((w) => orgs.has(w)) || orgs.has(words.join(''))));
+  });
+}
+
 /** "Sunny Paws sent you a booking": a company sender's own name is not a person's name, so it is not masked. */
 export function notTheCompany(text: string, spans: readonly PiiSpan[], record: Pick<IndexRecord, 'from'>): PiiSpan[] {
   const name = senderName(record.from);

@@ -1,14 +1,17 @@
 // Main navigation, as a 72px rail of icons (design handoff of Nov 20, 2026, after Gemini's collapsed sidebar): New
 // ask, Try on a real computer, Requests (a dot when one waits), What has AI seen? and Sources; at the bottom the
-// share of items never shared, then Settings. Each icon names itself in a tooltip on hover and focus.
+// share of items never shared (the indexing progress while items are still being made searchable), then Settings.
+// Each icon names itself in a tooltip on hover and focus; the ring also says what it counts in a caption.
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { loadIndex, tablesOf } from '@/components/dbTables';
 import { formatCount } from '@/copy/format';
 import { NAV } from '@/copy/strings';
 import { useHomeBase } from '@/state/homeBase';
+import { useIndexing } from '@/state/indexing';
 import { sharedItemCount, useReceipts } from '@/state/receipts';
 import styles from './MainNav.module.css';
+import { ringView } from './ring';
 
 const GEAR =
   'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z';
@@ -31,8 +34,8 @@ function RailIcon({ d }: { d: string }) {
 
 const itemClass = ({ isActive }: { isActive: boolean }) => (isActive ? `${styles.it} ${styles.active}` : styles.it);
 
-/** Items in the real index, counted again on each route change (a count, never a read of the items). */
-function useItemCount(): number | undefined {
+/** Items in the real index, counted again on each route change and whenever indexing finds more (a count, never a read of the items). */
+function useItemCount(found: number): number | undefined {
   const { pathname } = useLocation();
   const [count, setCount] = useState<number | undefined>(undefined);
   useEffect(() => {
@@ -46,28 +49,40 @@ function useItemCount(): number | undefined {
     return () => {
       live = false;
     };
-  }, [pathname]);
+  }, [pathname, found]);
   return count;
 }
 
-/** The ring at the bottom of the rail: the share of items on this computer that no AI has ever received. */
-function NeverShared() {
-  const total = useItemCount();
+/**
+ * The ring at the bottom of the rail. While items are still being made searchable: the indexing progress. Otherwise:
+ * the share of items on this computer that no AI has ever received. The caption and the tooltip say which.
+ */
+function Ring() {
+  const left = useIndexing((s) => s.left);
+  const ready = useIndexing((s) => s.ready);
+  const found = useIndexing((s) => s.total);
+  const searchLeft = useIndexing((s) => s.searchLeft);
+  const count = useItemCount(found);
   const receipts = useReceipts((s) => s.receipts);
   const shared = useMemo(() => sharedItemCount(receipts), [receipts]);
-  if (total === undefined || total === 0) return null;
-  const never = Math.max(0, total - shared);
-  const pct = Math.floor((never / total) * 100);
+  const view = ringView(count, shared, { left, ready, total: found, searchLeft });
+  if (!view) return null;
+  const indexing = view.mode === 'indexing';
+  const label = indexing ? NAV.indexing(view.pct) : NAV.neverShared(view.pct);
+  const tip = indexing ? NAV.indexingTip(formatCount(view.searchable), formatCount(view.total)) : NAV.neverSharedTip(formatCount(view.never), formatCount(view.total));
   return (
-    <li>
-      <NavLink to="/sources" className={styles.it} aria-label={NAV.neverShared(pct)}>
-        <span className={styles.ring} style={{ ['--shared' as string]: `${100 - pct}%` }}>
-          <span className={styles.ringIn}>{pct}%</span>
+    <li className={styles.ringItem}>
+      <NavLink to="/sources" className={styles.it} aria-label={label}>
+        <span className={styles.ring} style={{ ['--shared' as string]: `${view.arc}%` }}>
+          <span className={styles.ringIn}>{view.pct}%</span>
         </span>
         <span className={styles.tip} aria-hidden="true">
-          {NAV.neverSharedTip(formatCount(never), formatCount(total))}
+          {tip}
         </span>
       </NavLink>
+      <span className={indexing ? `${styles.cap} ${styles.capBusy}` : styles.cap} aria-hidden="true">
+        {indexing ? NAV.ringIndexing : NAV.ringNever}
+      </span>
     </li>
   );
 }
@@ -93,7 +108,7 @@ export function MainNav() {
         })}
       </ul>
       <ul className={`${styles.list} ${styles.foot}`}>
-        <NeverShared />
+        <Ring />
         <li>
           <NavLink to="/settings" className={itemClass} aria-label={NAV.settings}>
             <RailIcon d={GEAR} />
