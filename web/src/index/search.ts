@@ -12,7 +12,8 @@ import { repairOrphanHit } from './consistency';
 import { asksLatest, holdsTopic, isRoleCue, knownOrgWordsOf, knownSenderWordsOf, senderMatches, topicTerms } from './cues';
 import { clockFor, type SieveDb } from './db';
 import { iso } from './dates';
-import { getRecord } from './ingest';
+import { looksLikeHtmlDocument } from './deps';
+import { getRecord, ingestInternal } from './ingest';
 import { ready } from './lifecycle';
 import { parseQuestion, type ParsedQuestion } from './parseQuestion';
 import { queryWordsOf, reasonFor } from './reasons';
@@ -30,6 +31,7 @@ export interface SearchReport {
   keyword: { ms: number; added: number };
   live?: { q: string; found: number; added: number; ms: number; charsSent: number; skipped?: 'no-token' | 'error' | 'timeout' };
   hydrated?: { fetched: number; skipped: number };
+  reread?: number;                      // emails stored as raw HTML that were read again as HTML before this answer
   repaired: number;                     // orphan hits dropped (20 section 5.7)
   filters?: HardFilter;                 // the sender and dates every candidate had to fit (10.2)
   senderDropped?: string;               // a sender read from the question's words that no item is from, but titles hold: it only ranks
@@ -610,6 +612,28 @@ async function searchOnce(db: SieveDb, question: string, opts: SearchOptions, da
         const fresh = await getRecord(db, f.rec.id);
         if (fresh) f.rec = fresh;
       }
+    }
+  }
+
+  // An email stored before Nov 22, 2026 whose body came as plain text but is an HTML document still holds the tags.
+  // It is read again as HTML here, before anyone reads it: the words without the tags, hidden text removed, and its
+  // checks start over on the new text. The place the search matched no longer fits the new text, so it is dropped.
+  for (const f of final) {
+    if (f.rec.kind !== 'email' || typeof f.rec.text !== 'string' || !looksLikeHtmlDocument(f.rec.text)) continue;
+    try {
+      const fresh = await ingestInternal(
+        db,
+        { source: f.rec.source, sourceRef: f.rec.sourceRef, kind: 'email', title: f.rec.title, from: f.rec.from, threadId: f.rec.threadId, date: f.rec.date, html: f.rec.text },
+        db.sieveKind === 'real' ? 'own' : 'sample',
+        { priority: 'high', sizeBytes: f.rec.sizeBytes, sourceModifiedAt: f.rec.sourceModifiedAt },
+      );
+      if (fresh) {
+        f.rec = fresh;
+        f.s.hit = undefined;
+        report.reread = (report.reread ?? 0) + 1;
+      }
+    } catch {
+      // it stays as it was stored
     }
   }
 
