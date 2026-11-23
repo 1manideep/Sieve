@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { env } from '@/app/env';
-import { BARS_MET, PRIVACY, TESTS } from '@/copy/how-tests';
+import { BARS_MET, BLIND_BARS_MET, PRIVACY, TESTS, barsMet } from '@/copy/how-tests';
 import { HOW_COPY } from '@/copy/screens-how';
 import { SCREENS } from '@/copy/strings';
 import { expectNoAxeViolations } from '@/test/axe';
@@ -116,6 +116,8 @@ describe('/how', () => {
     const stats = within(section).getAllByRole('listitem');
     expect(stats.map((li) => li.querySelector('b')?.textContent)).toEqual([TESTS.automated.tests.toLocaleString('en-US'), '96%', '24 of 27', '0']);
     expect(stats[2]).toHaveTextContent('The first round scored 5.');
+    expect(stats[3]).toHaveTextContent('made-up answers in the latest round, across its 67 runs. Round 9 had two, and both causes were fixed.');
+    expect(section).toHaveTextContent('Two sets of questions written before any result was seen scored 92% each in the latest round.');
     // whose mailbox it was and what was replaced, said before anything is opened
     expect(PRIVACY).toMatch(/^The live rounds ran on the developer's own personal Gmail\./);
     expect(PRIVACY).toContain('has been replaced with an invented one');
@@ -143,9 +145,34 @@ describe('/how', () => {
     expect(within(section).getByRole('table', { name: 'Table 6 · Search benchmark: 68 questions among 2,020 items' })).toBeInTheDocument();
     const rounds = within(section).getByRole('table', { name: 'Table 7 · Live rounds, 37 runs each' });
     expect(within(rounds).getAllByRole('row')).toHaveLength(TESTS.live.rounds.length + 1);
+    expect(within(rounds).getAllByRole('columnheader').map((th) => th.textContent)).toEqual([
+      'Round',
+      'Right',
+      'Wrong',
+      'Missed',
+      'Nothing, correctly',
+      'Made up',
+      'Declined',
+      'Errors',
+    ]);
+    const round9 = within(rounds).getByRole('row', { name: /^Round 9,/ });
+    expect(within(round9).getAllByRole('cell').map((td) => td.textContent)).toEqual(['Round 9, November 23', '23', '1', '0', '8', '2', '1', '2']);
     expect(BARS_MET).toBe(4);
-    expect(section).toHaveTextContent('Round 5 met all four: 89% right (24 of 27), 4% missed (1 of 27), 4% wrong (1 of 25 answers), and nothing made up.');
-    expect(screen.getAllByRole('table')).toHaveLength(7);
+    expect(section).toHaveTextContent('Round 10 met all four: 89% right (24 of 27), 4% missed (1 of 27), 4% wrong (1 of 25 answers), and nothing made up.');
+
+    const blind = within(section).getByRole('table', { name: 'Table 8 · Two blind sets of 15 questions, by round' });
+    expect(within(blind).getAllByRole('row')).toHaveLength(TESTS.live.blind.rounds.length + 1);
+    expect(within(blind).getAllByRole('columnheader').map((th) => th.textContent)).toEqual(['Round', 'First set', 'Second set']);
+    const blindCells = (name: string) => within(within(blind).getByRole('row', { name: new RegExp(`^${name} `) })).getAllByRole('cell').map((td) => td.textContent);
+    expect(blindCells('Round 8')).toEqual(['Round 8', '10 right, 2 missed', '9 right, 1 wrong, 2 missed']);
+    expect(blindCells('Round 9')).toEqual(['Round 9', '12 right', '11 right, 1 missed']);
+    expect(blindCells('Round 10')).toEqual(['Round 10', '11 right, 1 missed', '11 right, 1 missed']);
+    expect(BLIND_BARS_MET).toEqual([4, 4]);
+    expect(section).toHaveTextContent(
+      'In round 10 both sets met all four parts of the bar: each set had 11 of 12 right (92%), 1 of 12 missed (8%), no wrong answer and nothing made up. Their misses in earlier rounds were fixed too, so their later rounds are not blind either.',
+    );
+    expect(section).toHaveTextContent('Each set was asked only once before any fix looked at its misses: the first in round 5 and the second in round 6.');
+    expect(screen.getAllByRole('table')).toHaveLength(8);
     await expectNoAxeViolations();
 
     fireEvent.click(button);
@@ -153,14 +180,45 @@ describe('/how', () => {
     expect(screen.getAllByRole('table')).toHaveLength(5);
   });
 
-  it('counts every run of every live round once', () => {
+  it('counts every run of every live round and of both blind sets once', () => {
     const { live } = TESTS;
+    const { blind } = live;
     expect(live.answerable + live.absent).toBe(live.runs);
     for (const r of live.rounds) {
-      expect(r.right + r.wrong + r.missed + r.nothing + r.declined + r.errors, r.name).toBe(live.runs);
+      expect(r.right + r.wrong + r.missed + r.nothing + r.declined + r.errors + r.madeUp, r.name).toBe(live.runs);
     }
-    // the summary's "made-up answers" line: the runs since round 1 that returned nothing, correctly
-    expect(live.rounds.slice(1).reduce((sum, r) => sum + r.nothing, 0)).toBe(live.absentRuns);
+    // the summary quotes the latest round
+    expect(live.quoted).toBe(live.rounds.length - 1);
+
+    expect(blind.answerable + blind.absent).toBe(blind.questions);
+    for (const r of blind.rounds) {
+      for (const [name, set] of [
+        ['first', r.first],
+        ['second', r.second],
+      ] as const) {
+        expect(set.right + set.wrong + set.missed + set.nothing + set.madeUp, `round ${r.round}, ${name} set`).toBe(blind.questions);
+        // "In every round both sets returned nothing for their 3 questions about things that are not in the mailbox."
+        expect(set.nothing, `round ${r.round}, ${name} set`).toBe(blind.absent);
+        expect(set.madeUp, `round ${r.round}, ${name} set`).toBe(0);
+      }
+    }
+    // the blind rounds run from round 6, the first with both sets, to the latest live round
+    expect(blind.firstAsked).toEqual([5, 6]);
+    expect(blind.rounds.map((r) => r.round)).toEqual([6, 7, 8, 9, 10]);
+    expect(blind.rounds.at(-1)?.round).toBe(live.rounds.length);
+  });
+
+  it("checks the bar against each round's own made-up answers", () => {
+    const { live } = TESTS;
+    const round = (n: number) => live.rounds[n - 1]!;
+    // round 9 met the other three parts and made two answers up, so it met three of the four
+    expect(round(9).madeUp).toBe(2);
+    expect(barsMet({ ...round(9), madeUp: 0 }, live.answerable)).toBe(4);
+    expect(barsMet(round(9), live.answerable)).toBe(3);
+    // what the paragraph after Table 7 says about rounds 5 to 10
+    expect(live.rounds.slice(4).map((r) => r.declined)).toEqual([1, 1, 1, 1, 1, 1]);
+    expect([round(8).errors, round(9).errors]).toEqual([1, 2]);
+    expect(live.rounds.filter((r) => r.madeUp > 0).map((r) => r.name)).toEqual(['Round 9, November 23']);
   });
 
   it('points every "On this page" link, in the rail and in the folded list, at a section that exists', () => {

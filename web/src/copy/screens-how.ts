@@ -327,7 +327,7 @@ export const HOW_SECTIONS: readonly HowSection[] = [
               PLAIN_CODE,
               'Confirms the item still exists at its source. Rejects an answer that packs several facts, that copies more than 12 words in a row, or that lacks the date or amount the question asked for.',
             ],
-            ['7', 'Second check', ON_DEVICE, 'A separate call reads the chosen item again and says whether it really answers the question.'],
+            ['7', 'Second check', ON_DEVICE, 'A separate call reads the chosen item again and says whether it really answers the question. Skipped when plain code already knows the item is the one meant.'],
             ['8', 'Mask personal details', PLAIN_CODE, 'Replaces names, addresses, numbers and similar details with marks such as `[name]`.'],
             ['9', 'Last look', ON_DEVICE, 'Gemini Nano reads the text that would leave. Anything it finds is masked by plain code.'],
             ['10', 'Approve', { chip: 'The person', tone: 'person' }, 'Sees the exact outgoing text with any warnings. Approves it, shares a lower step, or declines.'],

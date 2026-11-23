@@ -15,12 +15,23 @@ export interface LiveRound {
   nothing: number;
   /** Refused with a reason: the sender was not named, or Gmail could not be asked for newer mail. */
   declined: number;
+  /** The run failed, as when the on-device model ran past its time limit. */
   errors: number;
+  /** An answer given to a question the mailbox cannot answer. */
+  madeUp: number;
+}
+
+/** One blind set in one round. No run of these sets was declined or failed, so the counts sum to the set's questions. */
+export type BlindRun = Pick<LiveRound, 'right' | 'wrong' | 'missed' | 'nothing' | 'madeUp'>;
+export interface BlindRound {
+  round: number;
+  first: BlindRun;
+  second: BlindRun;
 }
 
 export const TESTS = {
   /** `npm run check` at the last release, and the counts on a fresh copy of the repository on Nov 20, 2026. */
-  automated: { tests: 2363, files: 185, testsOnNov20: 2047, functionsTests: 99, benchTests: 68 },
+  automated: { tests: 2471, files: 197, testsOnNov20: 2047, functionsTests: 99, benchTests: 68 },
   /** Each risky step tried alone before the build, Nov 15 and 16, 2026: an M2 MacBook, 16 GB, sample data. */
   spikes: {
     labels: { right: 48, of: 50 },
@@ -61,19 +72,39 @@ export const TESTS = {
     answerable: 27,
     absent: 10,
     rounds: [
-      { name: 'Round 1, November 21', right: 5, wrong: 4, missed: 14, nothing: 9, declined: 0, errors: 5 },
-      { name: 'Round 2, November 22', right: 20, wrong: 1, missed: 6, nothing: 10, declined: 0, errors: 0 },
-      { name: 'Round 3, November 22', right: 23, wrong: 2, missed: 2, nothing: 10, declined: 0, errors: 0 },
-      { name: 'Round 4, November 22', right: 20, wrong: 0, missed: 1, nothing: 7, declined: 8, errors: 1 },
-      { name: 'Round 5, November 22', right: 24, wrong: 1, missed: 1, nothing: 10, declined: 1, errors: 0 },
+      { name: 'Round 1, November 21', right: 5, wrong: 4, missed: 14, nothing: 9, declined: 0, errors: 5, madeUp: 0 },
+      { name: 'Round 2, November 22', right: 20, wrong: 1, missed: 6, nothing: 10, declined: 0, errors: 0, madeUp: 0 },
+      { name: 'Round 3, November 22', right: 23, wrong: 2, missed: 2, nothing: 10, declined: 0, errors: 0, madeUp: 0 },
+      { name: 'Round 4, November 22', right: 20, wrong: 0, missed: 1, nothing: 7, declined: 8, errors: 1, madeUp: 0 },
+      { name: 'Round 5, November 22', right: 24, wrong: 1, missed: 1, nothing: 10, declined: 1, errors: 0, madeUp: 0 },
+      { name: 'Round 6, November 22', right: 25, wrong: 1, missed: 0, nothing: 10, declined: 1, errors: 0, madeUp: 0 },
+      { name: 'Round 7, November 22', right: 22, wrong: 3, missed: 1, nothing: 10, declined: 1, errors: 0, madeUp: 0 },
+      { name: 'Round 8, November 23', right: 25, wrong: 0, missed: 1, nothing: 9, declined: 1, errors: 1, madeUp: 0 },
+      { name: 'Round 9, November 23', right: 23, wrong: 1, missed: 0, nothing: 8, declined: 1, errors: 2, madeUp: 2 },
+      { name: 'Round 10, November 23', right: 24, wrong: 1, missed: 1, nothing: 10, declined: 1, errors: 0, madeUp: 0 },
     ] as readonly LiveRound[],
     /** The round the summary quotes (an index into rounds): the latest. */
-    quoted: 4,
+    quoted: 9,
     /** The bar set before round 1, in percent: right and missed are shares of the answerable runs, wrong of the answers. */
     bar: { right: 85, missed: 10, wrong: 5 },
-    /** Runs since round 1 of questions the mailbox cannot answer, and how many of them got an answer. */
-    absentRuns: 37,
-    madeUp: 0,
+    /**
+     * Two more sets asked in every round from round 6, written before any result from Sieve was seen, about emails the
+     * 37 runs do not use. The first set was first asked in round 5, and that run is not counted here.
+     */
+    blind: {
+      questions: 15,
+      answerable: 12,
+      absent: 3,
+      /** The round in which each set was first asked, before any fix had looked at its misses. */
+      firstAsked: [5, 6],
+      rounds: [
+        { round: 6, first: { right: 9, wrong: 0, missed: 3, nothing: 3, madeUp: 0 }, second: { right: 11, wrong: 0, missed: 1, nothing: 3, madeUp: 0 } },
+        { round: 7, first: { right: 9, wrong: 0, missed: 3, nothing: 3, madeUp: 0 }, second: { right: 11, wrong: 0, missed: 1, nothing: 3, madeUp: 0 } },
+        { round: 8, first: { right: 10, wrong: 0, missed: 2, nothing: 3, madeUp: 0 }, second: { right: 9, wrong: 1, missed: 2, nothing: 3, madeUp: 0 } },
+        { round: 9, first: { right: 12, wrong: 0, missed: 0, nothing: 3, madeUp: 0 }, second: { right: 11, wrong: 0, missed: 1, nothing: 3, madeUp: 0 } },
+        { round: 10, first: { right: 11, wrong: 0, missed: 1, nothing: 3, madeUp: 0 }, second: { right: 11, wrong: 0, missed: 1, nothing: 3, madeUp: 0 } },
+      ] as readonly BlindRound[],
+    },
   },
 } as const;
 
@@ -85,19 +116,61 @@ const count = (n: number) => n.toLocaleString('en-US');
 const share = (part: number, whole: number) => `${Math.round((part / whole) * 100)}%`;
 
 const { automated, spikes, review, seats, search, model, live } = TESTS;
+const { blind } = live;
 const items = search.sample + search.unrelated;
 const shipped = search.rows[search.rows.length - 1]!;
 const first = live.rounds[0]!;
 const quoted = live.rounds[live.quoted]!;
 const answered = quoted.right + quoted.wrong;
+const blindLatest = blind.rounds[blind.rounds.length - 1]!;
+const blindSets = [blindLatest.first, blindLatest.second];
+
+/** How many of the four parts of the bar one run of a question set met, given how many of its questions can be answered. */
+export function barsMet(run: BlindRun, answerable: number): number {
+  return [
+    run.right * 100 >= live.bar.right * answerable,
+    run.missed * 100 <= live.bar.missed * answerable,
+    run.wrong * 100 <= live.bar.wrong * (run.right + run.wrong),
+    run.madeUp === 0,
+  ].filter(Boolean).length;
+}
 /** How many of the four parts of the bar the quoted round met. */
-export const BARS_MET = [
-  quoted.right * 100 >= live.bar.right * live.answerable,
-  quoted.missed * 100 <= live.bar.missed * live.answerable,
-  quoted.wrong * 100 <= live.bar.wrong * answered,
-  live.madeUp === 0,
-].filter(Boolean).length;
-const MET = ['none of the four', 'one of the four', 'two of the four', 'three of the four', 'all four'][BARS_MET]!;
+export const BARS_MET = barsMet(quoted, live.answerable);
+/** The same for each blind set in its latest round. */
+export const BLIND_BARS_MET = blindSets.map((set) => barsMet(set, blind.answerable));
+const METS = ['none of the four', 'one of the four', 'two of the four', 'three of the four', 'all four'];
+const MET = METS[BARS_MET]!;
+const WORDS = ['none', 'one', 'two', 'three', 'four', 'five'];
+const roundOf = (r: LiveRound) => r.name.split(',')[0]!;
+
+/** The latest round's runs over all three sets, the made-up answers among them, and the last round before it that had any. */
+const latestRuns = live.runs + blindSets.length * blind.questions;
+const latestMadeUp = quoted.madeUp + blindSets.reduce((sum, set) => sum + set.madeUp, 0);
+const lastMadeUp = live.rounds.slice(0, live.quoted).findLast((r) => r.madeUp > 0);
+const madeUpBefore = lastMadeUp ? ` ${roundOf(lastMadeUp)} had ${WORDS[lastMadeUp.madeUp] ?? lastMadeUp.madeUp}, and both causes were fixed.` : '';
+
+/** A cell of Table 8: the answerable questions of one set in one round, and any made-up answer. */
+const blindCell = (set: BlindRun) =>
+  (
+    [
+      [set.right, 'right'],
+      [set.wrong, 'wrong'],
+      [set.missed, 'missed'],
+      [set.madeUp, 'made up'],
+    ] as const
+  )
+    .filter(([n], i) => i === 0 || n > 0)
+    .map(([n, word]) => `${n} ${word}`)
+    .join(', ');
+const blindLine = (set: BlindRun) =>
+  `${set.right} of ${blind.answerable} right (${share(set.right, blind.answerable)}), ${set.missed} of ${blind.answerable} missed (${share(set.missed, blind.answerable)}), ${set.wrong === 0 ? 'no wrong answer' : `${set.wrong} wrong`} and ${set.madeUp === 0 ? 'nothing made up' : `${set.madeUp} made up`}`;
+const [firstLine, secondLine] = blindSets.map(blindLine);
+const [firstMet, secondMet] = BLIND_BARS_MET.map((n) => METS[n]!);
+const blindMet = firstMet === secondMet ? `both sets met ${firstMet}` : `the first set met ${firstMet} and the second ${secondMet}`;
+const blindHad = firstLine === secondLine ? `each set had ${firstLine}` : `the first set had ${firstLine}, and the second ${secondLine}`;
+const [firstShare, secondShare] = blindSets.map((set) => share(set.right, blind.answerable));
+const blindScored = firstShare === secondShare ? `${firstShare} each` : `${firstShare} and ${secondShare}`;
+const [firstAsked, secondAsked] = blind.firstAsked;
 
 const DETAIL: readonly HowBlock[] = [
   { h3: 'Automated tests' },
@@ -136,18 +209,47 @@ const DETAIL: readonly HowBlock[] = [
   {
     table: {
       caption: `Table 7 · Live rounds, ${live.runs} runs each`,
-      head: ['Round', 'Right', 'Wrong', 'Missed', 'Nothing, correctly', 'Declined', 'Errors'],
-      rows: live.rounds.map((r) => [r.name, ...[r.right, r.wrong, r.missed, r.nothing, r.declined, r.errors].map(String)]),
+      head: ['Round', 'Right', 'Wrong', 'Missed', 'Nothing, correctly', 'Made up', 'Declined', 'Errors'],
+      rows: live.rounds.map((r) => [r.name, ...[r.right, r.wrong, r.missed, r.nothing, r.madeUp, r.declined, r.errors].map(String)]),
     },
   },
   {
-    p: "**Wrong** is an answer from the wrong item, or the wrong fact from the right one. **Missed** is nothing returned although the mailbox held the answer. **Nothing, correctly** is nothing returned for a question the mailbox cannot answer. **Declined** is a refusal with a reason. In round 4, Sieve's access to Gmail ran out during the test. It refused seven questions about the newest mail because it could not ask Gmail for newer mail, and it asked for a sender's name once. In round 5 it asked for a sender's name once.",
+    p: '**Wrong** is an answer from the wrong item, or the wrong fact from the right one. **Missed** is nothing returned although the mailbox held the answer. **Nothing, correctly** is nothing returned for a question the mailbox cannot answer. **Made up** is an answer to a question the mailbox cannot answer. **Declined** is a refusal with a reason.',
   },
   {
-    p: `The bar was set before the first round: right on at least ${live.bar.right}% of the answerable runs, missed on at most ${live.bar.missed}%, a wrong answer in at most ${live.bar.wrong}% of answers, and no made-up answer. ${quoted.name.split(',')[0]} met ${MET}: ${share(quoted.right, live.answerable)} right (${quoted.right} of ${live.answerable}), ${share(quoted.missed, live.answerable)} missed (${quoted.missed} of ${live.answerable}), ${share(quoted.wrong, answered)} wrong (${quoted.wrong} of ${answered} answers), and nothing made up.`,
+    p: "In round 4, Sieve's access to Gmail ran out during the test. It refused seven questions about the newest mail because it could not ask Gmail for newer mail, and it asked for a sender's name once. In round 5, and in every round from 6 to 10, it asked for a sender's name once. Round 8 had one error on the device. In round 9 the on-device model ran past its time limit twice, and two questions about things that are not in the mailbox got answers from unrelated emails. The causes of both made-up answers were fixed before round 10: a question that asks for a verification code now reads nothing at all, and a question about a named sender and a thing reads only that sender's emails that mention the thing. A timeout now gets one more try.",
+  },
+  {
+    p: `The bar was set before the first round: right on at least ${live.bar.right}% of the answerable runs, missed on at most ${live.bar.missed}%, a wrong answer in at most ${live.bar.wrong}% of answers, and no made-up answer. ${roundOf(quoted)} met ${MET}: ${share(quoted.right, live.answerable)} right (${quoted.right} of ${live.answerable}), ${share(quoted.missed, live.answerable)} missed (${quoted.missed} of ${live.answerable}), ${share(quoted.wrong, answered)} wrong (${quoted.wrong} of ${answered} answers), and ${quoted.madeUp === 0 ? 'nothing' : WORDS[quoted.madeUp] ?? quoted.madeUp} made up.`,
   },
   {
     p: 'The fixes between rounds were general ones. The on-device model now suggests other words to search for. Plain code finds the newest email. A sender\'s name is matched inside an address that has no display name. A question about a day reads only that sender\'s mail of that day. And Sieve refuses a "latest" question when it cannot ask Gmail for newer mail.',
+  },
+  { p: 'The fixes after round 5 were general too:' },
+  {
+    ul: [
+      'When the model answers a yes-or-no question with a sentence, one small call to the on-device model reads it as yes or no.',
+      'The second check is skipped when plain code already knows the item is the one meant: the only item that holds the exact number the assistant gave, or the newest email from the sender the question names. On those items it had refused right answers.',
+      'An answer is no longer cut short at an abbreviation, such as a short month name.',
+      "A receipt that is only in an email's PDF attachment is read for that answer only, and never stored.",
+      'A question that asks for a verification code reads nothing.',
+      "A question that names a sender and asks about a thing reads only that sender's emails that mention the thing.",
+      "A sender's own email comes before another service's notice about that sender.",
+      'A timeout gets one more try.',
+    ],
+  },
+  {
+    p: `From round ${blind.rounds[0]!.round}, two more sets of ${blind.questions} questions were asked in every round. They were written before any result from Sieve was seen, about emails that the ${live.runs} runs above do not use. Each set has ${blind.answerable} questions the mailbox can answer and ${blind.absent} about things that are not in it. The first set began in round ${firstAsked}, and that run is not counted here. The second began in round ${secondAsked}.`,
+  },
+  {
+    table: {
+      caption: `Table 8 · Two blind sets of ${blind.questions} questions, by round`,
+      head: ['Round', 'First set', 'Second set'],
+      rows: blind.rounds.map((r) => [`Round ${r.round}`, blindCell(r.first), blindCell(r.second)]),
+    },
+  },
+  {
+    p: `In every round both sets returned nothing for their ${blind.absent} questions about things that are not in the mailbox. In round ${blindLatest.round} ${blindMet} parts of the bar: ${blindHad}. Their misses in earlier rounds were fixed too, so their later rounds are not blind either.`,
   },
   { h3: 'First measurements, before the build' },
   { p: 'Before the app was built, each risky step was tried alone on an M2 MacBook with 16 GB of memory, on sample data.' },
@@ -180,8 +282,8 @@ const DETAIL: readonly HowBlock[] = [
   {
     ul: [
       '**One mailbox, one person, English.** Another mailbox will hold senders and wording these rounds never met.',
-      '**Questions written after reading.** The assistant that wrote the questions had read the mailbox, and the same questions were asked again after each fix. Later rounds partly measure how well Sieve fits those questions. A new set, written without seeing the fixes, has not been run.',
-      '**Run to run.** The on-device model does not always answer the same way. A question can succeed in one run and return nothing in the next.',
+      `**Questions written after reading.** The assistant that wrote the questions had read the mailbox, and the same questions were asked again after each fix. Later rounds partly measure how well Sieve fits those questions. Two sets of ${blind.questions} were written before any result was seen, but their misses were fixed later too, so their later rounds partly measure fit as well. Each set was asked only once before any fix looked at its misses: the first in round ${firstAsked} and the second in round ${secondAsked}.`,
+      '**Run to run.** The on-device model does not always answer the same way. A question can succeed in one run and return nothing in the next. In the latest rounds a few questions went from right to nothing and back again, with no change to Sieve that touched them.',
       '**Data that crosses.** How much less text reaches the cloud through Sieve than through direct access to the mailbox has not been measured yet.',
     ],
   },
@@ -202,12 +304,12 @@ export const TESTS_SECTION: HowSection = {
           value: `${quoted.right} of ${live.answerable}`,
           label: `answerable questions answered right in the latest live round on a real mailbox. The first round scored ${first.right}.`,
         },
-        { value: String(live.madeUp), label: `made-up answers in ${live.absentRuns} runs of questions the mailbox cannot answer` },
+        { value: String(latestMadeUp), label: `made-up answers in the latest round, across its ${latestRuns} runs.${madeUpBefore}` },
       ],
     },
     { note: PRIVACY },
     {
-      p: 'The live rounds are small and come from one mailbox, and the same questions were asked again after each fix. Read them as progress, not as a guarantee. Every round, table and caveat is one click away.',
+      p: `The live rounds are small and come from one mailbox, and the same questions were asked again after each fix. Two sets of questions written before any result was seen scored ${blindScored} in the latest round. Read the rounds as progress, not as a guarantee. Every round, table and caveat is one click away.`,
     },
     { more: { show: 'Show all the tests', hide: 'Hide the tests', blocks: DETAIL } },
   ],
