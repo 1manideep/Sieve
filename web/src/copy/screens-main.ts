@@ -205,6 +205,13 @@ export const CONVERSATION_COPY = {
   metaCloudOwn: 'written in the cloud by Gemini, with your OK · {t}',
   metaCode: 'nothing has left this computer',
   whatHappened: 'What happened, step by step',
+  // the Ask page as a chat: the answer alone, with these under it
+  looking: 'Looking on this computer…',
+  copy: 'Copy',
+  copied: 'Copied',
+  openItem: 'Open the item',
+  details: 'Details',
+  hideDetails: 'Hide details',
   gateTitle: 'Send this to Gemini in the cloud?',
   footer: 'Only what you approve leaves your computer. Sieve can make mistakes; the receipt never does.',
 } as const;

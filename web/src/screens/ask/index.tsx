@@ -217,6 +217,7 @@ export function AskScreen() {
           useAsk={useAskReal}
           variant="in-app"
           dbKind="real"
+          chat
           online={online}
           onSeeReceipts={() => navigate('/seen')}
           receiptsHref="/seen"

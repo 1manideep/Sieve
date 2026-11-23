@@ -195,6 +195,17 @@ describe('Ask', () => {
     await expectNoAxeViolations();
     act(() => useAskReal.setState({ phase: 'ready', proposal: landlordReady, step: 'answer' }));
     expect(screen.getByText(landlordReady.question)).toBeInTheDocument();
+    // a chat: the answer alone, with Copy, Open the item and Details under it; the card stays closed until asked for
+    expect(screen.getByText(DEPOSIT_ANSWER)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Send this to Gemini in the cloud?' })).toBeNull();
+    expect(screen.queryByTestId('outgoing-text')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Copy' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open the item' })).toBeInTheDocument();
+    const details = screen.getByRole('button', { name: 'Details' });
+    expect(details).toHaveAttribute('aria-expanded', 'false');
+    await expectNoAxeViolations();
+    await userEvent.click(details);
+    expect(screen.getByRole('button', { name: 'Hide details' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('heading', { name: 'Send this to Gemini in the cloud?' })).toBeInTheDocument();
     expect(screen.getByTestId('outgoing-text').textContent).toBe(DEPOSIT_ANSWER);
     expect(screen.getByLabelText('Ask a follow-up')).toHaveAttribute('placeholder', 'Ask a follow-up about your own data');

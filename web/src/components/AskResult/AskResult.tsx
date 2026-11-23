@@ -41,6 +41,11 @@ export interface AskResultProps {
   headerSlot?: ReactNode;
   sampleData?: boolean;
   nanoSettingUp?: boolean;
+  /**
+   * The Ask page (Nov 22, 2026): a prepared answer shows as a plain chat reply with Copy, Open the item and Details
+   * under it; the card with the steps, the ladder and what may leave opens from Details.
+   */
+  chat?: boolean;
 }
 
 /** The pipeline's text composer, loaded on first use (the store has already loaded the pipeline by then). */
@@ -115,6 +120,51 @@ function PreparingSlot({ useAsk }: { useAsk: AskStore }) {
   );
 }
 
+/** Chat: while the answer is prepared, one quiet line, or the answer as it is being written. */
+function ChatPreparing({ useAsk }: { useAsk: AskStore }) {
+  const { liveSteps, answerPreview } = useAsk(useShallow((s) => ({ liveSteps: s.liveSteps, answerPreview: s.answerPreview })));
+  return (
+    <div className={styles.reply} role="status">
+      {answerPreview ? (
+        <p className={styles.replyText} dir="auto">{answerPreview}</p>
+      ) : (
+        <p className={styles.searched}>
+          <Glyph name="sparkle" size={16} className={styles.sparkle} />
+          <span>{liveSteps[liveSteps.length - 1]?.label ?? CONVERSATION_COPY.looking}</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ChatReply({ text, open, onToggle, onOpenItem }: { text: string; open: boolean; onToggle(): void; onOpenItem?: () => void }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className={styles.reply}>
+      <p className={styles.replyText} dir="auto">{text}</p>
+      <div className={styles.replyActions}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            navigator.clipboard?.writeText(text).then(() => setCopied(true), () => undefined);
+          }}
+        >
+          {copied ? CONVERSATION_COPY.copied : CONVERSATION_COPY.copy}
+        </Button>
+        {onOpenItem ? (
+          <Button variant="ghost" size="sm" onClick={onOpenItem}>
+            {CONVERSATION_COPY.openItem}
+          </Button>
+        ) : null}
+        <Button variant="ghost" size="sm" aria-expanded={open} onClick={onToggle}>
+          {open ? CONVERSATION_COPY.hideDetails : CONVERSATION_COPY.details}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ErrorCard({ message, onRetry }: { message: string; onRetry(): void }) {
   const timeout = message === ASK_COPY.timeoutError;
   return (
@@ -163,7 +213,7 @@ function useAskedQuestion(useAsk: AskStore): string {
 }
 
 export function AskResult(props: AskResultProps) {
-  const { useAsk, variant, dbKind, compose: injectedCompose, online, onSeeReceipts, receiptsHref, onAskAgain, idle, headerSlot, sampleData = false, nanoSettingUp = false } = props;
+  const { useAsk, variant, dbKind, compose: injectedCompose, online, onSeeReceipts, receiptsHref, onAskAgain, idle, headerSlot, sampleData = false, nanoSettingUp = false, chat = false } = props;
   const s = useAsk(
     useShallow((st) => ({
       phase: st.phase,
@@ -184,6 +234,8 @@ export function AskResult(props: AskResultProps) {
   );
   const meta = useRecords((r) => r.meta);
   const [viewing, setViewing] = useState<string | null>(null);
+  /** Chat: the request whose details are open (closed again for the next question). */
+  const [detailsFor, setDetailsFor] = useState<string | undefined>(undefined);
   const containerRef = useSettle(s.phase);
   const asked = useAskedQuestion(useAsk);
   const indexCount = useIndexCount(dbKind, s.proposal !== undefined);
@@ -214,9 +266,18 @@ export function AskResult(props: AskResultProps) {
     useAsk.getState().ask().catch((error: unknown) => console.error(error));
   };
 
+  // Chat: a prepared answer that waits for nothing is shown as a plain reply. Anything that needs the person (a
+  // consent, a draft under way, a result after approving) or has no answer keeps the card in view.
+  const chatOption =
+    chat && s.phase === 'ready' && s.proposal?.outcome === 'ready'
+      ? (s.proposal.options.find((o) => o.step === s.step && o.available) ?? s.proposal.options.find((o) => o.available))
+      : undefined;
+  const chatText = chatOption?.text.trim() ? chatOption.text : undefined;
+  const detailsOpen = chatText === undefined || detailsFor === s.requestId;
+
   let content: ReactNode = idle ?? null;
   if (s.phase === 'preparing') {
-    content = <PreparingSlot key={s.requestId ?? 'preparing'} useAsk={useAsk} />;
+    content = chat ? <ChatPreparing useAsk={useAsk} /> : <PreparingSlot key={s.requestId ?? 'preparing'} useAsk={useAsk} />;
   } else if (s.phase === 'error') {
     content = <ErrorCard message={s.error ?? ASK_COPY.errorTitle} onRetry={ask} />;
   } else if (s.proposal && view) {
@@ -295,13 +356,21 @@ export function AskResult(props: AskResultProps) {
           </p>
         </div>
       ) : null}
-      {picked ? (
+      {chatText !== undefined ? (
+        <ChatReply
+          text={chatText}
+          open={detailsOpen}
+          onToggle={() => setDetailsFor(detailsOpen ? undefined : s.requestId)}
+          onOpenItem={s.proposal?.item ? () => setViewing(s.proposal?.item?.recordId ?? null) : undefined}
+        />
+      ) : null}
+      {picked && detailsOpen ? (
         <p className={styles.searched}>
           <Glyph name="sparkle" size={16} className={styles.sparkle} />
           <span>{searchedLine(indexCount, readCount)}</span>
         </p>
       ) : null}
-      <ErrorBoundary onReset={() => useAsk.getState().reset()}>{content}</ErrorBoundary>
+      <ErrorBoundary onReset={() => useAsk.getState().reset()}>{detailsOpen || s.phase === 'preparing' ? content : null}</ErrorBoundary>
       <ItemViewer dbKind={dbKind} recordId={viewing} onClose={() => setViewing(null)} />
     </div>
   );
