@@ -323,6 +323,8 @@ export const DECIDE_ERRORS = {
   offline: "Couldn't send. Check your connection and try again.",
   mismatch: "Sieve stopped: the text to send didn't match what you approved. Nothing was sent.",
   noHomeBase: 'This tab is not handling requests right now.',
+  fileGone: 'Sieve no longer holds the file for this request. Ask again to send it.',
+  fileUpload: "Couldn't upload the file. Nothing was sent. Check your connection and try again.",
 } as const;
 
 /** The re-check just before sending (70 section 3.3). Every message ends with "Nothing was sent." */

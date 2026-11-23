@@ -93,6 +93,8 @@ export const LABELS = {
   excerptNone: "Couldn't find lines in the item that hold this answer, so the excerpt step is off",
   excerptUnsupported: (facts: string[]) => `. Check the answer: ${facts.join(', ')} ${facts.length === 1 ? 'is' : 'are'} not in the item`,
   clean: 'Plain code removed hidden text from this item when it was indexed',
+  fileFound: (line: string) => `Found the original to send as a file: ${line}`,
+  fileMissing: 'The original file could not be offered',
   dayWritten: 'Wrote the date for "today" or "tomorrow", counted from the day the item is dated',
   sortedAt: (category: Category, wherePhrase: string) => `Sorted as ${category} ${wherePhrase} when it was indexed`,
   injectionChecked: (wherePhrase: string, flagged: boolean) =>
@@ -155,6 +157,7 @@ export const WARNINGS = {
     message: "Sieve couldn't check that this email still exists; it used the copy on this computer.",
   }),
   sensitiveTopic: (): Warning => ({ kind: 'ask-first', message: SENSITIVE_LINE }),
+  fileUnmasked: (): Warning => ({ kind: 'pii-check-limited', message: 'The file itself is sent as it is: personal details inside it are not masked, and the link works for 10 minutes.' }),
   questionInstruction: (phrase: string): Warning => ({
     kind: 'injection',
     message: `This question contained words that read as instructions to Sieve: "${cutQuote(phrase, 60)}". Sieve left them out of the search.`,
@@ -187,3 +190,15 @@ export const UNAVAILABLE = {
 export function formatDate(ms: number): string {
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(ms);
 }
+
+/** Why the file itself is not offered, as the card says it (original.ts gives the word). */
+export const FILE_UNAVAILABLE = {
+  none: 'There is no file to send for this item: only its text is on this computer.',
+  several: 'This email has more than one attachment. Ask again with the name of the file.',
+  kind: 'This kind of file cannot be sent.',
+  'too-large': 'This file is larger than 20 MB, so it cannot be sent.',
+  permission: 'Chrome needs your OK to read the folder again before this file can be sent.',
+  gone: 'The original file is no longer where it was.',
+  gmail: "Couldn't get the attachment from Gmail.",
+  instruction: 'This item seems to hold an instruction aimed at an AI, so the file itself is not offered.',
+} as const;

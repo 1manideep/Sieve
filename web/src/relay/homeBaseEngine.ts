@@ -69,6 +69,17 @@ export interface EngineDeps {
     buildRelatedOptions: typeof buildRelatedOptions;
     composeOutgoingText: typeof composeOutgoingText;
   };
+  /**
+   * A file sent as itself (relay/handoff.ts): `upload` puts the approved file in the person's place in Cloud Storage and
+   * returns that place; `remove` takes it back; `stashed` is the original the proposal found, `drop` forgets it.
+   * Absent (the Playground, tests): a request for a file ends with the sentence that it cannot be sent here.
+   */
+  files?: {
+    upload(uid: string, requestId: string, blob: Blob, mime: string): Promise<string>;
+    remove(path: string): Promise<void>;
+    stashed(requestId: string): Blob | undefined;
+    drop(requestId: string): void;
+  };
   beginForeground(): () => void;                       // useIndexing
   /** Starts loading the reranker when this tab becomes the home base, so the first request is reranked too. */
   warmModels?(): void;
@@ -291,6 +302,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
     r?.ctl?.abort('ended' satisfies AbortReason);
     runtime.delete(id);
     entries.delete(id);
+    deps.files?.drop(id);
   }
 
   function abortEntry(id: string, reason: AbortReason): void {
@@ -795,6 +807,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
         allowedCategories: req.allowedCategories,
         allowedSources: req.allowedSources,
         ...(req.hints ? { hints: req.hints } : {}),
+        ...(req.wantFile && deps.files ? { wantFile: true } : {}),
         settings: deps.getSettings(),
         dataClass,
         signal: ctl.signal,
@@ -1245,7 +1258,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
           const opts = entry.relatedOptions[rid];
           if (opts) relatedOptions[rid] = opts;
         }
-        const { payload, receipt } = await deps.pipeline.finalizeDecision(proposal, v.decision, { relatedOptions, db: deps.db });
+        const { payload, receipt, file: offered } = await deps.pipeline.finalizeDecision(proposal, v.decision, { relatedOptions, db: deps.db });
         if (input.approved) {
           if (!payload || payload.text !== v.text) {
             console.error('payload mismatch', id);
@@ -1283,6 +1296,20 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
           const m = await deps.requests.markAwaiting(uid, id, deviceId);
           if (m === 'gone') return ended(DECIDE_ERRORS.expired, 'expired');
         }
+        // The file itself: uploaded only now, after the approval and every check, to this person's own place for this
+        // request. Its place rides in the payload; the relay turns it into a link when the assistant collects.
+        let uploaded: string | undefined;
+        if (input.approved && offered && payload) {
+          const blob = deps.files?.stashed(id);
+          if (!deps.files || !blob) return back(DECIDE_ERRORS.fileGone, 'error');
+          try {
+            uploaded = await deps.files.upload(uid, id, blob, offered.mime);
+          } catch (e) {
+            if ((e as { name?: string }).name !== 'HandoffError') console.error('file upload', id, (e as { name?: string }).name ?? '');
+            return back(DECIDE_ERRORS.fileUpload, 'offline');
+          }
+          payload.file = { ...offered, path: uploaded };
+        }
         const withId = { ...receipt, id };
         const firestoreReceipt = playground ? {} : { receipt: withId };
         const finish: FinishInput = input.approved
@@ -1290,8 +1317,17 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
           : { status: 'declined', message: MSG.declined, ...firestoreReceipt };
         // Marked before the receipt is written, so What has AI seen? never shows it as approved by the person.
         if (input.approved && autoDeciding.has(id)) deps.markAutoApproved?.(id, true);
-        const r = await deps.requests.finishRequest(uid, id, deviceId, finish);
-        if (r === 'gone') return ended(DECIDE_ERRORS.expired, 'expired');
+        let r: 'ok' | 'gone';
+        try {
+          r = await deps.requests.finishRequest(uid, id, deviceId, finish);
+        } catch (e) {
+          if (uploaded) void deps.files?.remove(uploaded);   // the answer was not written: the file does not stay
+          throw e;
+        }
+        if (r === 'gone') {
+          if (uploaded) void deps.files?.remove(uploaded);
+          return ended(DECIDE_ERRORS.expired, 'expired');
+        }
         if (playground) await saveLocal(withId);
 
         const step = v.decision.step;

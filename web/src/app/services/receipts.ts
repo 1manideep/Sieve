@@ -44,6 +44,7 @@ export function receiptDoc(r: Receipt, refs: string[]): DocumentData {
   };
   if (r.step) out.step = r.step;
   if (r.decidedBy) out.decidedBy = r.decidedBy;
+  if (r.fileBytes) out.fileBytes = r.fileBytes;
   return out;
 }
 
@@ -75,6 +76,7 @@ export function toReceiptView(id: string, data: DocumentData): ReceiptView | nul
     itemIds: refs.filter((x: unknown): x is string => typeof x === 'string'),
     status,
     chars: typeof data.chars === 'number' ? data.chars : 0,
+    ...(typeof data.fileBytes === 'number' && data.fileBytes > 0 ? { fileBytes: data.fileBytes } : {}),
     createdAt: millis(data.createdAt) ?? 0,
   };
   if (STEPS.includes(data.step as LadderStep)) view.step = data.step as LadderStep;

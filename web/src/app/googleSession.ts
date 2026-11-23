@@ -9,6 +9,7 @@ import * as devices from '@/app/services/devices';
 import { resolveItemRefs } from '@/app/services/itemRefs';
 import { ensureUserDoc, listenUserDoc } from '@/app/services/userDoc';
 import { createExtensionBridge } from '@/relay/extensionBridge';
+import type { HandoffDeps } from '@/relay/handoff';
 import { createHomeBaseEngine, type EngineDeps, type HomeBaseEngine } from '@/relay/homeBaseEngine';
 import * as lock from '@/relay/homeBaseLock';
 import { showInFrontNotice } from '@/relay/inFrontNotice';
@@ -23,9 +24,27 @@ import { useIndexing } from '@/state/indexing';
 import { tables } from '@/state/localDb';
 import { useGrants } from '@/state/grants';
 import type { SieveDb } from '@/index';
+import { dropFile, stashedFile } from '@/pipeline/fileStash';
 import type { SessionUser } from '@/state/session';
 import { useSettings } from '@/state/settings';
 import { useToasts } from '@/state/toasts';
+
+
+/** What an upload of an approved file needs (relay/handoff.ts): the project's bucket and this person's sign-in. */
+function handoffDeps(): HandoffDeps {
+  return {
+    bucket: `${env.firebase.projectId}.firebasestorage.app`,
+    idToken: async () => {
+      const user = getAuthInstance().currentUser;
+      if (!user) throw new Error('signed out');
+      return user.getIdToken();
+    },
+    appCheckToken: async () => {
+      const [{ getToken }, ai] = await Promise.all([import('firebase/app-check'), import('@/ai')]);
+      return (await getToken(ai.getAppCheckInstance(), false)).token;
+    },
+  };
+}
 
 export const SETUP_DONE_KEY = (uid: string) => `sieve.setupDone.${uid}`;
 
@@ -142,6 +161,13 @@ export async function startGoogleSession(user: SessionUser): Promise<void> {
       env.extensionId
         ? createExtensionBridge(env.extensionId, __APP_VERSION__, handlers, { homeBase: () => engine.role() === 'active' })
         : null),
+    files: {
+      // loaded when a file is sent, not with the session
+      upload: async (owner, requestId, blob, mime) => (await import('@/relay/handoff')).uploadHandoff(owner, requestId, blob, mime, handoffDeps()),
+      remove: async (path) => (await import('@/relay/handoff')).removeHandoff(path, handoffDeps()),
+      stashed: stashedFile,
+      drop: dropFile,
+    },
     pipeline: {
       prepareProposal: pipeline.prepareProposal,
       finalizeDecision: pipeline.finalizeDecision,

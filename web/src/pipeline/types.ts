@@ -20,6 +20,7 @@ export interface PrepareInput {
   allowedCategories?: Category[];
   allowedSources?: SourceKind[];
   hints?: QueryHints;                     // from the outside AI's tool call, or parsed from the question in-app
+  wantFile?: boolean;                     // the request asks for the original file itself (sieve_full_item with file: true)
   settings: Settings;
   dataClass: 'own' | 'sample';
   signal?: AbortSignal;

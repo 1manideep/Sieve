@@ -103,6 +103,7 @@ export function parseRequestDoc(id: string, data: DocumentData): RelayRequestVie
   };
   const hints = parseStoredHints(data.hints);
   if (hints) view.hints = hints;
+  if (data.wantFile === true) view.wantFile = true;
   const r0 = cleaned.removed;
   if (r0.invisible > 0 || r0.bidi > 0 || r0.tagText.length > 0) view.questionRemoved = r0;
   const claimedAt = millis(data.claimedAt);
@@ -213,6 +214,7 @@ export async function finishRequest(uid: string, id: string, deviceId: string, f
     if (f.status === 'answered') {
       const response: DocumentData = { step: f.response.step, text: f.response.text, chars: f.response.chars, itemCount: f.response.itemCount };
       if (f.response.image) response.image = f.response.image;
+      if (f.response.file) response.file = { name: f.response.file.name, mime: f.response.file.mime, bytes: f.response.file.bytes, path: f.response.file.path };
       tx.update(ref, { status: 'answered', answeredAt: serverTimestamp(), response });
     } else {
       tx.update(ref, { status: f.status, message: f.message.slice(0, 300) });

@@ -213,7 +213,7 @@ service cloud.firestore {
     function validReceipt(receiptId, r) {
       return r.keys().hasAll(['id', 'requestId', 'requester', 'question', 'itemRefs', 'status', 'chars', 'createdAt'])
         && r.keys().hasOnly(['id', 'requestId', 'requester', 'question', 'step', 'itemRefs', 'status',
-                             'decidedBy', 'chars', 'createdAt'])
+                             'decidedBy', 'chars', 'fileBytes', 'createdAt'])
         && r.id == receiptId
         && isNonEmptyString(r.requestId, 64)
         && validRequester(r.requester)
@@ -228,6 +228,8 @@ service cloud.firestore {
         && (r.requester.kind != 'outside' || r.requestId == receiptId)
         && (!('decidedBy' in r) || r.decidedBy in ['app', 'extension', 'rule'])
         && r.chars is int && r.chars >= 0 && r.chars <= 8000
+        // a file sent as itself: its size, on a full-step share only
+        && (!('fileBytes' in r) || (r.step == 'full' && r.fileBytes is int && r.fileBytes >= 1 && r.fileBytes <= 20971520))
         && r.createdAt == request.time;
     }
     // The home base revokes an uncollected answer: request answered -> revoked and receipt

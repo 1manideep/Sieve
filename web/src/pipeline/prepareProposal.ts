@@ -4,7 +4,7 @@
 // on-device check that the item answers the question (12b), then plain-code excerpts and privacy steps, then the
 // share-time Gemini Nano check of the text that would leave (11 section 10.7: one injection-check and one pii-check at
 // most, cached on the item). Never rejects: failures are outcomes.
-import { LADDER_STEPS, MAX_PAYLOAD_CHARS, MAX_QUESTION_CHARS, RELATED_MAX, VECTOR_K } from '@sieve/shared';
+import { LADDER_STEPS, MAX_PAYLOAD_CHARS, MAX_QUESTION_CHARS, RELATED_MAX, VECTOR_K, describeSharedFile } from '@sieve/shared';
 import type {
   Candidate, Category, CategoryRule, IndexRecord, KnownEntity, Proposal, ProposalOutcome, QueryHints, StepOption, TraceKind, TraceStep, Warning, Where,
 } from '@sieve/shared';
@@ -18,12 +18,14 @@ import {
 } from '@/index';
 import { asksSaid, describesOnlySender, holdsTopic, titleSaysAskedKind, topicTerms } from '@/index/cues';
 import { iso } from '@/index/dates';
+import { stashFile } from './fileStash';
+import { originalFor } from './original';
 import { anchorRelativeDays } from './relativeDays';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
 import { isYesNoQuestion } from '@/privacy/steps/answerShape';
 import { errorLine, errorName } from '@/robust/errorLine';
 import { forgetCloudConsentRequest, rememberCloudConsentRequest } from './consent';
-import { LABELS, RUNNING, UNAVAILABLE, WARNINGS, WHERE_PHRASE } from './copy';
+import { FILE_UNAVAILABLE, LABELS, RUNNING, UNAVAILABLE, WARNINGS, WHERE_PHRASE } from './copy';
 import { answerStillHolds, confirmFresh, type FreshResult } from './fresh';
 import { stripInstructions } from './instructions';
 import { patchRecordIfCurrent, photoBlobFor } from './optional';
@@ -936,6 +938,29 @@ async function prepare(run: Run): Promise<Proposal> {
   if (itemTouchesSensitiveTopic(rec) || touchesSensitiveTopic(answerText)) {
     run.warn(WARNINGS.sensitiveTopic());
     run.code('rule', LABELS.sensitive);
+  }
+
+  // 15b. A request for the file itself (Nov 22, 2026): the full step becomes the original, found now so the card can
+  // name it and say its size. It is uploaded only after the person approves (the home base), never auto-approved
+  // (the full step never is), and not offered for an item that seems to hold instructions: a file's bytes cannot
+  // be cleaned the way text is.
+  if (input.wantFile) {
+    const fullAt = stepIndex('full');
+    const full = options[fullAt];
+    if (full?.available) {
+      const flagged = Boolean(rec.injection?.suspicious) || check.quotes.length > 0;
+      const original = flagged ? null : await originalFor(db, rec, [lookup, ...(hints?.terms ?? [])].join('\n'), input.signal ? { signal: input.signal } : {});
+      if (original?.ok) {
+        const line = describeSharedFile(original.name, original.mime, original.bytes);
+        options[fullAt] = { step: 'full', text: line, chars: line.length, redactions: 0, available: true, file: { name: original.name, mime: original.mime, bytes: original.bytes } };
+        stashFile(input.requestId, original.blob);
+        run.warn(WARNINGS.fileUnmasked());
+        run.code('rule', LABELS.fileFound(line));
+      } else {
+        options[fullAt] = unavailableOption('full', FILE_UNAVAILABLE[original ? original.why : 'instruction']);
+        run.code('rule', LABELS.fileMissing);
+      }
+    }
   }
 
   // 16. Related items, filtered exactly like the main item.

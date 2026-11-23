@@ -2,7 +2,7 @@
 // The caller stores the receipt when the text actually leaves (relay: one batched write with the request update; in-app:
 // before the draft call). The payload text is exactly composeOutgoingText of the options the person saw.
 import { MAX_PAYLOAD_CHARS, REQUEST_TTL_HOURS } from '@sieve/shared';
-import type { Category, Decision, Proposal, Receipt, RelayPayload, Settings, SourceKind, StepOption, TraceStep } from '@sieve/shared';
+import type { OfferedFile, Category, Decision, Proposal, Receipt, RelayPayload, Settings, SourceKind, StepOption, TraceStep } from '@sieve/shared';
 import { getRecord, verifyFresh, type SieveDb } from '@/index';
 import { verifyOutgoing } from '@/privacy';
 import { LABELS } from './copy';
@@ -20,6 +20,8 @@ export interface FinalizeExtras {
 export interface FinalizeResult {
   payload: RelayPayload | null;
   receipt: Receipt;
+  /** The approved step is the file itself: the home base uploads it and adds its place to the payload. */
+  file?: OfferedFile;
   approveStep?: TraceStep;
 }
 
@@ -138,7 +140,9 @@ export async function finalizeDecision(proposal: Proposal, decision: Decision, e
     status: proposal.requester.kind === 'outside' ? 'pending-collection' : 'delivered',
     decidedBy: decision.decidedBy,
     chars: text.length,
+    ...(main.file && ids.length === 1 ? { fileBytes: main.file.bytes } : {}),
   };
   const approveStep: TraceStep = { kind: 'approve', label: LABELS.approved(step, ids.length), where: 'device', ms: 0, at: decision.decidedAt };
-  return { payload, receipt, approveStep };
+  // a file is one item's original: with related items ticked the step is text, as always
+  return main.file && ids.length === 1 ? { payload, receipt, approveStep, file: main.file } : { payload, receipt, approveStep };
 }
