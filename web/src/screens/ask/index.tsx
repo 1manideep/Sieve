@@ -193,6 +193,7 @@ export function AskScreen() {
           dbKind="real"
           chat
           notices={others.length > 0 ? renderNotices(others) : undefined}
+          setupPct={gate === 'setting-up' ? pct : undefined}
           online={online}
           onSeeReceipts={() => navigate('/seen')}
           receiptsHref="/seen"

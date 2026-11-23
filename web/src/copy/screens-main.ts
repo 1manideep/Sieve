@@ -129,7 +129,9 @@ export const PREPARING_COPY = {
   tagCloud: 'Cloud · Gemini (sample data)',
   answerEyebrow: 'Answer, written on this device',
   checking: 'Checking it before anything can be shared…',
-  slow: 'Gemini Nano is reading on this device. This usually takes about 10 seconds.',
+  // Nov 23: after 3 seconds the card says how long since the question (WAITING in shared/src/copy.ts), what happens
+  // next, and why it is slow when it is.
+  setup: 'The on-device model is still being set up ({pct}%). Sieve answers once it is ready.',
   stop: 'Stop',
   progressLabel: 'Working on this device',
 } as const;

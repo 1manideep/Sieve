@@ -30,7 +30,7 @@ export const REQUESTS = {
   makeHomeBase: 'Make this my home base',
   useThisTab: 'Use this tab instead',
   /** 40 section 13.8.9, testing mode. {stop} is a link to Settings with the text autoApproveStop. */
-  autoApproveNotice: 'Auto-approving answers for {names} until {time}. {stop}.',
+  autoApproveNotice: 'Auto-approving one-sentence answers for {names} until {time}. Excerpts, whole items and files still wait for you. {stop}.',
   autoApproveStop: 'Stop in Settings',
   connectAi: 'Connect an assistant',
   otherDeviceFallback: 'another computer',
@@ -44,6 +44,8 @@ export const REQUESTS = {
   pendingNav: 'Waiting requests',
   pendingHeading: 'Waiting for you ({n})',
   phasePreparing: 'Preparing…',
+  /** The heading of the card while the home base prepares (Nov 23). */
+  preparingFor: 'Preparing an answer for {aiName}',
   phaseWaiting: 'Waiting for you',
   phaseSent: 'Sent',
   phaseDeclined: 'Declined',
@@ -145,6 +147,22 @@ export const HOME_BASE_DIALOG = {
 /** Shared by every confirm on these screens (40 section 7.7). */
 export const CONFIRM = {
   cancel: 'Cancel',
+} as const;
+
+/**
+ * Gmail access running out (20 section 15.1, 40 section 7.4; Nov 23): the notice before it ends, the banner on every
+ * page of the home base after, the one explanation of pop-ups, and the line on a request it stopped.
+ */
+export const GMAIL_ACCESS = {
+  ending: 'Gmail access on this computer ends in {n} min. Keep it connected so Sieve can read new mail and answer about the latest.',
+  keep: 'Keep Gmail connected',
+  ended: "Gmail access on this computer ran out. Until you reconnect, Sieve can't read new mail, answer about the latest mail or send an attachment.",
+  refused: "Google didn't allow read-only Gmail access. Reconnect to try again.",
+  reconnect: 'Reconnect Gmail',
+  popups: 'To renew without a click, allow pop-ups for this site: press the icon left of the address, open Site settings and set Pop-ups and redirects to Allow.',
+  popupsBlocked: 'Chrome blocked the window Sieve opens to renew Gmail access.',
+  requestLatest: "Gmail access had run out, so Sieve couldn't check for newer mail and didn't answer. Reconnect Gmail, then ask {aiName} to ask again.",
+  requestFile: "Gmail access ran out, so Sieve can't fetch this attachment. Reconnect Gmail, then ask {aiName} to ask for the file again.",
 } as const;
 
 /** Sources (40 section 13.6; 00 decision D9). */
@@ -506,8 +524,8 @@ export const SETTINGS = {
   // 13.8.9 Auto-approve, testing mode
   autoApprove: 'Auto-approve answers',
   autoApproveNote:
-    "For testing. Sieve answers this assistant's questions without asking you, answer only, for 2 hours. Every answer still gets a receipt.",
-  autoApproveUntil: 'Auto-approving until {time}',
+    'For testing, on for 2 hours. It covers one-sentence answers only: excerpts, whole items and files always wait for you. Every answer still gets a receipt.',
+  autoApproveUntil: 'Auto-approving until {time} · {left} left',
   autoApproveStop: 'Stop',
   past: 'Past connections ({n})',
   aisEmpty: 'No assistant can ask yet. Connect one to get a link you paste into it.',

@@ -1055,9 +1055,11 @@ export function readStoredToken(db: SieveDb): Promise<GmailToken | null>;
 export function writeStoredToken(db: SieveDb, t: GmailToken | null, patch?: Partial<SourceRow>): Promise<void>;
 export function clearStoredToken(db: SieveDb, onlyValue?: string): Promise<void>;
 export function loadStoredGmailToken(db: SieveDb): Promise<string | null>;
-// renew.ts: renewal inside the person's own clicks
+// renew.ts: renewal inside the person's own clicks, and on the sync timer where pop-ups are allowed
 export const GMAIL_RENEW_BEFORE_MS = 10 * 60_000;
 export const GMAIL_RENEW_EVERY_MS = 5 * 60_000;
+export function renewBlockedByChrome(): boolean;              // since Nov 23: the timer's window was blocked on this page
+export function onRenewBlocked(fn: () => void): () => void;
 ```
 
 - `preloadGis`: inject `<script src="https://accounts.google.com/gsi/client" async>` once; resolve when `google.accounts.oauth2` exists; reject after 15 s, or on the script's `error` event, with `gis-load-failed`. A script that failed or timed out is removed from the page, so the next attempt injects a fresh one. 40 calls it when the Sources screen mounts, best effort, so the popup opens within the click's user activation. A click never waits for it.
@@ -1075,6 +1077,7 @@ export const GMAIL_RENEW_EVERY_MS = 5 * 60_000;
   - Renewal inside the person's own clicks: while Gmail is connected, the sources module installs one document click listener. When the stored token has under `GMAIL_RENEW_BEFORE_MS` (10 minutes) left, or ran out by time, a click anywhere in the app calls `requestGmailToken({ prompt: '', loginHint })` synchronously inside that click, through Google Identity Services only, at most once per `GMAIL_RENEW_EVERY_MS` (5 minutes), and keeps the new token on the row. It never opens the Firebase popup: that opens only from the card's own Continue button (a surprise popup is worse than a notice). It does nothing while indexing is paused, after a refused token, or when a token request is already open (the Continue click itself).
   - Continue: `reauthorize(db, 'gmail')` calls `requestGmailToken({ prompt: '', loginHint: row.account })`, keeps the token on the row, then checks it with `users.getProfile`. A fresh token that Gmail still answers 401 to, or a token without `GMAIL_SCOPE`, is a real scope problem: `{ needsAuth: true, errorCode: 'auth-needed', error: "Google didn't allow read-only Gmail access. Try Continue again." }`, and the token is not kept.
   - The card (40 section 13.6): `needsAuth` alone is a plain note (tone info), "Syncing paused. Continue to keep getting new mail." with Continue. The warning tone is only for `errorCode: 'auth-needed'`, with the line above and Continue.
+  - Before and after it runs out, on every page (Nov 23, 40 section 7.4a): the person used to find out only when a request failed. Now, in the last 10 minutes of a token nobody renewed, the home base shows a quiet notice with "Keep Gmail connected", which calls `reauthorize` inside that click; once it ran out (by time, or `needsAuth`), a warning with "Reconnect Gmail" on every page of the home base, and a matching line in the extension (which cannot renew: it brings the Sieve tab forward). Both explain pop-ups in one line, and say so when Chrome blocked the timer's renewal window (`renewBlockedByChrome`, set when `renewOnTimer` gets `popup-blocked`). A request this stopped says so on its card with Reconnect, and that the assistant has to ask again: a "latest" question refused with `mail-not-current`, or a file that cannot be fetched (`OriginalMiss` `reconnect`). Gmail access stays a short-lived token in this browser; nothing about it is stored anywhere else.
 
 ```mermaid
 flowchart TD
@@ -1090,6 +1093,9 @@ flowchart TD
   X --> R
   E[Expiry, sign-out, disconnect] --> C[Clear the row and memory]
   K[Click anywhere, under 10 minutes left, GIS loaded] --> T
+  K2[Keep Gmail connected or Reconnect Gmail, on every page] --> T
+  TM[Sync timer, under 10 minutes left] -->|pop-ups allowed| T
+  TM -->|Chrome blocks the window| B[Notice: allow pop-ups for this site]
 ```
 - CSP (40/60 own headers): `script-src` and `frame-src` allow `https://accounts.google.com`; `connect-src` allows `https://gmail.googleapis.com` and `https://oauth2.googleapis.com`.
 

@@ -7,7 +7,8 @@ import { DECIDE_ERRORS } from '@/copy/strings';
 import type { BridgeHandlers, ExtensionBridge } from '@/relay/extensionBridge';
 import type { HomeBaseEngineHandle, HomeBaseState } from './homeBase';
 
-type Actions = 'makeThisHomeBase' | 'stopBeingHomeBase' | 'useThisTab' | 'toggleRelated' | 'decide' | 'allowCloudFor' | 'dismissDone' | 'stopPreparing' | 'reset';
+// Gmail access is the home base's (components/GmailAccess); the Playground serves sample data only.
+type Actions = 'makeThisHomeBase' | 'stopBeingHomeBase' | 'useThisTab' | 'toggleRelated' | 'decide' | 'allowCloudFor' | 'dismissDone' | 'stopPreparing' | 'reset' | 'gmailEnded' | 'setGmailEnded';
 type MakeBridge = (handlers: BridgeHandlers) => ExtensionBridge | null;
 
 export interface PlaygroundRelayState extends Omit<HomeBaseState, Actions> {

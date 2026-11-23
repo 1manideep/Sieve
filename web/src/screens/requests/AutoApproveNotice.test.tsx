@@ -67,7 +67,9 @@ describe('AutoApproveNotice', () => {
     renderNotice();
     // The revoked connection is left out; the time is when the last one ends.
     const text = autoApproveNoticeText(['Claude', 'ChatGPT'], formatClock(t2));
-    expect(text).toBe(`Auto-approving answers for Claude and ChatGPT until ${formatClock(t2)}. Stop in Settings.`);
+    expect(text).toBe(
+      `Auto-approving one-sentence answers for Claude and ChatGPT until ${formatClock(t2)}. Excerpts, whole items and files still wait for you. Stop in Settings.`,
+    );
     expect(screen.getByText(sentence(text))).toBeInTheDocument();
     expect(screen.getByRole('link', { name: REQUESTS.autoApproveStop })).toHaveAttribute('href', '/settings#ais');
     await expectNoAxeViolations();
@@ -80,12 +82,12 @@ describe('AutoApproveNotice', () => {
       useAutoApprove.getState().turnOn('g3');
     });
     renderNotice();
-    expect(noticeText()).toMatch(/^Auto-approving answers for Claude, ChatGPT and Gemini until /);
+    expect(noticeText()).toMatch(/^Auto-approving one-sentence answers for Claude, ChatGPT and Gemini until /);
     act(() => {
       useAutoApprove.getState().turnOff('g1');
       useAutoApprove.getState().turnOff('g2');
     });
-    expect(noticeText()).toMatch(/^Auto-approving answers for Gemini until /);
+    expect(noticeText()).toMatch(/^Auto-approving one-sentence answers for Gemini until /);
     act(() => useAutoApprove.getState().turnOff('g3'));
     expect(noticeText()).toBeNull();
   });

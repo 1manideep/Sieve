@@ -155,6 +155,10 @@ describe('Assistants: auto-approve (40 section 13.8.9)', () => {
     const toggle = within(panel('Claude')).getByRole('switch', { name: SETTINGS.autoApprove });
     expect(toggle).toHaveAttribute('aria-checked', 'false');
     expect(toggle).toHaveAccessibleDescription(SETTINGS.autoApproveNote);
+    // What it covers, by the switch (Nov 23): a file request waited and the person did not know why.
+    expect(SETTINGS.autoApproveNote).toBe(
+      'For testing, on for 2 hours. It covers one-sentence answers only: excerpts, whole items and files always wait for you. Every answer still gets a receipt.',
+    );
     expect(screen.queryByText(/Auto-approving until/)).not.toBeInTheDocument();
   });
 
@@ -168,7 +172,8 @@ describe('Assistants: auto-approve (40 section 13.8.9)', () => {
     expect(autoApproveOn('u1', 'g1')).toBe(true);
     expect(autoApproveOn('u1', 'g2')).toBe(false);
     expect(within(panel('Claude')).getByRole('switch', { name: SETTINGS.autoApprove })).toHaveAttribute('aria-checked', 'true');
-    expect(within(panel('Claude')).getByText(fillText(SETTINGS.autoApproveUntil, { time: formatClock(until!) }))).toBeInTheDocument();
+    // How much of its 2 hours is left.
+    expect(within(panel('Claude')).getByText(`Auto-approving until ${formatClock(until!)} · 2 h left`)).toBeInTheDocument();
     expect(claudeMark()).toHaveTextContent(SETTINGS.markLiveAuto);
     expect(screen.getByText(fillText(SETTINGS.aisNoteAuto, { n: 2, names: 'Claude', time: formatClock(until!) }))).toBeInTheDocument();
     await expectNoAxeViolations();
@@ -188,6 +193,7 @@ describe('Assistants: auto-approve (40 section 13.8.9)', () => {
     expect(screen.queryByRole('article')).not.toBeInTheDocument();
     await user.click(claudeMark());
     expect(within(panel('Claude')).getByRole('switch', { name: SETTINGS.autoApprove })).toHaveAttribute('aria-checked', 'true');
+    expect(within(panel('Claude')).getByText(/· 1 min left$/)).toBeInTheDocument();
   });
 
   it('Revoke asks in place, then revokes and clears auto-approve for that connection only', async () => {

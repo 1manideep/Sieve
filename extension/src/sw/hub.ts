@@ -1,13 +1,14 @@
 // Pure worker state (50 section 7.2): connections, the union of their lists, ownership, decisions in flight and
 // resolved requests. In memory only; the hub holds no Port objects and touches no chrome.* API.
 import { LADDER_STEPS } from '@sieve/shared';
-import type { Decision, LadderStep } from '@sieve/shared';
+import type { Decision, LadderStep, PreparingPreview } from '@sieve/shared';
 import { APP_URL } from '../shared/env';
 import type {
   ConnectionState,
   DecideRejection,
   InflightEntry,
   PanelState,
+  PreparingView,
   Preview,
   ResolvedEntry,
   ResolvedOutcome,
@@ -27,8 +28,16 @@ export interface ConnInfo {
   appVersion: string;
   ready: boolean; // true after a valid hello
   proposals: Preview[];
+  preparing: PreparingView[]; // requests that page is still preparing (pages since Nov 23)
+  gmail?: 'ended'; // that page says Gmail access on its computer ran out
   pendingAt: number; // time of the last valid sieve/pending (0 if none)
   invalidCount: number;
+}
+
+/** What a page sends with its list since Nov 23. */
+export interface PendingExtras {
+  preparing?: PreparingPreview[];
+  gmail?: 'ended';
 }
 
 /** On success, `textHash` is the hash of the text the person approved (approvals of a hashed preview only). */
@@ -86,6 +95,7 @@ export class Hub {
       appVersion: '',
       ready: false,
       proposals: [],
+      preparing: [],
       pendingAt: 0,
       invalidCount: 0,
     });
@@ -113,12 +123,20 @@ export class Hub {
    * different text hash. The page refuses those (the text changed under the person), so they stop being in flight
    * and the panel can be asked to check the new text.
    */
-  setPending(connId: string, proposals: Preview[]): { added: string[]; removed: string[]; changed: string[] } {
+  setPending(connId: string, proposals: Preview[], extras: PendingExtras = {}): { added: string[]; removed: string[]; changed: string[] } {
     const c = this.conns.get(connId);
     if (!c || !c.ready) return { added: [], removed: [], changed: [] };
     const before = this.unionIds();
     c.proposals = proposals;
     c.pendingAt = this.now();
+    // When it was asked, on this clock; kept from the first list that named it, so the count does not jump.
+    const at = this.now();
+    c.preparing = (extras.preparing ?? []).map(({ elapsedMs, ...p }) => ({
+      ...p,
+      since: c.preparing.find((x) => x.requestId === p.requestId)?.since ?? at - elapsedMs,
+    }));
+    if (extras.gmail === 'ended') c.gmail = 'ended';
+    else delete c.gmail;
     const changed: string[] = [];
     for (const entry of [...this.inflight.values()]) {
       if (entry.connId !== connId || entry.textHash === undefined) continue;
@@ -131,7 +149,7 @@ export class Hub {
     return { ...this.diff(before), changed };
   }
 
-  resolved(connId: string, requestId: string, outcome: 'approved' | 'declined' | 'expired' | 'error'): { removed: string[] } {
+  resolved(connId: string, requestId: string, outcome: 'approved' | 'declined' | 'expired' | 'error', message?: string): { removed: string[] } {
     if (!this.conns.get(connId)?.ready) return { removed: [] };
     const before = this.unionIds();
     const preview = this.find(requestId);
@@ -147,6 +165,7 @@ export class Hub {
       this.addResolved({
         requestId,
         outcome,
+        ...(outcome === 'error' && message ? { message } : {}),
         ...(decidedHere && sent?.step ? { step: sent.step } : {}),
         decidedHere,
         aiName,
@@ -229,11 +248,12 @@ export class Hub {
     this.resolvedEntries = this.resolvedEntries.filter((r) => r.requestId !== requestId);
   }
 
+  /** The page that lists the request: waiting for the person, or still being prepared (Open Sieve focuses it). */
   owner(requestId: string): ConnInfo | undefined {
     for (const c of this.orderedReady()) {
       if (c.proposals.some((p) => p.requestId === requestId)) return c;
     }
-    return undefined;
+    return this.orderedReady().find((c) => c.preparing.some((p) => p.requestId === requestId));
   }
 
   /** First ready connection with homeBase true, else the first ready connection. */
@@ -270,12 +290,25 @@ export class Hub {
     return !this.everReady && this.now() - this.startedAt < GRACE_MS ? 'connecting' : 'disconnected';
   }
 
+  /** Requests being prepared, home base first, without those already waiting for the person. */
+  preparing(): PreparingView[] {
+    const waiting = this.unionIds();
+    const out: PreparingView[] = [];
+    for (const c of this.orderedReady()) {
+      for (const p of c.preparing) if (!waiting.has(p.requestId) && !out.some((x) => x.requestId === p.requestId)) out.push(p);
+    }
+    return out;
+  }
+
   view(): PanelState {
     this.prune();
+    const gmail = this.homeBaseConn()?.gmail;
     return {
       connection: this.connection(),
       appUrl: APP_URL,
       proposals: this.union(),
+      preparing: this.preparing(),
+      ...(gmail ? { gmail } : {}),
       inflight: [...this.inflight.values()].map(({ requestId, approved, step, sentAt, slow }) => ({
         requestId,
         approved,

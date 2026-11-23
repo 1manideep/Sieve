@@ -51,6 +51,9 @@ export interface HomeBaseState {
   /** The extension's open-sieve key binding from sieve/hello-ack; '' when unset (01 section 6, 50 section 8.9). */
   extensionShortcut?: string;
   devices: DeviceView[];
+  /** Gmail access on this computer has run out (components/GmailAccess sets it); the extension is told too. */
+  gmailEnded: boolean;
+  setGmailEnded(ended: boolean): void;
   makeThisHomeBase(label: string): Promise<void>;
   stopBeingHomeBase(): Promise<void>;
   useThisTab(): Promise<void>;                    // steal the lock from another tab
@@ -73,6 +76,7 @@ export interface HomeBaseEngineHandle {
   allowCloudFor(requestId: string, recordId: string): Promise<void>;
   dismissDone(requestId: string): void;
   stopPreparing(requestId: string): Promise<void>;
+  refreshExtension?(): void;
 }
 
 let engine: HomeBaseEngineHandle | null = null;
@@ -87,7 +91,7 @@ export function getHomeBaseEngine(): HomeBaseEngineHandle | null {
 }
 
 const initial = (): Omit<HomeBaseState,
-  'makeThisHomeBase' | 'stopBeingHomeBase' | 'useThisTab' | 'toggleRelated' | 'decide' | 'allowCloudFor' | 'dismissDone' | 'stopPreparing' | 'reset'> => ({
+  'makeThisHomeBase' | 'stopBeingHomeBase' | 'useThisTab' | 'toggleRelated' | 'decide' | 'allowCloudFor' | 'dismissDone' | 'stopPreparing' | 'reset' | 'setGmailEnded'> => ({
   role: 'signed-out',
   homeBaseDeviceId: undefined,
   homeBaseLabel: undefined,
@@ -102,10 +106,16 @@ const initial = (): Omit<HomeBaseState,
   errorReason: undefined,
   extensionShortcut: undefined,
   devices: [],
+  gmailEnded: false,
 });
 
-export const useHomeBase = create<HomeBaseState>()((set) => ({
+export const useHomeBase = create<HomeBaseState>()((set, get) => ({
   ...initial(),
+  setGmailEnded: (ended) => {
+    if (get().gmailEnded === ended) return;
+    set({ gmailEnded: ended });
+    engine?.refreshExtension?.();
+  },
   makeThisHomeBase: async (label) => {
     await engine?.makeThisHomeBase(label);
   },

@@ -320,6 +320,9 @@ describe('home base engine: requests', () => {
 
   it('T08: a ready proposal with no option to approve ends at once as no match: no card, no decline', async () => {
     const h = await activeHarness();
+    // Lists go out while it is prepared (Nov 23: the extension shows the step), but the request is never offered.
+    const offered: string[] = [];
+    h.bridge.sendPending = vi.fn(() => void offered.push(...(h.bridge.handlers?.getPending() ?? []).map((p) => p.requestId)));
     const none = LADDER_STEPS.map((st) => option(st, '', { available: false, unavailableReason: 'Nothing to share at this step.' }));
     h.prepare.mockImplementationOnce(async (i: PrepareInput) => proposal({ requestId: i.requestId, maxStep: 'answer', options: none }));
     h.push([request({ maxStep: 'answer' })]);
@@ -328,7 +331,7 @@ describe('home base engine: requests', () => {
     expect(h.finish).toHaveBeenCalledTimes(1);
     expect(h.finish.mock.calls[0][3]).toEqual({ status: 'no-match', message: MSG.noMatch });
     expect(h.state.entries!.req1.result).toEqual({ kind: 'auto', status: 'no-match' });
-    expect(h.bridge.pendingCount).toBe(0);
+    expect(offered).toEqual([]);
     expect(h.toast).not.toHaveBeenCalled();
     // an answer that is only whitespace counts as nothing to approve too
     const blank = LADDER_STEPS.map((st) => option(st, st === 'answer' ? '  ' : '', { available: st === 'answer' }));
@@ -1232,5 +1235,129 @@ describe('home base engine: the automatic-outcome floor (40 section 11.6, Nov 21
     plain.push([request()]);
     await flush();
     expect(plain.finish.mock.calls[0][3]).toMatchObject({ status: 'blocked', message: 'Nothing to share for that.' });
+  });
+});
+
+describe('home base engine: waiting and approvals, as the extension sees them (Nov 23)', () => {
+  const turnOn = (grantId = 'g1') => window.localStorage.setItem(AUTO_APPROVE_KEY('u1'), JSON.stringify({ [grantId]: Date.now() + AUTO_APPROVE_MS }));
+  const auto: Partial<EngineDeps> = { autoApprove: (grantId) => autoApproveOn('u1', grantId), markAutoApproved: vi.fn() };
+  const extras = (h: Harness) => h.bridge.handlers?.getExtras?.();
+  afterEach(() => window.localStorage.clear());
+
+  /** A preparation that waits on the reading step until released. */
+  function holdOnReading(h: Harness): () => void {
+    let release: () => void = () => undefined;
+    h.prepare.mockImplementationOnce(async (input: PrepareInput) => {
+      input.onProgress?.({ type: 'step-start', id: `${input.requestId}:1`, kind: 'select', label: 'Reading 3 emails with the on-device model…', where: 'device' });
+      await new Promise<void>((r) => {
+        release = r;
+      });
+      return proposal({ requestId: input.requestId });
+    });
+    return () => release();
+  }
+
+  it('a request being prepared goes to the extension at each step: who asked, the question, the step and how long', async () => {
+    const h = await activeHarness();
+    const release = holdOnReading(h);
+    const before = h.bridge.pendingCount;
+    h.push([request()]);
+    await flush();
+    expect(h.bridge.pendingCount).toBeGreaterThanOrEqual(before + 2);   // claimed, then the step start
+    expect(extras(h)).toEqual({
+      preparing: [{
+        requestId: 'req1', aiName: 'Gemini CLI', question: 'What did my landlord say about the deposit?',
+        label: 'Reading 3 emails with the on-device model…', elapsedMs: 10_000,
+      }],
+    });
+    release();
+    await flush();
+    expect(extras(h)).toEqual({ preparing: [] });
+    expect(h.bridge.handlers?.getPending().map((p) => p.requestId)).toEqual(['req1']);
+  });
+
+  it('says when auto-approve will send it, and when the tab is in the background', async () => {
+    turnOn();
+    const hidden = { on: false };
+    const h = await activeHarness({ ...auto, isHidden: () => hidden.on });
+    holdOnReading(h);
+    h.push([request()]);
+    await flush();
+    expect(extras(h)?.preparing?.[0]).toMatchObject({ auto: true });
+    expect(extras(h)?.preparing?.[0]).not.toHaveProperty('wait');
+    hidden.on = true;
+    expect(extras(h)?.preparing?.[0]).toMatchObject({ auto: true, wait: 'hidden' });
+  });
+
+  it('a file request is never auto-approved, and the preview says why it waits', async () => {
+    turnOn();
+    const h = await activeHarness(auto);
+    h.prepare.mockImplementationOnce(async (i: PrepareInput) => proposal({ requestId: i.requestId, requestedStep: 'full', maxStep: 'answer' }));
+    h.push([request({ tool: 'sieve_full_item', requestedStep: 'full', maxStep: 'answer', wantFile: true })]);
+    await flush();
+    expect(h.finish).not.toHaveBeenCalled();
+    expect(h.state.entries!.req1.phase).toBe('awaiting-person');
+    expect(h.bridge.handlers?.getPending()[0]).toMatchObject({ requestId: 'req1', autoWaits: 'file' });
+  });
+
+  it('an excerpt waits with its reason; without auto-approve no reason is sent', async () => {
+    const h = await activeHarness(auto);
+    h.push([request({ requestedStep: 'excerpt' })]);
+    await flush();
+    expect(h.bridge.handlers?.getPending()[0]).not.toHaveProperty('autoWaits');
+    turnOn();
+    expect(h.bridge.handlers?.getPending()[0]).toMatchObject({ autoWaits: 'excerpt' });
+  });
+
+  it('a decision being written stays listed for the extension until it is resolved', async () => {
+    const h = await awaitingHarness();
+    let write: (v: 'ok') => void = () => undefined;
+    h.finish.mockImplementationOnce(() => new Promise<'ok'>((r) => {
+      write = r;
+    }));
+    const decided = h.engine.decide({ requestId: 'req1', approved: true, step: 'answer', decidedBy: 'app' });
+    await flush();
+    expect(h.state.entries!.req1.phase).toBe('deciding');
+    expect(h.bridge.handlers?.getPending().map((p) => p.requestId)).toEqual(['req1']);
+    write('ok');
+    await decided;
+    expect(h.bridge.resolved).toEqual([['req1', 'approved']]);
+    expect(h.bridge.handlers?.getPending()).toEqual([]);
+  });
+
+  it("an extension approval that cannot upload the file says why, to the extension and on the app's card", async () => {
+    const h = await activeHarness({
+      files: {
+        upload: vi.fn(async () => {
+          throw Object.assign(new Error('offline'), { name: 'HandoffError' });
+        }),
+        remove: vi.fn(async () => undefined),
+        stashed: () => new Blob([new Uint8Array(8)]),
+        drop: vi.fn(),
+      },
+    });
+    const FILE = { name: 'Lease_2026.pdf', mime: 'application/pdf', bytes: 182_000 };
+    h.prepare.mockImplementationOnce(async () => proposal({ requestedStep: 'full', options: [option('answer', 'a'), option('excerpt', 'b'), option('full', 'Lease_2026.pdf (PDF, 182 KB)', { file: FILE })] }));
+    (h.deps.pipeline.finalizeDecision as ReturnType<typeof vi.fn>).mockImplementationOnce(async (p: Proposal, d: Decision) => ({ ...(await fakeFinalize(p, d)), file: FILE }));
+    h.push([request({ tool: 'sieve_full_item', requestedStep: 'full', wantFile: true })]);
+    await flush();
+    h.push([request({ tool: 'sieve_full_item', requestedStep: 'full', wantFile: true, status: 'awaiting-person', claimedBy: 'dev1' })]);
+    await flush();
+    const r = await h.engine.decide({ requestId: 'req1', approved: true, step: 'full', decidedBy: 'extension' });
+    expect(r).toMatchObject({ ok: false, message: DECIDE_ERRORS.fileUpload });
+    expect(h.bridge.sendResolved).toHaveBeenCalledWith('req1', 'error', DECIDE_ERRORS.fileUpload);
+    expect(h.state.entries!.req1).toMatchObject({ phase: 'awaiting-person', error: DECIDE_ERRORS.fileUpload });
+    expect(h.bridge.handlers?.getPending().map((p) => p.requestId)).toEqual(['req1']);   // still there to try again
+  });
+
+  it('tells the extension when Gmail access ran out, and sends the lists again when asked', async () => {
+    const gmail = { ended: false };
+    const h = await activeHarness({ gmailEnded: () => gmail.ended });
+    expect(extras(h)).toEqual({ preparing: [] });
+    gmail.ended = true;
+    const before = h.bridge.pendingCount;
+    h.engine.refreshExtension();
+    expect(h.bridge.pendingCount).toBe(before + 1);
+    expect(extras(h)).toEqual({ preparing: [], gmail: 'ended' });
   });
 });

@@ -17,7 +17,15 @@ export interface HandoffDeps {
   idToken(): Promise<string>;
   appCheckToken?(): Promise<string | undefined>;
   fetch?: typeof fetch;
+  /** Tests: a shorter limit than UPLOAD_TIMEOUT_MS. */
+  timeoutMs?: number;
 }
+
+/**
+ * An upload that has not finished by then ends as 'offline', so an approval never spins forever (Nov 23, 2026: a
+ * blocked request once left the card waiting). 20 MB at a slow 2 Mbit/s takes about 80 seconds.
+ */
+export const UPLOAD_TIMEOUT_MS = 90_000;
 
 const HOST = 'https://firebasestorage.googleapis.com/v0/b';
 const NAME_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-';
@@ -38,19 +46,38 @@ async function headers(deps: HandoffDeps, mime?: string): Promise<Record<string,
   return out;
 }
 
-/** Uploads the file and returns its place. Throws HandoffError; nothing is left behind when it does. */
+/**
+ * Uploads the file and returns its place. Throws HandoffError ('offline' also when it takes longer than
+ * UPLOAD_TIMEOUT_MS, the sign-in tokens included); nothing is left behind when it does.
+ */
 export async function uploadHandoff(uid: string, requestId: string, blob: Blob, mime: string, deps: HandoffDeps, signal?: AbortSignal): Promise<string> {
   if (blob.size <= 0 || blob.size > SHARED_FILE_MAX_BYTES) throw new HandoffError('too-large');
   const path = `handoffs/${uid}/${requestId}/${handoffObjectName()}`;
   if (!SHARED_FILE_PATH_RE.test(path)) throw new HandoffError('refused');
+  const ctl = new AbortController();
+  const stop = () => ctl.abort(signal?.reason);
+  signal?.addEventListener('abort', stop);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      ctl.abort();
+      reject(new HandoffError('offline'));
+    }, deps.timeoutMs ?? UPLOAD_TIMEOUT_MS);
+  });
   let res: Response;
   try {
-    res = await (deps.fetch ?? fetch)(`${HOST}/${encodeURIComponent(deps.bucket)}/o?uploadType=media&name=${encodeURIComponent(path)}`, {
-      method: 'POST', headers: await headers(deps, mime), body: blob, signal,
-    });
+    const send = async () =>
+      (deps.fetch ?? fetch)(`${HOST}/${encodeURIComponent(deps.bucket)}/o?uploadType=media&name=${encodeURIComponent(path)}`, {
+        method: 'POST', headers: await headers(deps, mime), body: blob, signal: ctl.signal,
+      });
+    res = await Promise.race([send(), late]);
   } catch (e) {
-    if ((e as { name?: string }).name === 'AbortError') throw e;
+    if (signal?.aborted && (e as { name?: string }).name === 'AbortError') throw e;
+    if (e instanceof HandoffError) throw e;
     throw new HandoffError('offline');
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', stop);
   }
   if (!res.ok) throw new HandoffError('refused');
   return path;

@@ -2,7 +2,7 @@
 // ready: Approve + Deny; no-match: Deny only; every other outcome: Open Sieve only. Related items are never
 // offered here; ticking them is done in the app.
 import { useId } from 'react';
-import type { Category, LadderStep, ProposalOutcome, ProposalPreview } from '@sieve/shared';
+import { autoWaitLine, type Category, type LadderStep, type ProposalOutcome, type ProposalPreview } from '@sieve/shared';
 import type { InflightEntry } from '../../shared/internal';
 import { APPROVE_ONLY_IF_ASKED, COPY, outcomeCopy, requesterName } from '../../shared/labels';
 import { optionFor } from '../steps';
@@ -77,6 +77,7 @@ export function RequestCard({ preview, step, inflight, rejection, onStepChange, 
         </p>
       ) : null}
       {inflight?.slow ? <p className={s.note}>{COPY.slowNote}</p> : null}
+      {preview.autoWaits ? <p className={s.body}>{autoWaitLine(preview.autoWaits)}</p> : null}
       {outcome === 'ready' ? <ApproveOnlyIfAsked aiName={requesterName(preview.requester)} /> : null}
 
       {outcome === 'ready' || outcome === 'no-match' ? (

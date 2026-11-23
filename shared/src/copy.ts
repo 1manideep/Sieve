@@ -93,3 +93,46 @@ export const RESULT_LINES = {
 } as const;
 
 export type ResultLineKind = keyof typeof RESULT_LINES;
+
+/**
+ * While a request is prepared (40 sections 12.4 and 13.5, 50 section 8.4): how long since it was asked, what is
+ * usual, what happens next, and why it may be slow. The app's Requests card and the extension use the same words.
+ */
+export const WAITING = {
+  asked: (time: string) => `Asked ${time} ago. Answers usually take 20 seconds to a minute.`,
+  nextApprove: "You'll be asked to approve before anything is sent.",
+  nextAuto: 'Auto-approve is on: the answer goes out without asking you.',
+  busy: 'Taking longer than usual. The computer may be busy. Keep the Sieve tab open: it goes on by itself.',
+  hidden: 'The Sieve tab is in the background, so Chrome may slow the on-device model. Bring it to the front and keep it open.',
+  click: 'Sieve needs one click in its tab before the on-device model can start.',
+} as const;
+
+/** Past this, a preparation is slower than usual and the busy line shows. */
+export const WAITING_SLOW_MS = 60_000;
+
+/** "12 seconds", "1 second", "1 min 5 s", for the waiting lines. */
+export function waitTime(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return s === 1 ? '1 second' : `${s} seconds`;
+  return s % 60 === 0 ? `${s / 60} min` : `${Math.floor(s / 60)} min ${s % 60} s`;
+}
+
+/**
+ * Why a request waits for the person although auto-approve is on for its connection (40 section 13.8.9): it covers
+ * one-sentence answers that pass every check, and nothing else. The extension shows the same line.
+ */
+export type AutoWait = 'file' | 'excerpt' | 'full' | 'consent' | 'no-answer' | 'check';
+
+export const AUTO_WAITS: Readonly<Record<AutoWait, string>> = {
+  file: 'This asks for the file itself, so it waits for you.',
+  excerpt: 'This asks for an excerpt, so it waits for you.',
+  full: 'This asks for the whole item, so it waits for you.',
+  consent: 'This needs your OK before the cloud model reads it, so it waits for you.',
+  'no-answer': 'There is no one-sentence answer to send, so it waits for you.',
+  check: "This answer didn't pass a check before sending, so it waits for you.",
+};
+
+/** "Auto-approve covers one-sentence answers. This asks for the file itself, so it waits for you." */
+export function autoWaitLine(why: AutoWait): string {
+  return `Auto-approve covers one-sentence answers. ${AUTO_WAITS[why]}`;
+}

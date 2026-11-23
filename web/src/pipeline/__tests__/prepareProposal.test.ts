@@ -465,7 +465,7 @@ describe('prepareProposal (10 section 16.10)', () => {
     expect(short.slice(5, selectEnd)).toContain('answer');
     const starts = new Set(events.flatMap((e) => (e.type === 'step-start' ? [e.id] : [])));
     for (const e of events) if (e.type === 'step-end') expect(starts.has(e.id)).toBe(true);
-    expect(events.find((e) => e.type === 'step-start' && e.kind === 'select')).toMatchObject({ label: 'Reading 1 email on this device…', where: 'device' });
+    expect(events.find((e) => e.type === 'step-start' && e.kind === 'select')).toMatchObject({ label: 'Reading 1 email with the on-device model…', where: 'device' });
     expect(events.filter((e) => e.type === 'answer-progress').map((e) => (e as { text: string }).text)).toEqual(['Your dep', DEPOSIT_ANSWER]);
   });
 

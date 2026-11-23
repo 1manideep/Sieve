@@ -84,3 +84,21 @@ describe('copy style', () => {
     for (const s of strings) expect(s).not.toContain('—');
   });
 });
+
+describe('waiting lines and why auto-approve waits (Nov 23)', () => {
+  it('says how long in plain words', async () => {
+    const { waitTime, WAITING } = await import('./copy');
+    expect(waitTime(0)).toBe('0 seconds');
+    expect(waitTime(1_400)).toBe('1 second');
+    expect(waitTime(42_900)).toBe('42 seconds');
+    expect(waitTime(60_000)).toBe('1 min');
+    expect(waitTime(65_000)).toBe('1 min 5 s');
+    expect(WAITING.asked(waitTime(24_000))).toBe('Asked 24 seconds ago. Answers usually take 20 seconds to a minute.');
+  });
+
+  it('names what auto-approve does not cover, in one line', async () => {
+    const { autoWaitLine } = await import('./copy');
+    expect(autoWaitLine('file')).toBe('Auto-approve covers one-sentence answers. This asks for the file itself, so it waits for you.');
+    expect(autoWaitLine('excerpt')).toBe('Auto-approve covers one-sentence answers. This asks for an excerpt, so it waits for you.');
+  });
+});

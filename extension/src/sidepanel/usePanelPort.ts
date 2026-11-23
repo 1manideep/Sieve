@@ -70,6 +70,8 @@ export type PanelAction =
   | { type: 'rejected'; requestId: string; reason: DecideRejection }
   | { type: 'select'; requestId: string }
   | { type: 'done'; requestId: string }
+  /** "Try again" on a result whose request still waits: the result goes and the request shows again. */
+  | { type: 'retry'; requestId: string }
   | { type: 'acted' };
 
 export const initialModel: PanelModel = { state: null, selectedId: null, lastRejection: null, announcement: null, dismissed: [] };
@@ -126,6 +128,8 @@ export function panelReducer(model: PanelModel, action: PanelAction): PanelModel
         lastRejection: null,
       };
     }
+    case 'retry':
+      return { ...model, dismissed: [...model.dismissed, action.requestId], selectedId: action.requestId, lastRejection: null };
     case 'acted':
       return { ...model, lastRejection: null };
   }
@@ -145,6 +149,7 @@ export interface PanelPort {
   send(msg: PanelToWorker): void;
   select(requestId: string): void;
   done(requestId: string): void;
+  retry(requestId: string): void;
 }
 
 export function usePanelPort(api: PanelApi): PanelPort {
@@ -251,5 +256,13 @@ export function usePanelPort(api: PanelApi): PanelPort {
     [send],
   );
 
-  return { model, state: model.state, lastRejection: model.lastRejection, send, select, done };
+  const retry = useCallback(
+    (requestId: string) => {
+      dispatch({ type: 'retry', requestId });
+      send({ type: 'panel/dismiss', requestId });
+    },
+    [send],
+  );
+
+  return { model, state: model.state, lastRejection: model.lastRejection, send, select, done, retry };
 }

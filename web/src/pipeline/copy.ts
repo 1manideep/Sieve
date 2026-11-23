@@ -21,7 +21,8 @@ const METHOD_NAMES: [Candidate['matchedBy'], string][] = [
 
 export const RUNNING = {
   words: 'Thinking of other words for the search…',
-  retrieve: 'Searching this device…',
+  // Nov 23: the running labels say in plain words what the person waits for (40 section 12.4)
+  retrieve: 'Searching your mail and files on this computer…',
   fresh: 'Checking the item is still there…',
   verify: 'Checking the answer against the item…',
   yesNo: 'Reading the answer as yes or no…',
@@ -30,7 +31,7 @@ export const RUNNING = {
   injectionCheck: 'Checking for hidden instructions…',
   piiCheck: 'Checking for personal details…',
   draft: 'Drafting in the cloud from the approved text…',
-  selectDevice: (records: Pick<IndexRecord, 'kind'>[]) => `Reading ${countNoun(records)} on this device…`,
+  selectDevice: (records: Pick<IndexRecord, 'kind'>[]) => `Reading ${countNoun(records)} with the on-device model…`,
   selectCloudSample: (records: Pick<IndexRecord, 'kind'>[]) => {
     const [n, ...rest] = countNoun(records).split(' ');
     return `Reading ${n} sample ${rest.join(' ')} in the cloud…`;

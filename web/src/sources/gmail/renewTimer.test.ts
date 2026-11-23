@@ -12,7 +12,7 @@ const auth = vi.hoisted(() => ({
 }));
 vi.mock('./auth', () => auth);
 
-const { GMAIL_RENEW_BEFORE_MS, GMAIL_RENEW_EVERY_MS, renewInClick, renewOnTimer, resetGmailRenew, setRenewTarget } = await import('./renew');
+const { GMAIL_RENEW_BEFORE_MS, GMAIL_RENEW_EVERY_MS, onRenewBlocked, renewBlockedByChrome, renewInClick, renewOnTimer, resetGmailRenew, setRenewTarget } = await import('./renew');
 
 const db = {} as SieveDb;
 const NOW = 1_800_000_000_000;
@@ -62,11 +62,17 @@ describe('renewOnTimer', () => {
     expect(auth.requestGmailToken).toHaveBeenCalledTimes(1);
   });
 
-  it('a window Chrome blocked stops the timer on this page; a click still renews', async () => {
+  it('a window Chrome blocked stops the timer on this page and says so; a click still renews', async () => {
     const t = target(NOW);
+    const seen = vi.fn();
+    onRenewBlocked(seen);
+    expect(renewBlockedByChrome()).toBe(false);
     auth.requestGmailToken.mockRejectedValueOnce(new SourceError('popup-blocked', 'blocked'));
     await expect(renewOnTimer(NOW)).rejects.toBeInstanceOf(SourceError);
     expect(t.blocked).toBe(false);
+    // the Gmail notice explains pop-ups (components/GmailAccess)
+    expect(renewBlockedByChrome()).toBe(true);
+    expect(seen).toHaveBeenCalledOnce();
     expect(renewOnTimer(NOW + GMAIL_RENEW_EVERY_MS)).toBeNull();
     await renewInClick(NOW + GMAIL_RENEW_EVERY_MS);
     expect(t.onToken).toHaveBeenCalledTimes(1);
@@ -77,6 +83,7 @@ describe('renewOnTimer', () => {
     auth.requestGmailToken.mockRejectedValueOnce(new SourceError('popup-closed', 'closed'));
     await expect(renewOnTimer(NOW)).rejects.toBeInstanceOf(SourceError);
     expect(t.blocked).toBe(true);
+    expect(renewBlockedByChrome()).toBe(false);
     expect(renewInClick(NOW + GMAIL_RENEW_EVERY_MS)).toBeNull();
   });
 });

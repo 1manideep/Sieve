@@ -16,6 +16,7 @@ import {
 import type { SieveDb } from '@/index';
 import type { PipelineProgress, buildRelatedOptions, composeOutgoingText, finalizeDecision, prepareProposal } from '@/pipeline';
 import type { BlockedEntry } from '@/app/services/blocked';
+import { autoApprovable, autoCovers, autoWaits } from '@/state/autoApprove';
 import type { DecideResult, ExtensionStatus, HomeBaseRole, HomeBaseState, PendingEntry } from '@/state/homeBase';
 import type { ToastState } from '@/state/toasts';
 import type { DeviceView, LiveStep, RelayRequestView } from '@/state/types';
@@ -27,7 +28,7 @@ import { validateDecision, type DecisionInput, type DecideResultReason } from '.
 import type { BridgeHandlers, ExtensionBridge } from './extensionBridge';
 import type { FinishInput, InvalidRequest } from './requests';
 import { MSG, unsupportedLine } from './messagesToAi';
-import { pendingPreviews } from './preview';
+import { pendingPreviews, preparingPreviews } from './preview';
 import { resilientSnapshot, type ListenerState } from './resilient';
 import { checkBeforeSend, type SendBlock } from './sendCheck';
 import { errorLine, errorName } from '@/robust/errorLine';
@@ -111,6 +112,8 @@ export interface EngineDeps {
   markAutoApproved?(receiptId: string, on: boolean): void;
   /** 0 to 1, for the jitter of the automatic-outcome floor (tests pass a fixed value). */
   random?(): number;
+  /** Gmail access on this computer has run out (the Gmail notice, components/GmailAccess): the extension says so too. */
+  gmailEnded?(): boolean;
 }
 
 export interface HomeBaseEngine {
@@ -129,6 +132,8 @@ export interface HomeBaseEngine {
   decide(input: DecisionInput): Promise<DecideResult>;
   dismissDone(requestId: string): void;
   stopPreparing(requestId: string): Promise<void>;
+  /** Sends the extension the current lists again (the Gmail state changed). */
+  refreshExtension(): void;
   role(): HomeBaseRole;
 }
 
@@ -168,23 +173,6 @@ function reasonForSendBlock(code: SendBlock): DecideResultReason {
   if (code === 'too-long' || code === 'empty') return 'too-long';
   if (code === 'text-mismatch' || code === 'missing-item' || code === 'not-clean' || code === 'unmasked-number') return 'error';
   return 'invalid-step';
-}
-
-/**
- * 40 section 13.8.9: with auto-approve on for a connection, every ready answer is approved without the person,
- * whatever the item's category rule and whatever warnings the card would show (Nov 21, 2026: the person asked for a
- * full override while testing). It stays the answer step only (asked for, or the cap) and needs an answer to send.
- * decide() then runs every check a click would, so a "Never share" item and unmasked personal details are still held.
- */
-function autoApprovable(req: RelayRequestView, p: Proposal): boolean {
-  const answer = p.options[0];
-  return (
-    p.outcome === 'ready' &&
-    (req.requestedStep === 'answer' || req.maxStep === 'answer') &&
-    answer?.step === 'answer' &&
-    answer.available &&
-    answer.text.trim() !== ''
-  );
 }
 
 function sourceOf(recordId: string): SourceKind | undefined {
@@ -334,13 +322,23 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
       publish();
     },
     getPending: () => {
-      const { previews, ids } = pendingPreviews(ordered());
+      const { previews, ids } = pendingPreviews(
+        ordered().filter((e) => !autoDeciding.has(e.requestId)),
+        (e) => (deps.autoApprove?.(e.request.requester.grantId) && e.proposal ? autoWaits(e.request, e.proposal, e.error !== undefined) : undefined),
+      );
       for (const [id, itemIds] of Object.entries(ids)) {
         const e = entries.get(id);
         if (e && e.lastPreviewItemIds.join('\n') !== itemIds.join('\n')) update(id, { lastPreviewItemIds: itemIds });
       }
       return previews;
     },
+    getExtras: () => ({
+      preparing: preparingPreviews(ordered(), deps.now(), (e) => ({
+        ...(autoCovers(e.request) && deps.autoApprove?.(e.request.requester.grantId) ? { auto: true as const } : {}),
+        ...(runtime.get(e.requestId)?.waiting === 'click' ? { wait: 'click' as const } : deps.isHidden?.() ? { wait: 'hidden' as const } : {}),
+      })),
+      ...(deps.gmailEnded?.() ? { gmail: 'ended' as const } : {}),
+    }),
     isHomeBase: () => role === 'active',
     onHello: (info) => {
       extensionShortcut = info.extensionShortcut;
@@ -630,6 +628,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
     }
     update(id, { phase: 'preparing' });
     publish();
+    sendPending();
     void pump();
   }
 
@@ -669,6 +668,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
             update(w.requestId, { liveSteps: [clickStep(w.requestId)] });
           }
           publish();
+          sendPending();
           // nobody sees "click in this tab" in a background tab: tell the person outside it (70 R-PLAT-01)
           if (deps.isHidden?.()) noticeHidden(e.request.requester.aiName);
           if (!offClick) {
@@ -726,6 +726,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
       const step: LiveStep = { id: ev.id, kind: ev.kind, label: ev.label, where: ev.where, status: 'running', startedAt: deps.now() };
       update(id, { liveSteps: [...e.liveSteps.filter((s) => s.id !== ev.id), step] });
       publish();
+      sendPending();
     } else if (ev.type === 'step-end') {
       const found = e.liveSteps.some((s) => s.id === ev.id);
       const liveSteps = found
@@ -733,6 +734,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
         : [...e.liveSteps, { id: ev.id, kind: ev.step.kind, label: ev.step.label, where: ev.step.where, status: 'done' as const, startedAt: ev.step.at, step: ev.step }];
       update(id, { liveSteps });
       publish();
+      sendPending();
     } else {
       const r = rt(id);
       r.frameText = ev.text;
@@ -833,6 +835,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
     if (reason === 'expired') {
       removeEntry(id);   // functions mark it expired
       publish();
+      sendPending();
       return;
     }
     if (reason === 'stopped' || reason === 'ended' || reason === 'person') return;
@@ -849,6 +852,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
         liveSteps: [{ id: `${id}:hidden`, kind: 'select', label: HOME_BASE.waitingHidden, where: 'device', status: 'running', startedAt: deps.now() }],
       });
       publish();
+      sendPending();
       noticeHidden(aiName);
       const resume = () => {
         r.waiting = undefined;
@@ -986,6 +990,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
   ): Promise<void> {
     update(id, { phase: 'deciding', ...(proposal ? { proposal } : {}) });
     publish();
+    sendPending();
     // The same floor for every automatic outcome, so timing never tells a block from a miss (Nov 21).
     await floor(entries.get(id)?.request.createdAt ?? deps.now());
     if (stopped || !entries.has(id)) return;
@@ -1244,7 +1249,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
       const back = (message: string, reason: DecideResultReason): DecideResult => {
         if (entries.has(id)) update(id, { phase: 'awaiting-person', error: message });
         publish();
-        if (fromExtension) bridge?.sendResolved(id, 'error');
+        if (fromExtension) bridge?.sendResolved(id, 'error', message);
         sendPending();
         return { ok: false, reason, message };
       };
@@ -1371,6 +1376,7 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
       abortEntry(requestId, 'person');
       removeEntry(requestId);
       publish();
+      sendPending();
       ensureBridge();
       deps.announce(HOME_BASE.stoppedPreparing, 'polite');
     },
@@ -1381,6 +1387,8 @@ export function createHomeBaseEngine(deps: EngineDeps): HomeBaseEngine {
       publish();
       ensureBridge();
     },
+
+    refreshExtension: sendPending,
 
     role: () => role,
   };

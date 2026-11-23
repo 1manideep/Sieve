@@ -4,6 +4,8 @@
 // only the four shared settings, so the switch lives here. The home base runs on this computer and reads the same
 // entries. The receipts it approves this way are listed under `sieve.autoApproved.{uid}` for "Approved automatically".
 import { create } from 'zustand';
+import type { AutoWait, Proposal } from '@sieve/shared';
+import type { RelayRequestView } from './types';
 
 export const AUTO_APPROVE_MS = 2 * 60 * 60 * 1000;
 export const AUTO_APPROVE_KEY = (uid: string) => `sieve.autoApprove.${uid}`;
@@ -63,6 +65,37 @@ export function markAutoApproved(uid: string, receiptId: string, on = true): voi
   const ids = [...readAutoApproved(uid)].filter((x) => x !== receiptId);
   if (on) ids.push(receiptId);
   save(AUTO_APPROVED_KEY(uid), ids.slice(-AUTO_APPROVED_MAX));
+}
+
+/** Auto-approve can cover this request at all: a one-sentence answer (asked for, or the cap), never the file itself. */
+export function autoCovers(req: Pick<RelayRequestView, 'requestedStep' | 'maxStep' | 'wantFile'>): boolean {
+  return !req.wantFile && (req.requestedStep === 'answer' || req.maxStep === 'answer');
+}
+
+/**
+ * 40 section 13.8.9: with auto-approve on for a connection, every ready answer is approved without the person,
+ * whatever the item's category rule and whatever warnings the card would show (Nov 21, 2026: the person asked for a
+ * full override while testing). It stays the answer step only (asked for, or the cap), never the file itself (Nov 23),
+ * and needs an answer to send. The engine's decide() then runs every check a click would, so a "Never share" item and
+ * unmasked personal details are still held.
+ */
+export function autoApprovable(req: RelayRequestView, p: Proposal): boolean {
+  const answer = p.options[0];
+  return p.outcome === 'ready' && autoCovers(req) && answer?.step === 'answer' && answer.available && answer.text.trim() !== '';
+}
+
+/**
+ * Why a request waits for the person although auto-approve is on for its connection (the card's one line, Nov 23).
+ * `stopped`: auto-approve tried and a send check refused it (the engine left its reason on the entry). An answer it
+ * covers that has no such reason arrived before auto-approve was on, and says nothing.
+ */
+export function autoWaits(req: RelayRequestView, p: Proposal, stopped = false): AutoWait | undefined {
+  if (p.outcome === 'needs-cloud-consent') return 'consent';
+  if (p.outcome !== 'ready') return undefined;
+  if (req.wantFile) return 'file';
+  if (!autoCovers(req)) return req.requestedStep === 'excerpt' ? 'excerpt' : 'full';
+  if (!autoApprovable(req, p)) return 'no-answer';
+  return stopped ? 'check' : undefined;
 }
 
 export interface AutoApproveState {

@@ -266,14 +266,15 @@ sequenceDiagram
 1. Connect only if `globalThis.chrome?.runtime?.connect` is a function. Chrome exposes `chrome.runtime` to a page only when some installed extension lists the page in `externally_connectable`; otherwise the bridge status is `unsupported` and nothing else happens.
 2. Open exactly one port per tab, named `HOME_BASE_PORT_NAME`. Send `sieve/hello` immediately, with `homeBase: true` only when this tab is the registered home base (30 and 40 decide that), and `appVersion` = the web app's version string.
 3. After `sieve/hello-ack`, send `sieve/pending` with the full current list, then again every time the list changes, and every 20 s as a keepalive (section 6.5).
-4. The list contains only proposals for outside requests (`requester.kind === 'outside'`) whose request is waiting for the person (Firestore status `awaiting-person`), sorted by `Proposal.createdAt`, oldest first. In-app Ask proposals are never sent (the person is already in the app). At most 20 entries; if more wait, send the oldest 20.
+4. The list contains only proposals for outside requests (`requester.kind === 'outside'`) whose request is waiting for the person (Firestore status `awaiting-person`), sorted by `Proposal.createdAt`, oldest first. Since Nov 23 a request whose decision is still being written stays in the list until `sieve/resolved` (an upload can take a while; an auto-approval and an automatic outcome never show). In-app Ask proposals are never sent (the person is already in the app). At most 20 entries; if more wait, send the oldest 20.
+4a. Since Nov 23, to an extension of 0.1.1 or later, the same message also carries `preparing`: the outside requests the home base is still preparing (`PreparingPreview`: `requestId`, `aiName`, `question`, the running step's `label`, `elapsedMs` since the assistant asked, `auto: true` when auto-approve will send the answer, `wait: 'click' | 'hidden'` when the tab waits for a first click or is in the background), sent at every step start and end; and `gmail: 'ended'` while Gmail access on that computer has run out (40 section 7.4a). A preview carries `autoWaits` when auto-approve is on for its connection and it still waits (40 section 13.8.9). Never any content.
 5. Each entry is `toPreview(proposal)` (section 6.4). Never send `related`, `trace`, record ids or `from`.
 6. When a request leaves the waiting state, send `sieve/resolved` with:
    - `approved`: the approved payload was written to the request doc.
    - `declined`: the decline was written.
    - `expired`: the request expired or was revoked before a decision.
-   - `error`: nothing could be written (so nothing was shared).
-   Then send the new `sieve/pending` list without it. Send `resolved` whether the decision came from the extension or the app.
+   - `error`: nothing could be written (so nothing was shared). Since Nov 23 it carries `message`, the app's one-line reason (for example "Couldn't upload the file. Nothing was sent. Check your connection and try again."), to 0.1.1 and later.
+   Then send the new `sieve/pending` list without it (with it again when the request still waits, so it can be tried again). Send `resolved` whether the decision came from the extension or the app.
 7. On `sieve/decision`: accept it only if all hold: a proposal with that `requestId` is in the current list; `decision.decidedBy === 'extension'`; if `approved`, `step` is set, the option whose `step` equals it has `available: true`, `step` is not above `maxStep` (by `LADDER_STEPS` index) and `outcome === 'ready'`. Then replace `itemIds` with `[proposal.item.recordId]` (the extension never knows record ids; contract change request CR-2) and call `finalizeDecision(proposal, decision)`. If any check fails, ignore the message and re-send `sieve/pending`.
 8. On `sieve/open-app`: navigate to the Requests screen, selecting `requestId` if given. The worker focuses the tab itself (section 7.9).
 9. On port disconnect: if the status was `connected`, reconnect at once (attempt 1 has no delay), then back off.
@@ -345,7 +346,10 @@ export function parsePreview(raw: unknown): ProposalPreview | null;
 | message | plain object; `version === MESSAGE_VERSION`; `type` is one of the three `PageToExtension` types; serialized length within `maxMessageChars` |
 | `sieve/hello` | `homeBase` boolean; `appVersion` non-empty string within `maxAppVersionChars` |
 | `sieve/pending` | `proposals` array, length 0 to `maxProposals`; every entry passes `parsePreview`; duplicate `requestId`s in one list make the whole message invalid |
-| `sieve/resolved` | `requestId` matches `LIMITS.requestId`; `outcome` is `approved`, `declined`, `expired` or `error` |
+| `sieve/resolved` | `requestId` matches `LIMITS.requestId`; `outcome` is `approved`, `declined`, `expired` or `error`; `message` kept when it is a string of 1 to `maxWarningChars` |
+| `preparing` (since Nov 23) | optional array, length 0 to `maxProposals`; each entry: `requestId`, `aiName` (1 to `maxAiNameChars`), `question` (1 to `MAX_QUESTION_CHARS`), `label` optional within `maxReasonChars`, `elapsedMs` integer >= 0, `auto` kept only when `true`, `wait` kept only when `click` or `hidden`. An entry that fails is left out; the message still counts |
+| `gmail` (since Nov 23) | kept only when `'ended'` |
+| `autoWaits` (preview, since Nov 23) | kept only when one of `file`, `excerpt`, `full`, `consent`, `no-answer`, `check` |
 | `requestId` | matches `LIMITS.requestId` |
 | `requester` | either `{ kind: 'in-app', aiName: 'Gemini (in Sieve)' }` or `{ kind: 'outside', grantId: string (1 to 128 chars), aiName: string (1 to maxAiNameChars) }` |
 | `question` | string, 1 to `MAX_QUESTION_CHARS` |
@@ -423,7 +427,8 @@ Rules:
 - **Added / removed.** `setPending` compares the union before and after and returns the request ids that appeared and disappeared. `register` uses `added` for notifications and `removed` to clear them.
 - **Actionable.** A preview is actionable when its `outcome` is `ready` or `needs-cloud-consent` and it is not in flight. `actionableCount()` drives the badge.
 - **Decide.** Find the preview in the union and its owner. Fail with `unknown-request` if absent, `no-owner` if the owner is gone, `already-sent` if a decision for it is in flight. If `approved`: fail with `not-ready` unless `outcome === 'ready'`; fail with `step-unavailable` unless `step` is given, `options` for that step has `available: true`, and the step's index in `LADDER_STEPS` is not above `maxStep`'s. Deny is allowed for any outcome. On success record an `InflightEntry` and return the `Decision` built as in section 9.
-- **Resolved.** Remove any in-flight entry for the id and add a `ResolvedEntry` (with `decidedHere: true` and the step if the decision was made here, else `decidedHere: false`). Keep the preview's `question` and `requester.aiName` in the entry so the result card can show them after the preview is gone.
+- **Resolved.** Remove any in-flight entry for the id and add a `ResolvedEntry` (with `decidedHere: true` and the step if the decision was made here, else `decidedHere: false`). Keep the preview's `question` and `requester.aiName` in the entry so the result card can show them after the preview is gone. Since Nov 23 an `error` keeps the page's `message`.
+- **Being prepared (since Nov 23).** `setPending(connId, proposals, { preparing, gmail })` keeps each connection's requests being prepared as `PreparingView` (`since` = now minus `elapsedMs` the first time an id appears, then kept) and its Gmail flag. `view()` lists them home base first, without ids that are already proposals, and sets `gmail: 'ended'` when the home base connection's last list said so. `owner()` also finds a request in a preparing list, so Open Sieve on it focuses that tab.
 - **Remove connection.** Drop its proposals. Any in-flight decision owned by it becomes a `ResolvedEntry` with outcome `lost`. Return those ids.
 - `view()` returns the union, in-flight entries, resolved entries (newest first) and the connection state (section 7.5).
 
@@ -648,11 +653,14 @@ Component styling follows `Extension.dc.html` exactly:
 ```
 Header                      [shield] Sieve                       (status tag)
 -- one of --
+GmailEnded                  one line while the home base says Gmail access ran out (since Nov 23)
 ConnectingState
 DisconnectedState
 EmptyState
 RequestCard (selected)      or ResultCard (selected request just resolved)
+PreparingCard               the oldest request being prepared, when nothing waits (since Nov 23)
 AlsoWaiting (others)
+BeingPrepared               the other requests being prepared (since Nov 23)
 Recent (other resolved, compact)
 Footer                      Open Sieve · privacy line
 ```
@@ -707,6 +715,27 @@ Selection is panel-local state: `selectedId` defaults to the first preview in `s
 | Rejection, unknown-request or not-ready | `This request is no longer waiting.` |
 | Rejection, no-owner | `Your Sieve tab disconnected. Open Sieve to check.` |
 | Rejection, already-sent | (no message; the button is already disabled) |
+| Result, error, with the app's reason (since Nov 23) | heading `Not sent`; body the app's reason, for example `Couldn't upload the file. Nothing was sent. Check your connection and try again.`; while the request still waits, `Try again` (white) next to `Done` shows the card again |
+| Auto-approve line on a waiting card (since Nov 23) | `Auto-approve covers one-sentence answers.` and the reason, for example `This asks for the file itself, so it waits for you.` (`AUTO_WAITS` in `shared/src/copy.ts`) |
+
+### 8.4a Being prepared, and Gmail running out (since Nov 23)
+
+While the home base prepares a request, nothing waits for the person yet. The panel used to say "No requests waiting"; now it shows a `PreparingCard` for the oldest one, and the others under "Being prepared ({n})" (a row is a button that opens the Sieve tab at that request). The waiting words are `WAITING` in `shared/src/copy.ts`, the same as the app's Requests card.
+
+| Element | Text |
+|---|---|
+| PreparingCard heading | `Preparing an answer` |
+| Requester line | `{aiName} asked for: "{question}"` |
+| Step line (`role="status"`, amber dot) | the running label, for example `Reading 3 emails with the on-device model…`; before the first step `Starting…` |
+| Time line, counted every second | `Asked {time} ago. Answers usually take 20 seconds to a minute.` ({time}: `12 seconds`, `1 min 5 s`) |
+| Next | `You'll be asked to approve before anything is sent.`; with `auto`: `Auto-approve is on: the answer goes out without asking you.` |
+| Slow, `wait: 'hidden'` | `The Sieve tab is in the background, so Chrome may slow the on-device model. Bring it to the front and keep it open.` and `Open Sieve` |
+| Slow, `wait: 'click'` | `Sieve needs one click in its tab before the on-device model can start.` and `Open Sieve` |
+| Slow, past a minute | `Taking longer than usual. The computer may be busy. Keep the Sieve tab open: it goes on by itself.` |
+| BeingPrepared heading and row | `Being prepared ({n})`; `{aiName}: "{question}"` |
+| GmailEnded line | `Gmail access on your computer ran out. Until you reconnect it in the Sieve tab, Sieve can't read new mail or send an attachment.` and `Open Sieve to reconnect` (the extension cannot renew Gmail access; the button brings the Sieve tab forward, where the banner has Reconnect) |
+
+The worker turns `elapsedMs` into `since` on its own clock when the request first appears, and keeps it across lists, so the count does not jump. A request leaves the preparing list once it waits for the person (then it is a proposal) or ends.
 
 Dates: `Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' })`, adding `year: 'numeric'` when the year differs from the current one (mockup: `Mar 3`).
 
@@ -734,6 +763,10 @@ stateDiagram-v2
   Sending --> Request: rejected, or slow (buttons back)
   Sending --> Result: owner disconnected (lost)
   Result --> Request: Done, more waiting
+  Result --> Request: Try again, error and the request still waits
+  Empty --> Preparing: the home base prepares one (since Nov 23)
+  Preparing --> Request: it waits for the person
+  Preparing --> Empty: it ended without the person
   Result --> Empty: Done, none waiting
   Request --> Disconnected: all tabs gone
   Empty --> Disconnected: all tabs gone

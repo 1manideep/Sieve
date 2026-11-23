@@ -1,12 +1,13 @@
 // End-to-end tests with the unpacked dev build and a stub home base (50 sections 14.2 and 16, 8.9).
 import AxeBuilder from '@axe-core/playwright';
 import { readFileSync } from 'node:fs';
-import type { Worker } from '@playwright/test';
+import { join } from 'node:path';
+import type { Page, Worker } from '@playwright/test';
 import type { Decision, ExtensionToPage } from '@sieve/shared';
 import { deriveExtensionId } from '../scripts/ext-id.mjs';
 import { badgeText, expect, focusedWindow, notificationIds, popupCount, setOpenOnArrival, sharedExtensionId, test } from './fixtures';
 import type { StubPage } from './fixtures';
-import { DEPOSIT, DEPOSIT_ANSWER, DEPOSIT_EXCERPT, LEASE, LEASE_EXCERPT, STATEMENT, variant } from './previews';
+import { DEPOSIT, DEPOSIT_ANSWER, DEPOSIT_EXCERPT, LEASE, LEASE_EXCERPT, PREPARING_LEASE, STATEMENT, variant } from './previews';
 
 const manifestKey = (JSON.parse(readFileSync(new URL('../manifest.json', import.meta.url), 'utf8')) as { key: string }).key;
 
@@ -15,6 +16,12 @@ async function decisions(stub: StubPage): Promise<Decision[]> {
   return received
     .filter((m): m is Extract<ExtensionToPage, { type: 'sieve/decision' }> => m.type === 'sieve/decision')
     .map((m) => m.decision);
+}
+
+/** A picture of the panel for review, only when SIEVE_SHOTS names a folder (never during a plain run). */
+async function shot(page: Page, name: string): Promise<void> {
+  const dir = process.env.SIEVE_SHOTS;
+  if (dir) await page.screenshot({ path: join(dir, `${name}.png`) });
 }
 
 async function connected(openStub: (origin?: string) => Promise<StubPage>, homeBase = true): Promise<StubPage> {
@@ -140,6 +147,83 @@ test('unavailable step cannot be selected by click or keyboard', async ({ openSt
   );
   expect(reply).toEqual({ type: 'panel/decide-rejected', requestId: LEASE.requestId, reason: 'step-unavailable' });
   expect(await decisions(stub)).toEqual([]);
+});
+
+test('being prepared: who asked, the step it is on, how long and what comes next; then the request itself (Nov 23)', async ({ openStub, openPanel, sw }) => {
+  const stub = await connected(openStub);
+  const panel = await openPanel();
+  const pendingWith = (proposals: unknown[], extra: Record<string, unknown>) => stub.raw({ type: 'sieve/pending', version: 1, proposals, ...extra });
+  await pendingWith([], { preparing: [PREPARING_LEASE] });
+  const card = panel.getByTestId('preparing');
+  await expect(card.getByRole('heading', { name: 'Preparing an answer' })).toBeVisible();
+  await expect(card.getByText(`Planner asked for: "${PREPARING_LEASE.question}"`)).toBeVisible();
+  await expect(card.getByRole('status')).toHaveText('Reading 2 files with the on-device model…');
+  await expect(card.getByText(/^Asked 1[2-9] seconds ago\. Answers usually take 20 seconds to a minute\.$/)).toBeVisible();
+  await expect(card.getByText("You'll be asked to approve before anything is sent.")).toBeVisible();
+  expect(await badgeText(sw)).toBe('');   // nothing waits for the person yet
+  await shot(panel, 'extension-preparing');
+  // In a background tab: why, and Open Sieve brings it forward.
+  await pendingWith([], { preparing: [{ ...PREPARING_LEASE, wait: 'hidden', auto: true }] });
+  await expect(card.getByText('The Sieve tab is in the background, so Chrome may slow the on-device model. Bring it to the front and keep it open.')).toBeVisible();
+  await expect(card.getByText('Auto-approve is on: the answer goes out without asking you.')).toBeVisible();
+  await card.getByRole('button', { name: 'Open Sieve' }).click();
+  await expect.poll(async () => (await stub.received()).some((m) => m.type === 'sieve/open-app' && m.requestId === PREPARING_LEASE.requestId)).toBe(true);
+  // Ready: the same request now waits for the person.
+  await pendingWith([variant(LEASE, { requestId: PREPARING_LEASE.requestId })], { preparing: [] });
+  await expect(panel.getByRole('heading', { name: 'A request is waiting' })).toBeVisible();
+  await expect(panel.getByTestId('preparing')).toHaveCount(0);
+  const axe = await new AxeBuilder({ page: panel }).analyze();
+  expect(axe.violations.map((v) => v.id)).toEqual([]);
+});
+
+test('an approval the page could not send says why, and Try again shows the request again (Nov 23)', async ({ openStub, openPanel }) => {
+  const stub = await connected(openStub);
+  const panel = await openPanel();
+  await stub.pending([DEPOSIT]);
+  await panel.getByRole('button', { name: 'Approve' }).click();
+  await expect.poll(() => decisions(stub)).toHaveLength(1);
+  // Still being written (a file uploading): the card stays, sending.
+  await expect(panel.getByRole('button', { name: 'Sending…' })).toBeDisabled();
+  const reason = "Couldn't upload the file. Nothing was sent. Check your connection and try again.";
+  await stub.raw({ type: 'sieve/resolved', version: 1, requestId: DEPOSIT.requestId, outcome: 'error', message: reason });
+  await stub.pending([DEPOSIT]);
+  await expect(panel.getByRole('heading', { name: 'Not sent' })).toBeVisible();
+  await expect(panel.getByText(reason)).toBeVisible();
+  await shot(panel, 'extension-not-sent');
+  await panel.getByRole('button', { name: 'Try again' }).click();
+  await expect(panel.getByRole('heading', { name: 'A request is waiting' })).toBeVisible();
+  await panel.getByRole('button', { name: 'Approve' }).click();
+  await expect.poll(() => decisions(stub)).toHaveLength(2);
+  await stub.resolved(DEPOSIT.requestId, 'approved');
+  await stub.pending([]);
+  await expect(panel.getByRole('heading', { name: /^Sent \d+ characters to Test assistant$/ })).toBeVisible();
+});
+
+test('an approval made in the app shows here too (Nov 23)', async ({ openStub, openPanel }) => {
+  const stub = await connected(openStub);
+  const panel = await openPanel();
+  await stub.pending([DEPOSIT]);
+  await expect(panel.getByRole('heading', { name: 'A request is waiting' })).toBeVisible();
+  await stub.resolved(DEPOSIT.requestId, 'approved');
+  await stub.pending([]);
+  await expect(panel.getByRole('heading', { name: 'Shared' })).toBeVisible();
+  await expect(panel.getByText('Approved in the Sieve app.')).toBeVisible();
+});
+
+test('Gmail access ran out: one line, and the way to the Sieve tab; a waiting request says why auto-approve left it (Nov 23)', async ({ openStub, openPanel }) => {
+  const stub = await connected(openStub);
+  const panel = await openPanel();
+  await stub.raw({ type: 'sieve/pending', version: 1, proposals: [{ ...DEPOSIT, autoWaits: 'file' }], gmail: 'ended' });
+  const line = panel.getByTestId('gmail-ended');
+  await expect(line).toContainText("Gmail access on your computer ran out. Until you reconnect it in the Sieve tab, Sieve can't read new mail or send an attachment.");
+  await expect(panel.getByText('Auto-approve covers one-sentence answers. This asks for the file itself, so it waits for you.')).toBeVisible();
+  await shot(panel, 'extension-gmail-ended');
+  await line.getByRole('button', { name: 'Open Sieve to reconnect' }).click();
+  await expect.poll(async () => (await stub.received()).some((m) => m.type === 'sieve/open-app')).toBe(true);
+  await stub.pending([DEPOSIT]);
+  await expect(panel.getByTestId('gmail-ended')).toHaveCount(0);
+  const axe = await new AxeBuilder({ page: panel }).analyze();
+  expect(axe.violations.map((v) => v.id)).toEqual([]);
 });
 
 test('non-ready outcomes', async ({ openStub, openPanel, sw }) => {

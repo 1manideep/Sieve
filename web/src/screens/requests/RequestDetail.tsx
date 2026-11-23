@@ -1,19 +1,26 @@
 // RequestDetail (40 section 13.5; docs/design/final-flow.md F5): the glass card with the assistant, its step cap and
 // the category, the question, the Searched / Picked / Would leave cells, then PreparingCard while the home base works
 // and ApprovalCard variant="relay" (the ladder, the exact text, Approve and Deny) with RelayResult after the decision.
+// Since Nov 23 the card also says what happens next while it is prepared, why it waits although auto-approve is on,
+// why a decision made in the extension failed, and when Gmail access running out stopped it (with Reconnect).
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MAX_PAYLOAD_CHARS, stepPhrase, type LadderStep } from '@sieve/shared';
+import { useNow } from '@/app/useNow';
+import { MAX_PAYLOAD_CHARS, WAITING, autoWaitLine, stepPhrase, type LadderStep } from '@sieve/shared';
 import { ApprovalCard } from '@/components/ApprovalCard/ApprovalCard';
 import { composeOptions, startingStep } from '@/components/ApprovalCard/composedOptions';
 import { useDb } from '@/components/dbTables';
+import { ReconnectGmail, needsReconnect, useGmailRow } from '@/components/GmailAccess/gmailRow';
 import { ItemViewer } from '@/components/ItemViewer/ItemViewer';
 import { Notice } from '@/components/Notice/Notice';
 import { PreparingCard } from '@/components/PreparingCard/PreparingCard';
 import { RelayResult } from '@/components/RelayResult/RelayResult';
 import { Tag } from '@/components/Tag/Tag';
-import { REQUESTS, fillText } from '@/copy/screens-controls';
+import { GMAIL_ACCESS, REQUESTS, fillText } from '@/copy/screens-controls';
 import { formatCount } from '@/copy/format';
 import { composeOutgoingText } from '@/pipeline';
+import { FILE_UNAVAILABLE } from '@/pipeline/copy';
+import { autoCovers, autoWaits, useAutoApprove } from '@/state/autoApprove';
+import { useAvailability } from '@/state/availability';
 import { useHomeBase, type HomeBaseState, type PendingEntry } from '@/state/homeBase';
 import { useNetwork } from '@/state/network';
 import { useRecords } from '@/state/records';
@@ -48,6 +55,10 @@ export function RequestDetail({ entry }: { entry: PendingEntry }) {
   const [busy, setBusy] = useState<'approve' | 'deny' | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [viewer, setViewer] = useState<string | null>(null);
+  const autoOn = useAutoApprove((s) => s.until[request.requester.grantId] !== undefined);
+  const setupPct = useAvailability((s) => (s.setup.state === 'downloading' || s.setup.state === 'installing' ? Math.round((s.setup.fraction ?? 0) * 100) : undefined));
+  const gmailRow = useGmailRow();
+  const clock = useNow(30_000);   // Gmail access may run out while the card is open
   const resultRef = useRef<HTMLDivElement>(null);
   const hadResult = useRef(entry.result !== undefined);
 
@@ -136,6 +147,17 @@ export function RequestDetail({ entry }: { entry: PendingEntry }) {
     </Iso>
   );
   const masked = option?.available ? option.redactions : 0;
+  // Why it waits although auto-approve is on (40 section 13.8.9), and a reason the engine left on the entry (a decision
+  // from the extension, or auto-approve, that a check stopped).
+  const why = entry.phase === 'awaiting-person' && autoOn && proposal ? autoWaits(request, proposal, entry.error !== undefined) : undefined;
+  const shownError = error ?? (entry.phase === 'awaiting-person' ? entry.error : undefined);
+  // Gmail access ran out: "the latest" was refused, or the file cannot be fetched. The assistant has to ask again.
+  const gmailStopped =
+    proposal?.errorCode === 'mail-not-current'
+      ? GMAIL_ACCESS.requestLatest
+      : live && proposal?.options.some((o) => o.step === 'full' && o.unavailableReason === FILE_UNAVAILABLE.reconnect)
+        ? GMAIL_ACCESS.requestFile
+        : undefined;
 
   return (
     <section
@@ -190,17 +212,28 @@ export function RequestDetail({ entry }: { entry: PendingEntry }) {
         </>
       ) : null}
 
-      {error ? (
+      {gmailStopped ? (
+        <Notice tone="warning" actions={needsReconnect(gmailRow, clock) ? <ReconnectGmail /> : undefined}>
+          <p>{fillText(gmailStopped, { aiName })}</p>
+        </Notice>
+      ) : null}
+
+      {why ? <Notice tone="info">{autoWaitLine(why)}</Notice> : null}
+
+      {shownError ? (
         <div role="status">
-          <Notice tone="warning">{error}</Notice>
+          <Notice tone="warning">{shownError}</Notice>
         </div>
       ) : null}
 
       {preparing ? (
         <PreparingCard
+          heading={fillText(REQUESTS.preparingFor, { aiName })}
+          next={autoOn && autoCovers(request) ? WAITING.nextAuto : WAITING.nextApprove}
+          setupPct={setupPct}
           liveSteps={entry.liveSteps}
           answerPreview={entry.answerPreview}
-          startedAt={entry.liveSteps[0]?.startedAt ?? request.claimedAt ?? request.createdAt}
+          startedAt={request.createdAt}
           onStop={() => {
             const stop = (useHomeBase.getState() as WithStop).stopPreparing;
             if (stop) stop(entry.requestId).catch(console.error);

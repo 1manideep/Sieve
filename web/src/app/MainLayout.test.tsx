@@ -23,6 +23,8 @@ vi.mock('@/app/services/receipts', () => ({
   },
   revokeReceipt: async () => undefined,
 }));
+// Gmail access running out has its own tests (components/GmailAccess); here only where it is mounted.
+vi.mock('@/components/GmailAccess/GmailAccess', () => ({ GmailAccess: () => <p>Gmail access slot</p> }));
 vi.mock('@/components/dbTables', () => ({
   loadIndex: async () => ({ openDb: () => ({ records: { count: async () => listened.items } }) }),
   tablesOf: (db: unknown) => db,
@@ -94,6 +96,19 @@ describe('MainLayout', () => {
     expect(screen.getByRole('main')).toHaveAttribute('id', 'main');
     await screen.findByRole('link', { name: NAV.neverShared(100) });
     await expectNoAxeViolations();
+  });
+
+  it('mounts the Gmail access notice at the top of every page of a Google session', async () => {
+    useSession.setState({ kind: 'google', user: { uid: 'u1', isAnonymous: false } });
+    const { unmount } = renderLayout('/settings');
+    const slot = await screen.findByText('Gmail access slot');
+    expect(screen.getByRole('main').firstElementChild).toBe(slot);
+    unmount();
+    useSession.setState({ kind: 'google', user: { uid: 'u1', isAnonymous: false }, ownerConflict: true });
+    renderLayout('/settings');
+    await screen.findByRole('heading', { name: 'Screen' });
+    expect(screen.queryByText('Gmail access slot')).not.toBeInTheDocument();
+    act(() => useSession.setState({ ownerConflict: false }));
   });
 
   it('names the Requests icon with the waiting count', async () => {

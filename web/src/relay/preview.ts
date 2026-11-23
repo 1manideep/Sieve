@@ -5,7 +5,9 @@ import {
   LADDER_STEPS,
   MAX_PAYLOAD_CHARS,
   WARNING_ORDER,
+  type AutoWait,
   type LadderStep,
+  type PreparingPreview,
   type ProposalPreview,
   type StepOption,
   type Warning,
@@ -114,10 +116,17 @@ export function toPreview(entry: PendingEntry): ProposalPreview | null {
   return preview;
 }
 
-/** The full list for sieve/pending: outside requests waiting for the person, oldest first, at most 20. */
-export function pendingPreviews(entries: PendingEntry[]): { previews: ProposalPreview[]; ids: Record<string, string[]> } {
+/**
+ * The full list for sieve/pending: outside requests waiting for the person, oldest first, at most 20. A decision the
+ * person made that is still being written (an upload can take a while) stays listed until sieve/resolved, so the
+ * extension never shows it gone while it is being sent (Nov 23). `autoWaits`: why auto-approve did not send it.
+ */
+export function pendingPreviews(
+  entries: PendingEntry[],
+  autoWaits?: (e: PendingEntry) => AutoWait | undefined,
+): { previews: ProposalPreview[]; ids: Record<string, string[]> } {
   const waiting = entries
-    .filter((e) => e.phase === 'awaiting-person' && e.proposal && e.proposal.requester.kind === 'outside')
+    .filter((e) => (e.phase === 'awaiting-person' || (e.phase === 'deciding' && (e.proposal?.outcome === 'ready' || e.proposal?.outcome === 'needs-cloud-consent'))) && e.proposal?.requester.kind === 'outside')
     .sort((a, b) => (a.proposal?.createdAt ?? 0) - (b.proposal?.createdAt ?? 0))
     .slice(0, MAX_PREVIEWS);
   const previews: ProposalPreview[] = [];
@@ -126,6 +135,8 @@ export function pendingPreviews(entries: PendingEntry[]): { previews: ProposalPr
     try {
       const preview = toPreview(e);
       if (!preview) continue;
+      const why = autoWaits?.(e);
+      if (why) preview.autoWaits = why;
       if (!sendable(preview)) {
         console.error('preview dropped', e.requestId);
         continue;
@@ -142,4 +153,29 @@ export function pendingPreviews(entries: PendingEntry[]): { previews: ProposalPr
     if (dropped) delete ids[dropped.requestId];
   }
   return { previews, ids };
+}
+
+/**
+ * The requests this home base is still preparing, for the extension (50 section 8.4, since Nov 23): who asked, the
+ * question, the step it is on and how long since it was asked. Outside requests only, oldest first, at most 20.
+ */
+export function preparingPreviews(
+  entries: PendingEntry[],
+  now: number,
+  extra: (e: PendingEntry) => Pick<PreparingPreview, 'auto' | 'wait'>,
+): PreparingPreview[] {
+  return entries
+    .filter((e) => e.phase === 'preparing' && e.request.requester.kind === 'outside' && REQUEST_ID.test(e.requestId) && e.request.question)
+    .slice(0, MAX_PREVIEWS)
+    .map((e) => {
+      const label = [...e.liveSteps].reverse().find((s) => s.status === 'running')?.label;
+      return {
+        requestId: e.requestId,
+        aiName: truncateGraphemes(e.request.requester.aiName, PREVIEW_LIMITS.aiName),
+        question: truncateGraphemes(e.request.question, PREVIEW_LIMITS.question),
+        ...(label ? { label: truncateGraphemes(label, PREVIEW_LIMITS.reason) } : {}),
+        elapsedMs: Math.max(0, Math.round(now - e.request.createdAt)),
+        ...extra(e),
+      };
+    });
 }

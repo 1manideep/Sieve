@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { GRACE_MS, Hub, RESOLVED_KEEP_MS, RESOLVED_MAX } from '../src/sw/hub';
-import { DEPOSIT, LEASE, STATEMENT, withId } from './fixtures';
+import { DEPOSIT, LEASE, PREPARING_LEASE, STATEMENT, withId } from './fixtures';
 
 let clock = 1_000_000;
 const now = () => clock;
@@ -271,5 +271,42 @@ describe('connection state (50 section 7.5)', () => {
 
   it('view carries the app URL', () => {
     expect(new Hub(now).view().appUrl).toBe('http://localhost:5173');
+  });
+});
+
+describe('since Nov 23: requests being prepared, Gmail, and why a decision failed', () => {
+  it('lists the requests being prepared with when they were asked, kept steady across lists', () => {
+    const hub = hubWith({ id: 'hb', homeBase: true });
+    hub.setPending('hb', [], { preparing: [PREPARING_LEASE] });
+    const { elapsedMs: _e, ...rest } = PREPARING_LEASE;
+    expect(hub.view().preparing).toEqual([{ ...rest, since: clock - 12_000 }]);
+    clock += 5_000;
+    hub.setPending('hb', [], { preparing: [{ ...PREPARING_LEASE, elapsedMs: 17_400, label: 'Checking the answer against the item…' }] });
+    expect(hub.view().preparing).toEqual([{ ...rest, label: 'Checking the answer against the item…', since: clock - 17_000 }]);
+    // Open Sieve on it focuses the page that prepares it.
+    expect(hub.owner(PREPARING_LEASE.requestId)?.id).toBe('hb');
+    // Once it waits for the person it is a proposal, not a request being prepared.
+    hub.setPending('hb', [withId(LEASE, PREPARING_LEASE.requestId)], { preparing: [PREPARING_LEASE] });
+    expect(hub.view().preparing).toEqual([]);
+    hub.setPending('hb', []);
+    expect(hub.view().preparing).toEqual([]);
+  });
+
+  it("says Gmail ran out while the home base's last list says so", () => {
+    const hub = hubWith({ id: 'pg', homeBase: false }, { id: 'hb', homeBase: true });
+    hub.setPending('pg', [], { gmail: 'ended' });
+    expect(hub.view().gmail).toBeUndefined();
+    hub.setPending('hb', [], { gmail: 'ended' });
+    expect(hub.view().gmail).toBe('ended');
+    hub.setPending('hb', []);
+    expect(hub.view()).not.toHaveProperty('gmail');
+  });
+
+  it("keeps the app's reason on an error result", () => {
+    const hub = hubWith({ id: 'hb', homeBase: true });
+    hub.setPending('hb', [DEPOSIT]);
+    expect(hub.decide(DEPOSIT.requestId, true, 'answer').ok).toBe(true);
+    hub.resolved('hb', DEPOSIT.requestId, 'error', "Couldn't upload the file. Nothing was sent. Check your connection and try again.");
+    expect(hub.view().resolved[0]).toMatchObject({ outcome: 'error', message: "Couldn't upload the file. Nothing was sent. Check your connection and try again." });
   });
 });

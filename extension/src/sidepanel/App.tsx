@@ -1,5 +1,7 @@
 // The panel (50 section 8.3; boards F7, F8, F8B): header, one main state, the other waiting requests, footer. The
-// header's gear shows the settings block under it (50 section 8.10) when the page has a settings store.
+// header's gear shows the settings block under it (50 section 8.10) when the page has a settings store. Since Nov 23
+// it also shows the requests the home base is still preparing (one card when nothing waits, a list otherwise), a line
+// when Gmail access on that computer ran out, and Try again on a decision that could not be sent.
 // Resolved requests show only while selected (the one just decided); there is no list of recent results.
 // The same page is the toolbar popup (400 px wide, as tall as its content up to Chrome's 600 px cap, the main area
 // scrolling after that) and the side panel. A popup closes when it loses focus: decisions are sent at once, the
@@ -15,6 +17,7 @@ import { DisconnectedState } from './components/DisconnectedState';
 import { EmptyState } from './components/EmptyState';
 import { Footer } from './components/Footer';
 import { Header } from './components/Header';
+import { BeingPrepared, GmailEnded, PreparingCard } from './components/Preparing';
 import { RequestCard } from './components/RequestCard';
 import { ResultCard } from './components/ResultCard';
 import { SettingsMenu } from './components/SettingsMenu';
@@ -35,7 +38,7 @@ interface ApprovedHere {
 }
 
 export function App({ api }: { api: PanelApi }) {
-  const { model, send, select, done } = usePanelPort(api);
+  const { model, send, select, done, retry } = usePanelPort(api);
   const [chosen, setChosen] = useState<Record<string, LadderStep>>({});
   const [waited, setWaited] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -84,6 +87,9 @@ export function App({ api }: { api: PanelApi }) {
   const selectedResult = resolvedShown.find((r) => r.requestId === selectedId);
   const selectedPreview = selectedResult ? undefined : state?.proposals.find((p) => p.requestId === selectedId);
   const others = state ? state.proposals.filter((p) => p.requestId !== selectedPreview?.requestId) : [];
+  const preparing = state?.preparing ?? [];
+  // Nothing waits for the person: the oldest request being prepared is the main card.
+  const preparingShown = state && !selectedResult && !selectedPreview && state.connection !== 'disconnected' ? preparing[0] : undefined;
 
   let main: JSX.Element | null;
   let footer = false;
@@ -97,7 +103,9 @@ export function App({ api }: { api: PanelApi }) {
     const here = selectedResult.outcome === 'approved' && approvedHere !== null && approvedHere.requestId === id ? approvedHere : null;
     const sentChars = here ? optionFor(here.preview, here.step)?.chars : undefined;
     const animate = here !== null && !played.has(id) && !prefersReducedMotion() ? here : null;
-    const actions = { onDone: () => done(id), onOpenReceipt: () => openApp(id) };
+    // The page could not send it and the request still waits: Try again shows it once more.
+    const stillWaiting = selectedResult.outcome === 'error' && state.proposals.some((p) => p.requestId === id);
+    const actions = { onDone: () => done(id), onOpenReceipt: () => openApp(id), ...(stillWaiting ? { onRetry: () => retry(id) } : {}) };
     main = animate ? (
       <ApprovedTransition key={id} entry={selectedResult} preview={animate.preview} step={animate.step} onStart={onTransitionStart} onEnd={onTransitionEnd} {...actions} />
     ) : (
@@ -129,6 +137,9 @@ export function App({ api }: { api: PanelApi }) {
       />
     );
     footer = !OPENS_APP_ITSELF.has(selectedPreview.outcome);
+  } else if (preparingShown) {
+    main = <PreparingCard key={preparingShown.requestId} item={preparingShown} onOpenApp={() => openApp(preparingShown.requestId)} />;
+    footer = true;
   } else {
     main = <EmptyState />;
     footer = true;
@@ -149,8 +160,10 @@ export function App({ api }: { api: PanelApi }) {
       />
       {settingsStore ? <SettingsMenu id={settingsId} open={settingsOpen} store={settingsStore} onClose={closeSettings} /> : null}
       <main className={s.main}>
+        {showLists && state.gmail === 'ended' ? <GmailEnded onOpenApp={() => openApp()} /> : null}
         {main}
         {showLists ? <AlsoWaiting proposals={others} onSelect={select} /> : null}
+        {showLists ? <BeingPrepared items={preparing.filter((p) => p !== preparingShown)} onOpen={(id) => openApp(id)} /> : null}
         <div aria-live="polite" aria-atomic="true">
           {announcement ? <VisuallyHidden key={announcement.seq}>{announcement.text}</VisuallyHidden> : null}
         </div>

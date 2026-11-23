@@ -8,6 +8,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
+import { useNow } from '@/app/useNow';
 import { AssistantMark } from '@/components/AssistantMark/AssistantMark';
 import { ASSISTANT_KINDS, ASSISTANTS, assistantKindOf, type AssistantKind } from '@/components/AssistantMark/assistants';
 import { Button } from '@/components/Button/Button';
@@ -29,7 +30,7 @@ import { Confirm } from './kit/Confirm';
 import ground from './kit/ground.module.css';
 import kit from './kit/kit.module.css';
 import { Mark } from './kit/Mark';
-import { formatClock, formatDate, formatRelative } from './kit/when';
+import { formatClock, formatDate, formatLeft, formatRelative } from './kit/when';
 import { NarrowDialog } from './NarrowDialog';
 import { callableMessage, categoriesLabel } from './settingsText';
 import styles from './settings.module.css';
@@ -66,6 +67,7 @@ function GrantPanel({ grant, now, autoUntil, others, onNarrow, onNew }: { grant:
   const pct = Math.max(0, Math.min(100, Math.round(((grant.expiresAt - now) / span) * 100)));
   const left = daysLeftText(grant, now);
   const auto = autoUntil !== undefined;
+  const tick = useNow(30_000);   // the time left on auto-approve counts down
 
   useEffect(() => {
     if (confirming) confirmRef.current?.focus();
@@ -94,7 +96,7 @@ function GrantPanel({ grant, now, autoUntil, others, onNarrow, onNew }: { grant:
           </h3>
           <span id={metaId} className={ground.pmeta}>{grantMeta(grant, now)}</span>
         </span>
-        {auto ? <span className={styles.autoPill}>{fillText(SETTINGS.autoApproveUntil, { time: formatClock(autoUntil) })}</span> : null}
+        {auto ? <span className={styles.autoPill}>{fillText(SETTINGS.autoApproveUntil, { time: formatClock(autoUntil), left: formatLeft(autoUntil - tick) })}</span> : null}
       </div>
       <div className={ground.cols}>
         <div className={ground.col}>

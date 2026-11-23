@@ -8,6 +8,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import type { StoreApi, UseBoundStore } from 'zustand';
 import { useShallow } from 'zustand/shallow';
 import type { LadderStep, Proposal, TraceStep } from '@sieve/shared';
+import { useNow } from '@/app/useNow';
 import type { AskState } from '@/state/ask';
 import { useRecords } from '@/state/records';
 import type { DbKind } from '@/state/types';
@@ -23,7 +24,7 @@ import { DraftPanel } from '../DraftPanel/DraftPanel';
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary';
 import { ItemViewer } from '../ItemViewer/ItemViewer';
 import { outcomeTitle } from '../OutcomePanel/OutcomePanel';
-import { PreparingCard } from '../PreparingCard/PreparingCard';
+import { PreparingCard, waitingLines } from '../PreparingCard/PreparingCard';
 import { Glyph } from './glyphs';
 import styles from './AskResult.module.css';
 
@@ -52,6 +53,8 @@ export interface AskResultProps {
   chat?: boolean;
   /** Chat: the screen's notices, shown above the card while Details is open. */
   notices?: ReactNode;
+  /** The on-device model is still being set up (percent): the waiting line says so. */
+  setupPct?: number;
 }
 
 /** The pipeline's text composer, loaded on first use (the store has already loaded the pipeline by then). */
@@ -110,7 +113,7 @@ export function searchedLine(count: number | undefined, read?: number): string {
   return rest === 1 ? fill(CONVERSATION_COPY.searchedRestOne, { n }) : fill(CONVERSATION_COPY.searchedRest, { n, rest: formatCount(rest) });
 }
 
-function PreparingSlot({ useAsk }: { useAsk: AskStore }) {
+function PreparingSlot({ useAsk, setupPct }: { useAsk: AskStore; setupPct?: number }) {
   const [mountedAt] = useState(() => Date.now());
   const { liveSteps, answerPreview, startedAt } = useAsk(
     useShallow((s) => ({ liveSteps: s.liveSteps, answerPreview: s.answerPreview, startedAt: s.startedAt })),
@@ -122,19 +125,32 @@ function PreparingSlot({ useAsk }: { useAsk: AskStore }) {
       startedAt={startedAt ?? liveSteps[0]?.startedAt ?? mountedAt}
       onStop={() => useAsk.getState().stop()}
       progressSupported
+      setupPct={setupPct}
     />
   );
 }
 
-/** Chat: while the answer is prepared, one quiet line, or the answer as it is being written. */
-function PreparingLine({ useAsk }: { useAsk: AskStore }) {
-  const { liveSteps, answerPreview } = useAsk(useShallow((s) => ({ liveSteps: s.liveSteps, answerPreview: s.answerPreview })));
-  if (answerPreview) return <p className={styles.replyText} dir="auto">{answerPreview}</p>;
+/**
+ * Chat: while the answer is prepared, one quiet line with the step it is on, or the answer as it is being written.
+ * From 3 seconds a second line says how long since the question and what is usual, and why when it is slow (Nov 23).
+ */
+function PreparingLine({ useAsk, setupPct }: { useAsk: AskStore; setupPct?: number }) {
+  const [mountedAt] = useState(() => Date.now());
+  const { liveSteps, answerPreview, startedAt } = useAsk(useShallow((s) => ({ liveSteps: s.liveSteps, answerPreview: s.answerPreview, startedAt: s.startedAt })));
+  const now = useNow(1000);
+  const lines = waitingLines(now - (startedAt ?? mountedAt), { setupPct });
   return (
-    <p className={styles.searched} role="status">
-      <Glyph name="sparkle" size={16} className={styles.sparkle} />
-      <span>{liveSteps[liveSteps.length - 1]?.label ?? CONVERSATION_COPY.looking}</span>
-    </p>
+    <>
+      {answerPreview ? (
+        <p className={styles.replyText} dir="auto">{answerPreview}</p>
+      ) : (
+        <p className={styles.searched} role="status">
+          <Glyph name="sparkle" size={16} className={styles.sparkle} />
+          <span>{liveSteps[liveSteps.length - 1]?.label ?? CONVERSATION_COPY.looking}</span>
+        </p>
+      )}
+      {lines.length > 0 ? <p className={styles.searched} data-testid="waiting-line">{lines.join(' ')}</p> : null}
+    </>
   );
 }
 
@@ -253,7 +269,7 @@ function useAskedQuestion(useAsk: AskStore): string {
 }
 
 export function AskResult(props: AskResultProps) {
-  const { useAsk, variant, dbKind, compose: injectedCompose, online, onSeeReceipts, receiptsHref, onAskAgain, idle, headerSlot, sampleData = false, nanoSettingUp = false, chat = false, notices } = props;
+  const { useAsk, variant, dbKind, compose: injectedCompose, online, onSeeReceipts, receiptsHref, onAskAgain, idle, headerSlot, sampleData = false, nanoSettingUp = false, chat = false, notices, setupPct } = props;
   const s = useAsk(
     useShallow((st) => ({
       phase: st.phase,
@@ -312,7 +328,7 @@ export function AskResult(props: AskResultProps) {
 
   let content: ReactNode = idle ?? null;
   if (s.phase === 'preparing') {
-    content = <PreparingSlot key={s.requestId ?? 'preparing'} useAsk={useAsk} />;
+    content = <PreparingSlot key={s.requestId ?? 'preparing'} useAsk={useAsk} setupPct={setupPct} />;
   } else if (s.phase === 'error') {
     content = <ErrorCard message={s.error ?? ASK_COPY.errorTitle} onRetry={chat ? undefined : ask} />;
   } else if (s.proposal && view) {
@@ -419,7 +435,7 @@ export function AskResult(props: AskResultProps) {
         onToggle={() => setDetailsFor(detailsOpen ? null : s.requestId)}
       >
         {s.phase === 'preparing' ? (
-          <PreparingLine useAsk={useAsk} />
+          <PreparingLine useAsk={useAsk} setupPct={setupPct} />
         ) : (
           <p className={styles.replyText} dir="auto">
             {sentence}

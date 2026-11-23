@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { WARNING_ORDER, type Warning } from '@sieve/shared';
 import { compose, entry, option, proposal, request } from './__tests__/fixtures';
-import { composedOption, pendingPreviews, toPreview, truncateGraphemes, PREVIEW_LIMITS } from './preview';
+import { composedOption, pendingPreviews, preparingPreviews, toPreview, truncateGraphemes, PREVIEW_LIMITS } from './preview';
 
 describe('composedOption', () => {
   it('is the main option when nothing related is ticked', () => {
@@ -97,5 +97,35 @@ describe('pendingPreviews', () => {
     expect(previews.length).toBeLessThan(20);
     expect(previews[0].requestId).toBe('h0');
     expect(JSON.stringify(previews).length).toBeLessThanOrEqual(500_000);
+  });
+});
+
+describe('since Nov 23: a decision being written, why auto-approve waits, and requests being prepared', () => {
+  it('a decision on a card that is being written stays listed; an automatic outcome being finished does not', () => {
+    const deciding = entry({ requestId: 'a', phase: 'deciding', request: request({ id: 'a' }), proposal: proposal({ requestId: 'a' }) });
+    const auto = entry({ requestId: 'b', phase: 'deciding', request: request({ id: 'b' }), proposal: proposal({ requestId: 'b', outcome: 'no-match' }) });
+    expect(pendingPreviews([deciding, auto]).previews.map((p) => p.requestId)).toEqual(['a']);
+  });
+
+  it('carries why auto-approve left it waiting, when the engine says so', () => {
+    const e = entry();
+    expect(pendingPreviews([e], () => 'file').previews[0]).toMatchObject({ autoWaits: 'file' });
+    expect(pendingPreviews([e], () => undefined).previews[0]).not.toHaveProperty('autoWaits');
+  });
+
+  it('lists outside requests being prepared, with the running step and how long since they were asked, never content', () => {
+    const steps = [
+      { id: 's1', kind: 'retrieve' as const, label: 'Found 3 likely matches', where: 'code' as const, status: 'done' as const, startedAt: 1 },
+      { id: 's2', kind: 'select' as const, label: 'Reading 3 emails with the on-device model…', where: 'device' as const, status: 'running' as const, startedAt: 2 },
+    ];
+    const prep = entry({ requestId: 'a', phase: 'preparing', proposal: undefined, liveSteps: steps, request: request({ id: 'a', createdAt: 1_000 }) });
+    const fresh = entry({ requestId: 'b', phase: 'preparing', proposal: undefined, request: request({ id: 'b', createdAt: 5_000 }) });
+    const inApp = entry({ requestId: 'c', phase: 'preparing', proposal: undefined, request: { ...request({ id: 'c' }), requester: { kind: 'in-app', aiName: 'Gemini (in Sieve)' } as never } });
+    const waiting = entry({ requestId: 'd' });
+    const list = preparingPreviews([prep, fresh, inApp, waiting], 21_000, (e) => (e.requestId === 'a' ? { auto: true } : {}));
+    expect(list).toEqual([
+      { requestId: 'a', aiName: 'Gemini CLI', question: 'What did my landlord say about the deposit?', label: 'Reading 3 emails with the on-device model…', elapsedMs: 20_000, auto: true },
+      { requestId: 'b', aiName: 'Gemini CLI', question: 'What did my landlord say about the deposit?', elapsedMs: 16_000 },
+    ]);
   });
 });

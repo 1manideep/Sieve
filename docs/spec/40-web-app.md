@@ -373,6 +373,20 @@ A 44px circle button with the first letter of the display name (or email) on `--
 
 When `useNetwork.online` is false: full-width amber bar under the header, warning icon, text "You're offline. Sieve still searches this device. Requests from other AIs and drafting with the cloud model wait until you're back." `role="status"`. Hidden on `online`.
 
+### 7.4a Gmail access running out (Nov 23, 2026)
+
+Google gives this browser a Gmail token for an hour (20 section 15.1). At the top of the main area of every page of the signed-in layout, `components/GmailAccess` (loaded lazily by `MainLayout`, so the after-sign-in bundle is unchanged) reads the Gmail row and the time:
+
+| State | When | What shows |
+|---|---|---|
+| ending | the token has 10 minutes or less left (before its last minute, `GMAIL_TOKEN_SKEW_MS`) | a quiet info notice: "Gmail access on this computer ends in {n} min. Keep it connected so Sieve can read new mail and answer about the latest." Button "Keep Gmail connected" renews inside that click (`useSources.reauthorize('gmail')`). |
+| ended | the token ran out (also once a tab took it off the row: `tokenEndedAt`), or the row has `needsAuth` | a warning notice: "Gmail access on this computer ran out. Until you reconnect, Sieve can't read new mail, answer about the latest mail or send an attachment." Button "Reconnect Gmail". |
+| refused | `needsAuth` with `errorCode: 'auth-needed'` | a warning notice: "Google didn't allow read-only Gmail access. Reconnect to try again." Button "Reconnect Gmail". |
+
+The ending and ended notices explain pop-ups in one line: "To renew without a click, allow pop-ups for this site: press the icon left of the address, open Site settings and set Pop-ups and redirects to Allow." When the sync timer's renewal window was blocked on this page (`renewBlockedByChrome()`, or the row's last click error is `popup-blocked`), the line starts "Chrome blocked the window Sieve opens to renew Gmail access." The error of the person's last click (a closed window) shows under the text. Nothing shows while the token has more than 10 minutes, or while Gmail is paused or not connected. The notice replaces the Gmail note that only the Requests screen had.
+
+While the state is ended or refused, `useHomeBase.setGmailEnded(true)`; the engine then sends `gmail: 'ended'` with every `sieve/pending`, so the extension shows its line too (50 section 8.4a). The token is never read here, only when it ends; it stays a short-lived token in this browser.
+
 ### 7.5 Toasts (`state/toasts.ts`, `components/ToastRegion`)
 
 ```ts
@@ -531,7 +545,7 @@ export interface DeviceView { id: string; label: string; isHomeBase: boolean; ha
 export interface LiveStep {
   id: string;
   kind: TraceKind;
-  label: string;                // the pipeline's running label, e.g. "Reading 3 emails on this device…"
+  label: string;                // the pipeline's running label, e.g. "Reading 3 emails with the on-device model…"
   where: Where;
   status: 'running' | 'done';
   startedAt: number;
@@ -1237,12 +1251,13 @@ interface BridgeHandlers {
   onOpenApp(requestId?: string): void;
   onStatus(s: ExtensionStatus): void;
   getPending(): ProposalPreview[];
+  getExtras?(): { preparing?: PreparingPreview[]; gmail?: 'ended' };   // since Nov 23, sent to 0.1.1 and later only
 }
 export interface ExtensionBridge {
   start(): void;
   stop(): void;
-  sendPending(): void;                                   // posts getPending() when connected; no-op otherwise
-  sendResolved(requestId: string, outcome: 'approved' | 'declined' | 'expired' | 'error'): void;
+  sendPending(): void;                                   // posts getPending() (and getExtras()) when connected; no-op otherwise
+  sendResolved(requestId: string, outcome: 'approved' | 'declined' | 'expired' | 'error', message?: string): void;   // message: the app's reason for 'error'
 }
 export function createExtensionBridge(extensionId: string, appVersion: string, h: BridgeHandlers): ExtensionBridge;
 export function isExtensionToPage(m: unknown): m is ExtensionToPage;
@@ -1256,7 +1271,7 @@ Connection:
 5. `sieve/hello-ack` within `EXTENSION_ACK_MS`: status `connected`; send `sieve/pending` at once; resend it every `EXTENSION_KEEPALIVE_MS` (the full list is allowed any time, and it keeps the extension's service worker awake). A disconnect or timeout before the ack: `not-installed`, probe later.
 6. `port.onDisconnect` after a successful ack: status `reconnecting`; reconnect with `EXTENSION_BACKOFF_MS`; a new ack resets the backoff.
 
-The bridge runs only while the engine is `active` or has entries. Every change to the entries (new, related ticked, decided, ended) calls `sendPending()`. Previews are built by `relay/preview.ts`:
+The bridge runs only while the engine is `active` or has entries. Every change to the entries (new, related ticked, decided, ended) calls `sendPending()`, and since Nov 23 so does every `step-start` and `step-end` of a preparation (never an answer frame). Since Nov 23 the list also keeps an entry whose decision is being written (phase `deciding`, outcome `ready` or `needs-cloud-consent`, not an auto-approval), so the extension never shows a request gone while its file uploads; it leaves with `sieve/resolved`. With auto-approve on for the connection, a preview carries `autoWaits` (why it waits, 13.8.9). `getExtras()` gives the requests being prepared (`preparingPreviews`: outside requests in phase `preparing`, the running step's label, the time since the assistant asked, `auto: true` when auto-approve will send the answer, `wait: 'click' | 'hidden'`) and `gmail: 'ended'` (7.4a). A decision from the extension that fails sends `sieve/resolved` `error` with the card's reason. Previews are built by `relay/preview.ts`:
 
 ```ts
 export function composedOption(entry: PendingEntry, step: LadderStep, compose: typeof composeOutgoingText): StepOption;
@@ -1354,19 +1369,19 @@ sequenceDiagram
 
 ### 12.4 Making the wait feel purposeful (streaming and the live trace)
 
-Nano needs about 10 seconds to answer. During that time the result area shows a `PreparingCard` (16.8) that fills as work happens:
+An answer takes about 20 seconds to over a minute on the on-device model. During that time the result area shows a `PreparingCard` (16.8) that fills as work happens:
 
-1. Heading "Working on this device" with a tag for where the reading runs. It starts as teal "Gemini Nano · on this device"; if a `step-start` event for `select` or `answer` reports `where: 'cloud'` (Playground sample data without Nano), the tag becomes blue "Cloud · Gemini (sample data)".
-2. The live trace: one row per pipeline step, appearing as each `step-start` arrives. A running row shows a pulsing teal dot and the pipeline's running label (for example "Reading 3 emails on this device…"); when `step-end` arrives the row shows the final label and duration (for example "Searched 30 emails in 12 ms"). Labels are the pipeline's; the UI never invents them.
+1. Heading "Working on this device" (on Requests: "Preparing an answer for {aiName}") with a tag for where the reading runs. It starts as teal "Gemini Nano · on this device"; if a `step-start` event for `select` or `answer` reports `where: 'cloud'` (Playground sample data without Nano), the tag becomes blue "Cloud · Gemini (sample data)".
+2. The live trace: one row per pipeline step, appearing as each `step-start` arrives. A running row shows a pulsing teal dot and the pipeline's running label, in plain words (for example "Searching your mail and files on this computer…", "Reading 3 emails with the on-device model…", "Checking the answer against the item…", "Masking personal details on this device…"); when `step-end` arrives the row shows the final label and duration (for example "Searched 30 emails in 12 ms"). Labels are the pipeline's; the UI never invents them.
 3. The streamed answer: as soon as `answer-progress` events arrive, a block labelled "Answer, written on this device" shows the text growing (16px, line height 1.6), with a 2px caret at the end. Under it, 13px muted: "Checking it before anything can be shared…".
-4. If no `answer-progress` arrives within 3 seconds, a line appears: "Gemini Nano is reading on this device. This usually takes about 10 seconds."
+4. From 3 seconds after the question, the waiting lines (Nov 23; `WAITING` in `shared/src/copy.ts`, the same words in the extension): "Asked {time} ago. Answers usually take 20 seconds to a minute." ({time}: "12 seconds", "1 min 5 s"), counting every second; then what happens next when the caller knows it (on Requests: "You'll be asked to approve before anything is sent.", or with auto-approve on for a request it covers: "Auto-approve is on: the answer goes out without asking you."); then why it is slow: while the on-device model is still being set up, "The on-device model is still being set up ({pct}%). Sieve answers once it is ready."; past a minute, "Taking longer than usual. The computer may be busy. Keep the Sieve tab open: it goes on by itself." (not under a step that already says why it waits: a first click, a background tab). One quiet line each, no new spinner.
 5. A "Stop" button (secondary) is always present.
 
 When the proposal arrives, the same container becomes the `ApprovalCard` without a layout jump (the container keeps its height until the new content is laid out, then animates `min-height` to auto over 180 ms; no animation with reduced motion). The streamed text is replaced by the final step options. The streamed text is never sent anywhere and is never used as the outgoing text: the outgoing preview only appears once the pipeline has produced the final, checked `StepOption`s.
 
-If CR-3 `onProgress` is not accepted: the `PreparingCard` shows only the heading, the line from point 4 (from the start), an indeterminate progress bar, and "Stop".
+If CR-3 `onProgress` is not accepted: the `PreparingCard` shows only the heading, the lines from point 4, an indeterminate progress bar, and "Stop".
 
-Relay entries that are preparing show the same `PreparingCard` on the Requests screen.
+Relay entries that are preparing show the same `PreparingCard` on the Requests screen. The Ask page's chat shows its one quiet line with the running label and, under it from 3 seconds, the waiting lines of point 4 in one muted line (outside the `role="status"` line, so the count is not read out).
 
 ---
 
@@ -1545,7 +1560,7 @@ Keyboard: Enter in the input submits. `/` focuses the input when focus is not in
 | `active`, presence offline | warning | "This tab lost its connection. New requests wait until it's back." | none |
 | any role, no active grant | info | "No AI can ask yet. Connect an AI in Settings to get a link for it." | "Connect an AI" → `/settings?connect=1#ais` |
 
-`AutoApproveNotice` (13.8.9), right under `RoleBanner`, a warning `Notice` while any current connection has auto-approve on: "Auto-approving answers for {names} until {time}. Stop in Settings." Names are joined "A and B" or "A, B and C"; `{time}` is the latest expiry ("4:35 PM"); "Stop in Settings" is a link to `/settings#ais`. It goes away at once when the last one is stopped, revoked or expires.
+`AutoApproveNotice` (13.8.9), right under `RoleBanner`, a warning `Notice` while any current connection has auto-approve on: "Auto-approving one-sentence answers for {names} until {time}. Excerpts, whole items and files still wait for you. Stop in Settings." Names are joined "A and B" or "A, B and C"; `{time}` is the latest expiry ("4:35 PM"); "Stop in Settings" is a link to `/settings#ais`. It goes away at once when the last one is stopped, revoked or expires.
 
 Empty (role `active`, no entries): `EmptyState` with the shield icon, title "Nothing waiting", body "When an AI asks, the request shows up here and in the Sieve extension."
 
@@ -1555,7 +1570,11 @@ Selection: `?id=` if it matches an entry; else the oldest `awaiting-person`; els
 
 `RequestDetail`:
 1. `RequestHeader` (blue band): white card with `--color-cloud-border` border and `--color-cloud-tint-2` background, padding 20px 22px. Eyebrow (13px, 600, `--color-cloud`, `letter-spacing: 0.04em`, uppercase by CSS) "Request from {aiName} · through your connector · {time}". Question: `"{question}"` at 20px 600. Right: phase tag. Second line (14px muted): "Asked for: {requested step label}. {aiName}'s access stops at {max step label}."
-2. Preparing: `PreparingCard`. Ready: `ApprovalCard variant="relay"`.
+2. Preparing: `PreparingCard` with the heading "Preparing an answer for {aiName}" and the waiting lines of 12.4 point 4, counted from when the assistant asked. Ready: `ApprovalCard variant="relay"`.
+3. Since Nov 23, above the card, one `Notice` each when it applies:
+   - Auto-approve is on for the connection and the request still waits for the person (`autoWaits()` in `state/autoApprove.ts`), info: "Auto-approve covers one-sentence answers." and the reason: "This asks for the file itself, so it waits for you." / "This asks for an excerpt, so it waits for you." / "This asks for the whole item, so it waits for you." / "This needs your OK before the cloud model reads it, so it waits for you." / "There is no one-sentence answer to send, so it waits for you." / "This answer didn't pass a check before sending, so it waits for you." (`AUTO_WAITS` in `shared/src/copy.ts`; the extension shows the same line).
+   - A decision that failed, the person's own or one made in the extension (the engine leaves its reason on the entry), warning: the reason, for example "Couldn't upload the file. Nothing was sent. Check your connection and try again." Approve and Decline work again at once.
+   - Gmail access ran out (7.4a), warning: for a "latest" question that was refused (`errorCode: 'mail-not-current'`, also on its history row): "Gmail access had run out, so Sieve couldn't check for newer mail and didn't answer. Reconnect Gmail, then ask {aiName} to ask again."; for a file that cannot be fetched (the full step's reason is the `reconnect` line): "Gmail access ran out, so Sieve can't fetch this attachment. Reconnect Gmail, then ask {aiName} to ask for the file again." With "Reconnect Gmail" while Gmail still needs it.
 
 Read-only view for `other-device` and `standby`: request docs in `claimed` / `awaiting-person` are listed as rows "Waiting on {label}" (or "Waiting in another tab") without approval controls.
 
@@ -1755,9 +1774,9 @@ H2 "Account". "Signed in as {email}" and button "Sign out". Divider. H3 "Delete 
 
 Added Nov 20 at the owner's request, so he can ask hundreds of test questions without approving each one. It overrides the Nov 15 review decision "no auto-approve" (00 section 6, decision 1) for this testing mode only.
 
-- Placement: on each current connection card (13.8.1), next to Revoke, a switch (`role="switch"`) "Auto-approve answers" with the note (its `aria-describedby`) "For testing. Sieve answers this assistant's questions without asking you, answer only, for 2 hours. Every answer still gets a receipt." While on, the card also shows "Auto-approving until {time}" (warning colour) and a "Stop" button. Past connections have no switch.
+- Placement: on each current connection card (13.8.1), next to Revoke, a switch (`role="switch"`) "Auto-approve answers" with the note (its `aria-describedby`) "For testing, on for 2 hours. It covers one-sentence answers only: excerpts, whole items and files always wait for you. Every answer still gets a receipt." (Nov 23: a file request waited and the person did not know why.) While on, the card also shows "Auto-approving until {time} · {left} left" (warning colour; {left} such as "1 h 12 min", counted down every 30 seconds) and a "Stop" button. Past connections have no switch.
 - Storage: this computer only, per account and connection. `localStorage['sieve.autoApprove.{uid}']` holds `{ [grantId]: expiresAt }`, read through `state/autoApprove.ts` (`useAutoApprove`, `readAutoApprove`, `autoApproveOn`). Every read and write is wrapped in try/catch, so storage that fails means off. Off by default. `expiresAt` is 2 hours (`AUTO_APPROVE_MS`) from the moment it is turned on. Expired, malformed and too-far entries (more than 2 hours and a minute ahead) are ignored and removed. The store follows other tabs through `storage` events and refreshes at the next expiry. Grants are written only by functions, and the `users/{uid}` rules allow only the four shared settings, so the switch lives in neither.
-- Who decides: the home base runs on this computer and reads the same store through `EngineDeps.autoApprove`. A request is approved without the person only if all of these hold: auto-approve is on and not expired for its grant; `proposal.outcome === 'ready'`; the request asked for `answer` or its `maxStep` is `answer`; the rule is `approve`; the proposal has no warnings of any kind (hidden instructions, hidden text in the question, personal details flagged, cloud model or cloud consent, ask first); the answer option is available and its text is not blank. It is approved at step `answer` with `decidedBy: 'app'`, through the same `decide()` and send check as a click (11.6, 11.8). In every other case the request waits for the person as before.
+- Who decides: the home base runs on this computer and reads the same store through `EngineDeps.autoApprove`. A request is approved without the person only if all of these hold: auto-approve is on and not expired for its grant; `proposal.outcome === 'ready'`; the request asked for `answer` or its `maxStep` is `answer`, and did not ask for the file itself (`wantFile`, since Nov 23; `autoCovers()` in `state/autoApprove.ts`); the rule is `approve`; the proposal has no warnings of any kind (hidden instructions, hidden text in the question, personal details flagged, cloud model or cloud consent, ask first); the answer option is available and its text is not blank. It is approved at step `answer` with `decidedBy: 'app'`, through the same `decide()` and send check as a click (11.6, 11.8). In every other case the request waits for the person as before.
 
 ```mermaid
 flowchart TD
@@ -1771,7 +1790,7 @@ flowchart TD
 ```
 - Not waiting means not told: no in-app toast or announcement of a new request, and no preview for the extension, so no badge. The push "A request is waiting" is sent by functions when the request is queued, before the home base sees it. The switch never leaves this computer, so that push still arrives; turn push off in 13.8.7 while testing.
 - Receipts: each one records `decidedBy: 'app'`, and the receipt shape and rules do not change. This computer keeps the ids it approved this way in `localStorage['sieve.autoApproved.{uid}']` (the newest 1000), and What has AI seen? shows "Approved automatically" for them (13.7). On another computer the same receipt reads "Approved by you".
-- Visibility: while any connection has it on, the status strip shows "Auto-approve on" (8.1, a link to Settings), and Requests shows the `AutoApproveNotice` (13.5). Stop, turning the switch off and Revoke clear it at once. Revoke clears it before the call returns.
+- Visibility: while any connection has it on, the status strip shows "Auto-approve on" (8.1, a link to Settings), and Requests shows the `AutoApproveNotice` (13.5). A request it does not cover says why on its card and in the extension, in one line (13.5 point 3), and while one is prepared the card says whether the answer will go out without asking (12.4 point 4). Stop, turning the switch off and Revoke clear it at once. Revoke clears it before the call returns.
 - The Playground engine never auto-approves.
 
 ### 13.9 Playground (`/playground`)
@@ -2310,13 +2329,16 @@ interface TraceListProps {
 interface PreparingCardProps {
   liveSteps: LiveStep[];
   answerPreview: string;
-  startedAt: number;
+  startedAt: number;              // when the question was asked: the waiting lines count from here
   onStop(): void;
   progressSupported: boolean;     // false when CR-3 onProgress is absent
+  heading?: string;               // replaces "Working on this device" ("Preparing an answer for {aiName}" on Requests)
+  next?: string;                  // what happens once it is ready
+  setupPct?: number;              // the on-device model is still being set up
 }
 ```
 
-Behaviour per 12.4. Layout: card padding 22px, gap 16px, `aria-busy="true"`. Heading "Working on this device" (H2 20px) with its tag; live rows (running: 8px pulsing teal dot + running label; done: `check` icon in teal + final label + duration); the answer block (eyebrow "Answer, written on this device", text, caret, the 13px line "Checking it before anything can be shared…"); the 3-second line; "Stop".
+Behaviour per 12.4. Layout: card padding 22px, gap 16px, `aria-busy="true"`. Heading "Working on this device" (H2 20px) with its tag; live rows (running: 8px pulsing teal dot + running label; done: `check` icon in teal + final label + duration); the answer block (eyebrow "Answer, written on this device", text, caret, the 13px line "Checking it before anything can be shared…"); from 3 seconds the waiting lines (12.4 point 4, `waitingLines()`), each in the existing 14px muted line; "Stop".
 
 ### 16.9 `ItemSummary`
 
@@ -2705,7 +2727,7 @@ Why: the UI needs an init entry point, a click-started setup with real progress 
 
 ```ts
 export type PipelineProgress =
-  | { type: 'step-start'; id: string; kind: TraceKind; label: string; where: Where }   // label is the running text, e.g. "Reading 3 emails on this device…"
+  | { type: 'step-start'; id: string; kind: TraceKind; label: string; where: Where }   // label is the running text, e.g. "Reading 3 emails with the on-device model…"
   | { type: 'step-end'; id: string; step: TraceStep }                                  // step.label is the final text, e.g. "Searched 30 emails in 12 ms"
   | { type: 'answer-progress'; text: string };                                         // the whole on-device answer so far; never sent anywhere
 

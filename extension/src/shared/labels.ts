@@ -38,6 +38,19 @@ export const COPY = {
   stepUnavailable: "That step isn't available for this request.",
   textChanged: 'The text to send changed. Check it again before you approve.',
   openReceipt: 'Open the receipt',
+  /** A request the home base is still preparing (since Nov 23); the waiting lines are WAITING in @sieve/shared. */
+  preparing: {
+    heading: 'Preparing an answer',
+    starting: 'Starting…',
+    listHeading: 'Being prepared',
+  },
+  /** Gmail access on the home base's computer ran out; only the Sieve tab can reconnect it. */
+  gmail: {
+    label: 'Gmail access',
+    ended: "Gmail access on your computer ran out. Until you reconnect it in the Sieve tab, Sieve can't read new mail or send an attachment.",
+    reconnect: 'Open Sieve to reconnect',
+  },
+  tryAgain: 'Try again',
   settings: {
     button: 'Settings',
     openOnArrival: 'Open when a request arrives',
@@ -111,6 +124,10 @@ export function alsoWaitingHeading(n: number): string {
   return `Also waiting (${n})`;
 }
 
+export function beingPreparedHeading(n: number): string {
+  return `${COPY.preparing.listHeading} (${n})`;
+}
+
 export function newRequestAnnouncement(aiName: string): string {
   // Isolate the name so right-to-left names do not reorder the sentence (70 R-UI-05).
   return `New request from ⁨${aiName}⁩`;
@@ -143,7 +160,7 @@ export function outcomeCopy(outcome: Exclude<ProposalOutcome, 'ready'>, category
 export type ResultTone = 'cloud' | 'muted';
 
 /** Heading, body and optional tag for a resolved request (50 section 8.4). */
-export function resultCopy(r: Pick<ResolvedEntry, 'outcome' | 'decidedHere' | 'step'>): {
+export function resultCopy(r: Pick<ResolvedEntry, 'outcome' | 'decidedHere' | 'step' | 'message'>): {
   heading: string;
   body: string;
   tag?: { text: string; tone: ResultTone };
@@ -166,7 +183,8 @@ export function resultCopy(r: Pick<ResolvedEntry, 'outcome' | 'decidedHere' | 's
     case 'expired':
       return { heading: 'Expired', body: 'This request ran out of time before it was approved. Nothing was shared.' };
     case 'error':
-      return { heading: 'Not sent', body: "Sieve couldn't finish this request. Nothing was sent. Open Sieve to see what happened." };
+      // the app's own reason when the page sent one (since Nov 23), e.g. that the file could not be uploaded
+      return { heading: 'Not sent', body: r.message ?? "Sieve couldn't finish this request. Nothing was sent. Open Sieve to see what happened." };
     case 'lost':
       return { heading: 'Not confirmed', body: 'Your Sieve tab closed before it confirmed. Open Sieve to check this request.' };
   }

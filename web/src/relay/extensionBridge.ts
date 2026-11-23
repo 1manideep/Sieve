@@ -7,6 +7,7 @@ import {
   MESSAGE_VERSION,
   type ExtensionToPage,
   type PageToExtension,
+  type PreparingPreview,
   type ProposalPreview,
 } from '@sieve/shared';
 import type { ExtensionStatus } from '@/state/homeBase';
@@ -25,6 +26,8 @@ export interface BridgeHandlers {
   onOpenApp(requestId?: string): void;
   onStatus(s: ExtensionStatus): void;
   getPending(): ProposalPreview[];
+  /** Sent with each list to an extension of 0.1.1 or later: the requests being prepared, and Gmail running out. */
+  getExtras?(): { preparing?: PreparingPreview[]; gmail?: 'ended' };
   /** sieve/hello-ack arrived: the extension's version and its open-sieve shortcut ('' when unset). */
   onHello?(info: { extensionVersion: string; extensionShortcut: string }): void;
 }
@@ -33,7 +36,8 @@ export interface ExtensionBridge {
   start(): void;
   stop(): void;
   sendPending(): void;                                   // posts getPending() when connected; no-op otherwise
-  sendResolved(requestId: string, outcome: 'approved' | 'declined' | 'expired' | 'error'): void;
+  /** `message`: for 'error', the one line the app shows, so the extension can say why too. */
+  sendResolved(requestId: string, outcome: 'approved' | 'declined' | 'expired' | 'error', message?: string): void;
 }
 
 /** The parts of chrome.runtime the bridge uses (injectable for tests). */
@@ -335,13 +339,16 @@ export function createExtensionBridge(extensionId: string, appVersion: string, h
   function sendPending(): void {
     if (!acked || !port) return;
     let proposals: ProposalPreview[];
+    let extras: ReturnType<NonNullable<BridgeHandlers['getExtras']>> | undefined;
     try {
       proposals = previewsFor(h.getPending().slice(0, MAX_PREVIEWS), extensionVersion);
+      // 0.1.0 is sent only what it knows (previewsFor); newer builds leave out what they do not know
+      extras = isOldExtension(extensionVersion) ? undefined : h.getExtras?.();
     } catch (error) {
       console.error('bridge pending', error);
       return;
     }
-    post({ type: 'sieve/pending', version: MESSAGE_VERSION, proposals });
+    post({ type: 'sieve/pending', version: MESSAGE_VERSION, proposals, ...extras });
   }
 
   return {
@@ -362,9 +369,9 @@ export function createExtensionBridge(extensionId: string, appVersion: string, h
       setStatus('idle');
     },
     sendPending,
-    sendResolved(requestId, outcome) {
+    sendResolved(requestId, outcome, message) {
       if (!acked || !port) return;
-      post({ type: 'sieve/resolved', version: MESSAGE_VERSION, requestId, outcome });
+      post({ type: 'sieve/resolved', version: MESSAGE_VERSION, requestId, outcome, ...(message && !isOldExtension(extensionVersion) ? { message } : {}) });
     },
   };
 }

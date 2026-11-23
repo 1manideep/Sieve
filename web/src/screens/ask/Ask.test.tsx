@@ -1,7 +1,7 @@
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { Proposal, StepOption } from '@sieve/shared';
 import type { PrepareInput } from '@/pipeline';
 import { useAskReal } from '@/state/ask';
@@ -346,6 +346,26 @@ describe('Ask as a chat', () => {
     expect(screen.getByText('Your deposit was')).toBeInTheDocument();
     await userEvent.click(details());
     expect(screen.getByTestId('preparing-card')).toBeInTheDocument();
+  });
+
+  it('while preparing, from 3 seconds: how long since the question and what is usual, then why when it is slow (Nov 23)', () => {
+    vi.useFakeTimers({ toFake: ['Date'] });   // the clock stands still; timers run as they do
+    onTestFinished(() => void vi.useRealTimers());
+    act(() => {
+      useAskReal.setState({
+        phase: 'preparing', requestId: 'r1', question: 'deposit', answerPreview: '', startedAt: Date.now() - 12_000,
+        liveSteps: [{ id: 'r1:1', kind: 'select', label: 'Reading 3 emails with the on-device model…', where: 'device', status: 'running', startedAt: Date.now() }],
+      });
+    });
+    renderAsk();
+    expect(screen.getByRole('status')).toHaveTextContent('Reading 3 emails with the on-device model…');
+    // outside the status line, so the count is not read out every second
+    expect(screen.getByTestId('waiting-line')).toHaveTextContent('Asked 12 seconds ago. Answers usually take 20 seconds to a minute.');
+    expect(screen.getByRole('status')).not.toHaveTextContent(/Asked/);
+    act(() => useAskReal.setState({ startedAt: Date.now() - 70_000 }));
+    expect(screen.getByTestId('waiting-line')).toHaveTextContent(
+      'Asked 1 min 10 s ago. Answers usually take 20 seconds to a minute. Taking longer than usual. The computer may be busy. Keep the Sieve tab open: it goes on by itself.',
+    );
   });
 
   it('a cloud consent question: the sentence with its two buttons right under it', async () => {

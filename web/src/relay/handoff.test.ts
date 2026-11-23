@@ -56,6 +56,28 @@ describe('uploadHandoff', () => {
     expect(noCheck.calls[0]!.init.headers).toEqual({ Authorization: 'Firebase id-token', 'Content-Type': 'application/pdf' });
   });
 
+  it('ends as offline when an upload or a sign-in token hangs, so an approval never waits forever (Nov 23)', async () => {
+    const hung = deps((_url, init) => new Promise<Response>((_, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+    }), { timeoutMs: 20 });
+    await expect(uploadHandoff(UID, REQ, file, 'application/pdf', hung.d)).rejects.toMatchObject({ name: 'HandoffError', code: 'offline' });
+    expect(hung.calls[0]!.init.signal?.aborted).toBe(true);
+    const noToken = deps(() => new Response('{}', { status: 200 }), { idToken: () => new Promise<string>(() => undefined), timeoutMs: 20 });
+    await expect(uploadHandoff(UID, REQ, file, 'application/pdf', noToken.d)).rejects.toMatchObject({ code: 'offline' });
+    expect(noToken.calls).toHaveLength(0);
+  });
+
+  it("a caller's own stop is passed on as it is", async () => {
+    const ctl = new AbortController();
+    const slow = deps((_url, init) => new Promise<Response>((_, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+    }));
+    const p = uploadHandoff(UID, REQ, file, 'application/pdf', slow.d, ctl.signal);
+    await vi.waitFor(() => expect(slow.calls).toHaveLength(1));
+    ctl.abort();
+    await expect(p).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
   it('takes a file back with one delete, and never throws', async () => {
     const path = `handoffs/${UID}/${REQ}/${'o'.repeat(24)}`;
     const ok = deps(() => new Response(null, { status: 204 }));

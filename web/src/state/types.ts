@@ -18,7 +18,7 @@ export interface DeviceView { id: string; label: string; isHomeBase: boolean; ha
 export interface LiveStep {
   id: string;
   kind: TraceKind;
-  label: string;                // the pipeline's running label, e.g. "Reading 3 emails on this device…"
+  label: string;                // the pipeline's running label, e.g. "Reading 3 emails with the on-device model…"
   where: Where;
   status: 'running' | 'done';
   startedAt: number;

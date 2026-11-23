@@ -13,11 +13,13 @@ import {
   MESSAGE_VERSION,
 } from '@sieve/shared';
 import type {
+  AutoWait,
   Category,
   CategoryRule,
   ItemKind,
   LadderStep,
   PageToExtension,
+  PreparingPreview,
   ProposalOutcome,
   ProposalPreview,
   RequesterRef,
@@ -56,6 +58,8 @@ export const WARNING_KINDS = [
   'sample-data-cloud', 'unverified-answer', 'source-unchecked',
 ] as const satisfies readonly WarningKind[];
 export const RESOLVED_OUTCOMES = ['approved', 'declined', 'expired', 'error'] as const;
+export const AUTO_WAIT_KINDS = ['file', 'excerpt', 'full', 'consent', 'no-answer', 'check'] as const satisfies readonly AutoWait[];
+export const PREPARING_WAITS = ['click', 'hidden'] as const satisfies readonly NonNullable<PreparingPreview['wait']>[];
 export const PAGE_MESSAGE_TYPES = ['sieve/hello', 'sieve/pending', 'sieve/resolved'] as const satisfies readonly PageToExtension['type'][];
 
 type Exhaustive<T, A extends readonly T[]> = [Exclude<T, A[number]>] extends [never] ? true : never;
@@ -64,6 +68,7 @@ const _allRules: Exhaustive<CategoryRule, typeof RULES> = true;
 const _allOutcomes: Exhaustive<ProposalOutcome, typeof OUTCOMES> = true;
 const _allWarnings: Exhaustive<WarningKind, typeof WARNING_KINDS> = true;
 const _allTypes: Exhaustive<PageToExtension['type'], typeof PAGE_MESSAGE_TYPES> = true;
+const _allAutoWaits: Exhaustive<AutoWait, typeof AUTO_WAIT_KINDS> = true;
 
 type Obj = Record<string, unknown>;
 
@@ -165,6 +170,8 @@ export function parsePreview(raw: unknown): Preview | null {
   }
   if (!oneOf(OUTCOMES, raw.outcome)) return null;
   if (raw.textHash !== undefined && !isTextHash(raw.textHash)) return null;
+  // why auto-approve did not send it (since Nov 23); a value this build does not know is left out
+  const autoWaits = oneOf(AUTO_WAIT_KINDS, raw.autoWaits) ? raw.autoWaits : undefined;
   return {
     requestId: raw.requestId,
     requester,
@@ -177,6 +184,24 @@ export function parsePreview(raw: unknown): Preview | null {
     warnings,
     outcome: raw.outcome,
     ...(isTextHash(raw.textHash) ? { textHash: raw.textHash } : {}),
+    ...(autoWaits ? { autoWaits } : {}),
+  };
+}
+
+/** One request being prepared (since Nov 23), or null; an unknown `wait` is left out. */
+export function parsePreparing(raw: unknown): PreparingPreview | null {
+  if (!isObject(raw) || !isRequestId(raw.requestId)) return null;
+  if (!str(raw.aiName, 1, LIMITS.maxAiNameChars) || !str(raw.question, 1, MAX_QUESTION_CHARS)) return null;
+  if (raw.label !== undefined && !str(raw.label, 0, LIMITS.maxReasonChars)) return null;
+  if (!int(raw.elapsedMs, 0, Number.MAX_SAFE_INTEGER)) return null;
+  return {
+    requestId: raw.requestId,
+    aiName: raw.aiName,
+    question: raw.question,
+    ...(typeof raw.label === 'string' && raw.label.length > 0 ? { label: raw.label } : {}),
+    elapsedMs: raw.elapsedMs,
+    ...(raw.auto === true ? { auto: true as const } : {}),
+    ...(oneOf(PREPARING_WAITS, raw.wait) ? { wait: raw.wait } : {}),
   };
 }
 
@@ -225,13 +250,37 @@ export function readPageMessage(raw: unknown): PageMessageRead {
         ids.add(parsed.requestId);
         proposals.push(parsed);
       }
-      return ok({ type: 'sieve/pending', version: MESSAGE_VERSION, proposals }, skipped);
+      // Since Nov 23: the requests being prepared, and Gmail access running out. A list that cannot be read is left out,
+      // and the proposals still count.
+      const preparing: PreparingPreview[] = [];
+      if (Array.isArray(raw.preparing) && raw.preparing.length <= LIMITS.maxProposals) {
+        for (const p of raw.preparing) {
+          const parsed = parsePreparing(p);
+          if (parsed && !preparing.some((x) => x.requestId === parsed.requestId)) preparing.push(parsed);
+        }
+      }
+      return ok(
+        {
+          type: 'sieve/pending',
+          version: MESSAGE_VERSION,
+          proposals,
+          ...(preparing.length > 0 ? { preparing } : {}),
+          ...(raw.gmail === 'ended' ? { gmail: 'ended' as const } : {}),
+        },
+        skipped,
+      );
     }
     case 'sieve/resolved':
       if (!isRequestId(raw.requestId) || typeof raw.outcome !== 'string') return INVALID;
       // An outcome a newer page sends: the request left the waiting state, and its next pending list says so.
       if (!oneOf(RESOLVED_OUTCOMES, raw.outcome)) return UNKNOWN;
-      return ok({ type: 'sieve/resolved', version: MESSAGE_VERSION, requestId: raw.requestId, outcome: raw.outcome });
+      return ok({
+        type: 'sieve/resolved',
+        version: MESSAGE_VERSION,
+        requestId: raw.requestId,
+        outcome: raw.outcome,
+        ...(str(raw.message, 1, LIMITS.maxWarningChars) ? { message: raw.message } : {}),
+      });
   }
 }
 

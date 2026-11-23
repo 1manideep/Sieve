@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ProposalPreview } from '@sieve/shared';
-import type { PanelState, Surface, WorkerToPanel } from '../src/shared/internal';
+import type { PanelState, PreparingView, Surface, WorkerToPanel } from '../src/shared/internal';
 import { approveOnlyIfAsked, sentHeading } from '../src/shared/labels';
 import { App, CONNECTING_DELAY_MS } from '../src/sidepanel/App';
 import { LIFTING_TEXT_TEST_ID, TRANSITION_TEST_ID } from '../src/sidepanel/components/ApprovedTransition';
@@ -25,6 +25,7 @@ import {
   DEPOSIT_FULL,
   LEASE,
   LEASE_EXCERPT,
+  PREPARING_LEASE,
   STATEMENT,
   option,
   panelState,
@@ -917,5 +918,108 @@ describe('sizing: the popup follows its content (Chrome caps it at 800 x 600)', 
 
   it('the new text button has a visible focus ring', () => {
     expect(uiCss).toMatch(/\.btnText:focus-visible[^{]*\{[^}]*outline: 2px solid/);
+  });
+});
+
+describe('being prepared, Gmail and failed decisions (since Nov 23)', () => {
+  const { elapsedMs: _elapsed, ...lease } = PREPARING_LEASE;
+  const prep = (changes: Partial<PreparingView> = {}): PreparingView => ({ ...lease, since: Date.now() - 12_000, ...changes });
+
+  it('nothing waits: the request being prepared, the step it is on, how long, and what happens next', async () => {
+    const t = setup();
+    t.push(panelState({ preparing: [prep()] }));
+    const c = screen.getByTestId('preparing');
+    expect(within(c).getByRole('heading', { name: 'Preparing an answer' })).toBeInTheDocument();
+    expect(within(c).getByText(`"${PREPARING_LEASE.question}"`)).toBeInTheDocument();
+    expect(within(c).getByRole('status')).toHaveTextContent('Reading 2 files with the on-device model…');
+    expect(within(c).getByText('Asked 12 seconds ago. Answers usually take 20 seconds to a minute.')).toBeInTheDocument();
+    expect(within(c).getByText("You'll be asked to approve before anything is sent.")).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'No requests waiting' })).not.toBeInTheDocument();
+    await expectNoAxeViolations();
+  });
+
+  it('auto-approve: says the answer goes out without asking', () => {
+    const t = setup();
+    t.push(panelState({ preparing: [prep({ auto: true })] }));
+    expect(screen.getByText('Auto-approve is on: the answer goes out without asking you.')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['hidden', 'The Sieve tab is in the background, so Chrome may slow the on-device model. Bring it to the front and keep it open.'],
+    ['click', 'Sieve needs one click in its tab before the on-device model can start.'],
+  ] as const)('slow because of %s: says why, and Open Sieve brings that tab forward', (wait, line) => {
+    const t = setup();
+    t.push(panelState({ preparing: [prep({ wait })] }));
+    expect(screen.getByText(line)).toBeInTheDocument();
+    fireEvent.click(within(screen.getByTestId('preparing')).getByRole('button', { name: 'Open Sieve' }));
+    expect(t.sent).toContainEqual({ type: 'panel/open-app', requestId: PREPARING_LEASE.requestId });
+  });
+
+  it('past a minute: taking longer than usual, keep the tab open', () => {
+    const t = setup();
+    t.push(panelState({ preparing: [prep({ since: Date.now() - 75_000 })] }));
+    expect(screen.getByText('Asked 1 min 15 s ago. Answers usually take 20 seconds to a minute.')).toBeInTheDocument();
+    expect(screen.getByText('Taking longer than usual. The computer may be busy. Keep the Sieve tab open: it goes on by itself.')).toBeInTheDocument();
+  });
+
+  it('counts up while it is shown', () => {
+    vi.useFakeTimers();
+    const t = setup();
+    t.push(panelState({ preparing: [prep({ since: Date.now() })] }));
+    act(() => {
+      vi.advanceTimersByTime(4_000);
+    });
+    expect(screen.getByText('Asked 4 seconds ago. Answers usually take 20 seconds to a minute.')).toBeInTheDocument();
+  });
+
+  it('a request waits: the ones being prepared are listed under it, and a row opens Sieve at that request', async () => {
+    const t = setup();
+    t.push(panelState({ proposals: [DEPOSIT], preparing: [prep(), prep({ requestId: 'req-2', question: 'Did the plumber confirm Tuesday?' })] }));
+    expect(screen.getByRole('heading', { name: 'A request is waiting' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Being prepared (2)' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Planner: "Did the plumber confirm Tuesday?"' }));
+    expect(t.sent).toContainEqual({ type: 'panel/open-app', requestId: 'req-2' });
+    await expectNoAxeViolations();
+  });
+
+  it('Gmail access ran out: one line on top, and the way to the Sieve tab', async () => {
+    const t = setup();
+    t.push(panelState({ proposals: [DEPOSIT], gmail: 'ended' }));
+    const line = screen.getByTestId('gmail-ended');
+    expect(line).toHaveTextContent(
+      "Gmail access on your computer ran out. Until you reconnect it in the Sieve tab, Sieve can't read new mail or send an attachment.",
+    );
+    fireEvent.click(within(line).getByRole('button', { name: 'Open Sieve to reconnect' }));
+    expect(t.sent).toContainEqual({ type: 'panel/open-app' });
+    await expectNoAxeViolations();
+  });
+
+  it('a waiting request auto-approve did not send says why in one line', () => {
+    const t = setup();
+    t.push(panelState({ proposals: [{ ...DEPOSIT, autoWaits: 'file' }] }));
+    expect(screen.getByText('Auto-approve covers one-sentence answers. This asks for the file itself, so it waits for you.')).toBeInTheDocument();
+  });
+
+  it("a decision that could not be sent says the app's reason; Try again shows the request again", async () => {
+    const t = setup();
+    t.push(panelState({ proposals: [DEPOSIT] }));
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    const reason = "Couldn't upload the file. Nothing was sent. Check your connection and try again.";
+    t.push(panelState({ proposals: [DEPOSIT], resolved: [resolvedEntry({ outcome: 'error', step: undefined, decidedHere: false, message: reason })] }));
+    expect(screen.getByRole('heading', { name: 'Not sent' })).toBeInTheDocument();
+    expect(screen.getByText(reason)).toBeInTheDocument();
+    await expectNoAxeViolations();
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(t.sent).toContainEqual({ type: 'panel/dismiss', requestId: DEPOSIT.requestId });
+    expect(screen.getByRole('heading', { name: 'A request is waiting' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeEnabled();
+  });
+
+  it('no Try again once the request no longer waits', () => {
+    const t = setup();
+    t.push(panelState({ proposals: [DEPOSIT] }));
+    t.push(panelState({ proposals: [], resolved: [resolvedEntry({ outcome: 'error', step: undefined, decidedHere: false })] }));
+    expect(screen.getByRole('heading', { name: 'Not sent' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
   });
 });

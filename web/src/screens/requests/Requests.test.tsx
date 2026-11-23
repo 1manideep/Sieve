@@ -1,12 +1,14 @@
 // Requests (40 section 13.5): every state with axe, exact copy, and the store calls behind each control.
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { CATEGORIES, type Proposal, type StepOption } from '@sieve/shared';
 import { DEPOSIT_ANSWER, landlordReady, option, unavailable } from '@/components/__fixtures__/proposals';
-import { CONSOLE, HOME_BASE_DIALOG, REQUESTS, SOURCES, fillText } from '@/copy/screens-controls';
+import { CONSOLE, HOME_BASE_DIALOG, REQUESTS, fillText } from '@/copy/screens-controls';
 import { STATUS_POPOVER } from '@/copy/strings';
+import { MSG } from '@/relay/messagesToAi';
+import { useAutoApprove } from '@/state/autoApprove';
 import { useGrants } from '@/state/grants';
 import { useHomeBase, type HomeBaseState, type PendingEntry } from '@/state/homeBase';
 import { useNetwork } from '@/state/network';
@@ -125,6 +127,7 @@ beforeEach(() => {
 
 afterEach(() => {
   useHomeBase.getState().reset();
+  useAutoApprove.setState({ until: {} });
   vi.clearAllMocks();
   window.localStorage.clear();
 });
@@ -217,40 +220,75 @@ describe('Requests', () => {
     await expectNoAxeViolations();
   });
 
-  it('says Gmail syncing paused in a plain note, and Continue re-authorizes from the click (70 R-MAIL-10)', async () => {
+  // Gmail access running out is on every page of the home base since Nov 23 (components/GmailAccess, its own tests).
+
+  it('a request Gmail access running out stopped says so on its card, with Reconnect, and that the assistant asks again', async () => {
     const user = userEvent.setup();
     const reauthorize = vi.fn<SourcesState['reauthorize']>(async () => undefined);
     useSources.setState({ reauthorize, busy: {} });
     await realDb.table('sources').put({ kind: 'gmail', connected: true, paused: false, progress: { done: 30, total: 30 }, needsAuth: true });
     try {
+      setEntries([entry({ phase: 'done', proposal: { ...relayProposal, outcome: 'error', errorCode: 'mail-not-current' }, result: { kind: 'auto', status: 'error' } })]);
       renderRequests();
-      const note = await screen.findByText(SOURCES.needsAuthGmail);
-      expect(note.closest('[data-tone]')).toHaveAttribute('data-tone', 'info');
-      await expectNoAxeViolations();
-      await user.click(screen.getByRole('button', { name: SOURCES.continue }));
+      expect(
+        screen.getByText(`Gmail access had run out, so Sieve couldn't check for newer mail and didn't answer. Reconnect Gmail, then ask ${AI} to ask again.`),
+      ).toBeInTheDocument();
+      await user.click(await screen.findByRole('button', { name: 'Reconnect Gmail' }));
       expect(reauthorize).toHaveBeenCalledWith('gmail');
-      await realDb.table('sources').put({ kind: 'gmail', connected: true, paused: false, progress: { done: 30, total: 30 } });
-      await waitFor(() => expect(screen.queryByText(SOURCES.needsAuthGmail)).not.toBeInTheDocument());
+      await expectNoAxeViolations();
     } finally {
       await realDb.table('sources').clear();
     }
   });
 
-  it('warns, with the card\'s sentence, only when Google refused read-only Gmail access after Continue', async () => {
-    useSources.setState({ busy: {} });
-    await realDb.table('sources').put({
-      kind: 'gmail', connected: true, paused: false, progress: { done: 30, total: 30 },
-      needsAuth: true, errorCode: 'auth-needed', error: SOURCES.needsAuthGmailRefused,
+  it('a file request whose attachment needs Gmail reconnecting says so on the card', () => {
+    const file = { ...relayProposal, options: [option('answer', DEPOSIT_ANSWER), unavailable('excerpt', REASON), unavailable('full', 'Gmail needs reconnecting before this attachment can be sent. Open Sources, press Gmail and reconnect, then ask again.')] };
+    setEntries([entry({ proposal: file, request: request({ tool: 'sieve_full_item', requestedStep: 'full', maxStep: 'full', wantFile: true }) })]);
+    renderRequests();
+    expect(screen.getByText(`Gmail access ran out, so Sieve can't fetch this attachment. Reconnect Gmail, then ask ${AI} to ask for the file again.`)).toBeInTheDocument();
+  });
+
+  it('a history row Gmail access stopped says so in the person\'s words', () => {
+    useHomeBase.setState({
+      recent: [request({ id: 'old-1', status: 'error', message: MSG.mailNotCurrent })],
     });
-    try {
-      renderRequests();
-      const warning = await screen.findByText(SOURCES.needsAuthGmailRefused);
-      expect(warning.closest('[data-tone]')).toHaveAttribute('data-tone', 'warning');
-      expect(screen.getByRole('button', { name: SOURCES.continue })).toBeInTheDocument();
-      expect(screen.queryByText(SOURCES.needsAuthGmail)).not.toBeInTheDocument();
-    } finally {
-      await realDb.table('sources').clear();
-    }
+    renderRequests('/requests?id=old-1');
+    expect(screen.getByText(`Gmail access had run out, so Sieve couldn't check for newer mail and didn't answer. Reconnect Gmail, then ask ${AI} to ask again.`)).toBeInTheDocument();
+    expect(screen.queryByText(/Ask the person to open Sieve/)).not.toBeInTheDocument();
+  });
+
+  it('while it is prepared: for whom, what happens next, and with auto-approve on, that the answer goes out', async () => {
+    setEntries([
+      entry({
+        phase: 'preparing',
+        proposal: undefined,
+        request: request({ createdAt: Date.now() - 25_000 }),
+        liveSteps: [{ id: 's1', kind: 'select', label: 'Reading 3 emails with the on-device model…', where: 'device', status: 'running', startedAt: NOW }],
+      }),
+    ]);
+    renderRequests();
+    expect(screen.getByRole('heading', { name: `Preparing an answer for ${AI}` })).toBeInTheDocument();
+    expect(screen.getByText('Asked 25 seconds ago. Answers usually take 20 seconds to a minute.')).toBeInTheDocument();
+    expect(screen.getByText("You'll be asked to approve before anything is sent.")).toBeInTheDocument();
+    await expectNoAxeViolations();
+    act(() => useAutoApprove.setState({ until: { g1: Date.now() + 3_600_000 } }));
+    expect(screen.getByText('Auto-approve is on: the answer goes out without asking you.')).toBeInTheDocument();
+  });
+
+  it('auto-approve is on but a file was asked for: the card says why it waits', () => {
+    useAutoApprove.setState({ until: { g1: Date.now() + 3_600_000 } });
+    setEntries([entry({ request: request({ tool: 'sieve_full_item', requestedStep: 'full', maxStep: 'full', wantFile: true }) })]);
+    renderRequests();
+    expect(screen.getByText('Auto-approve covers one-sentence answers. This asks for the file itself, so it waits for you.')).toBeInTheDocument();
+  });
+
+  it('an approval from the extension that could not be sent says why on the card, and Approve works again', async () => {
+    const user = userEvent.setup();
+    setEntries([entry({ error: "Couldn't upload the file. Nothing was sent. Check your connection and try again." })]);
+    renderRequests();
+    expect(screen.getByText("Couldn't upload the file. Nothing was sent. Check your connection and try again.")).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: new RegExp(`^Approve`) }));
+    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ requestId: 'req-1', approved: true }));
   });
 
   it('shows the first-click notice and the extension shortcut', async () => {

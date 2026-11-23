@@ -20,6 +20,8 @@ export interface ResultActions {
   onDone(): void;
   /** Asks the worker to open the app for this request (panel/open-app with the requestId). */
   onOpenReceipt(): void;
+  /** An error on a request that still waits: show it again, so the person can approve or deny once more. */
+  onRetry?: () => void;
 }
 
 interface ResultBodyProps extends ResultActions {
@@ -31,7 +33,7 @@ interface ResultBodyProps extends ResultActions {
   centered?: boolean;
 }
 
-export function ResultBody({ entry, headingId, sentChars, centered = false, onDone, onOpenReceipt }: ResultBodyProps) {
+export function ResultBody({ entry, headingId, sentChars, centered = false, onDone, onOpenReceipt, onRetry }: ResultBodyProps) {
   const copy = resultCopy(entry);
   const sent = entry.outcome === 'approved' && sentChars !== undefined;
   return (
@@ -55,6 +57,11 @@ export function ResultBody({ entry, headingId, sentChars, centered = false, onDo
         <p className={`${s.receipt} ${copy.tag.tone === 'cloud' ? s.receiptCloud : s.receiptMuted}`}>{copy.tag.text}</p>
       ) : null}
       <div className={s.actions}>
+        {onRetry ? (
+          <button type="button" className={`${s.btnWhite} ${s.grow}`} onClick={onRetry}>
+            {COPY.tryAgain}
+          </button>
+        ) : null}
         <button type="button" className={`${s.btnOutline} ${centered ? s.btnWide : s.grow}`} onClick={onDone}>
           {COPY.done}
         </button>
@@ -68,11 +75,18 @@ export function ResultBody({ entry, headingId, sentChars, centered = false, onDo
   );
 }
 
-export function ResultCard({ entry, sentChars, onDone, onOpenReceipt }: { entry: ResolvedEntry; sentChars?: number } & ResultActions) {
+export function ResultCard({ entry, sentChars, onDone, onOpenReceipt, onRetry }: { entry: ResolvedEntry; sentChars?: number } & ResultActions) {
   const headingId = useId();
   return (
     <article className={s.card} aria-labelledby={headingId}>
-      <ResultBody entry={entry} headingId={headingId} {...(sentChars !== undefined ? { sentChars } : {})} onDone={onDone} onOpenReceipt={onOpenReceipt} />
+      <ResultBody
+        entry={entry}
+        headingId={headingId}
+        {...(sentChars !== undefined ? { sentChars } : {})}
+        onDone={onDone}
+        onOpenReceipt={onOpenReceipt}
+        {...(onRetry ? { onRetry } : {})}
+      />
     </article>
   );
 }

@@ -110,3 +110,27 @@ describe('auto-approve store (40 section 13.8.9)', () => {
     expect(readAutoApproved('u1').has('r2')).toBe(false);
   });
 });
+
+describe('what auto-approve covers, and why a request still waits (Nov 23)', () => {
+  it('covers a one-sentence answer, asked for or capped, never the file itself', async () => {
+    const { autoCovers } = await import('./autoApprove');
+    expect(autoCovers({ requestedStep: 'answer', maxStep: 'full' })).toBe(true);
+    expect(autoCovers({ requestedStep: 'full', maxStep: 'answer' })).toBe(true);
+    expect(autoCovers({ requestedStep: 'excerpt', maxStep: 'full' })).toBe(false);
+    expect(autoCovers({ requestedStep: 'full', maxStep: 'answer', wantFile: true })).toBe(false);
+  });
+
+  it('names the reason in one word for the card and the extension', async () => {
+    const { autoWaits } = await import('./autoApprove');
+    const { proposal, request, option } = await import('@/relay/__tests__/fixtures');
+    expect(autoWaits(request({ requestedStep: 'full', wantFile: true }), proposal({ requestedStep: 'full' }))).toBe('file');
+    expect(autoWaits(request({ requestedStep: 'excerpt' }), proposal())).toBe('excerpt');
+    expect(autoWaits(request({ requestedStep: 'full' }), proposal())).toBe('full');
+    expect(autoWaits(request(), proposal({ outcome: 'needs-cloud-consent' }))).toBe('consent');
+    expect(autoWaits(request(), proposal({ options: [option('answer', '', { available: false }), option('excerpt', 'x'), option('full', 'y')] }))).toBe('no-answer');
+    // an answer it covers: only a send check that refused it is a reason; else it arrived before auto-approve was on
+    expect(autoWaits(request(), proposal(), true)).toBe('check');
+    expect(autoWaits(request(), proposal())).toBeUndefined();
+    expect(autoWaits(request(), proposal({ outcome: 'no-match' }))).toBeUndefined();
+  });
+});

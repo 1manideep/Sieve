@@ -305,12 +305,28 @@ export interface ProposalPreview {
   rule: CategoryRule;
   warnings: Warning[];
   outcome: ProposalOutcome;
+  autoWaits?: AutoWait;      // since Nov 23: auto-approve is on, and this is why it still waits ('file' | 'excerpt' | 'full' | 'consent' | 'no-answer' | 'check')
+}
+
+/** Since Nov 23: a request the home base is still preparing. Never any content. */
+export interface PreparingPreview {
+  requestId: string;
+  aiName: string;
+  question: string;
+  label?: string;            // the pipeline's running label of the step it is on
+  elapsedMs: number;         // since the assistant asked
+  auto?: true;               // auto-approve will send the answer without asking
+  wait?: 'click' | 'hidden'; // the tab waits for a first click, or is in the background
 }
 
 export type PageToExtension =
   | { type: 'sieve/hello'; version: 1; homeBase: boolean; appVersion: string }
-  | { type: 'sieve/pending'; version: 1; proposals: ProposalPreview[] }   // the full current list every time: outside requests waiting for the person, oldest first, at most 20; re-sent every 20 s as a keepalive
-  | { type: 'sieve/resolved'; version: 1; requestId: string; outcome: 'approved' | 'declined' | 'expired' | 'error' };  // 'error' only when nothing was written, so nothing was shared
+  // the full current list every time: outside requests waiting for the person (and those whose decision is being
+  // written), oldest first, at most 20; re-sent every 20 s as a keepalive. Since Nov 23, to 0.1.1 and later, also the
+  // requests being prepared and gmail: 'ended' while Gmail access on that computer has run out.
+  | { type: 'sieve/pending'; version: 1; proposals: ProposalPreview[]; preparing?: PreparingPreview[]; gmail?: 'ended' }
+  // 'error' only when nothing was written, so nothing was shared; since Nov 23 with the app's one-line reason
+  | { type: 'sieve/resolved'; version: 1; requestId: string; outcome: 'approved' | 'declined' | 'expired' | 'error'; message?: string };
 
 export type ExtensionToPage =
   | { type: 'sieve/hello-ack'; version: 1; extensionVersion: string; shortcut?: string }   // shortcut: the open-sieve key binding from chrome.commands.getAll(), '' when unset (50 section 8.9)

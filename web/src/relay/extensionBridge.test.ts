@@ -42,7 +42,7 @@ function fakeRuntime() {
 const ACK = { type: 'sieve/hello-ack', version: MESSAGE_VERSION, extensionVersion: '1.0.0' };
 const preview = { requestId: 'r1' } as ProposalPreview;
 
-function setup(opts: { runtime?: RuntimeLike | undefined; pending?: ProposalPreview[] } = {}) {
+function setup(opts: { runtime?: RuntimeLike | undefined; pending?: ProposalPreview[]; extras?: ReturnType<NonNullable<BridgeHandlers['getExtras']>> } = {}) {
   const rt = fakeRuntime();
   const statuses: ExtensionStatus[] = [];
   const ticks: (() => void)[] = [];
@@ -51,6 +51,7 @@ function setup(opts: { runtime?: RuntimeLike | undefined; pending?: ProposalPrev
     onOpenApp: vi.fn(),
     onStatus: (s) => statuses.push(s),
     getPending: vi.fn(() => opts.pending ?? [preview]),
+    ...(opts.extras ? { getExtras: () => opts.extras ?? {} } : {}),
     onHello: vi.fn(),
   };
   const runtime = 'runtime' in opts ? opts.runtime : rt.runtime;
@@ -209,6 +210,25 @@ describe('extension bridge', () => {
     bridge.stop();
     expect(ports[0].disconnected).toBe(true);
     expect(statuses.at(-1)).toBe('idle');
+  });
+});
+
+describe('since Nov 23: requests being prepared, Gmail, and why a decision failed', () => {
+  const preparing = [{ requestId: 'r2', aiName: 'Claude', question: 'When does my lease end?', label: 'Reading 2 files with the on-device model…', elapsedMs: 12_000 }];
+
+  it('sends them with each list to 0.1.1 and later, never to 0.1.0', () => {
+    for (const [version, extra] of [['0.1.1', { preparing, gmail: 'ended' }], ['0.1.0', {}]] as const) {
+      const { bridge, ports } = setup({ pending: [], extras: { preparing, gmail: 'ended' } });
+      bridge.start();
+      ports[0].receive({ ...ACK, extensionVersion: version });
+      expect(ports[0].sent[1]).toEqual({ type: 'sieve/pending', version: 1, proposals: [], ...extra });
+      bridge.sendResolved('r1', 'error', "Couldn't upload the file. Nothing was sent. Check your connection and try again.");
+      expect(ports[0].sent.at(-1)).toEqual({
+        type: 'sieve/resolved', version: 1, requestId: 'r1', outcome: 'error',
+        ...(version === '0.1.1' ? { message: "Couldn't upload the file. Nothing was sent. Check your connection and try again." } : {}),
+      });
+      bridge.stop();
+    }
   });
 });
 

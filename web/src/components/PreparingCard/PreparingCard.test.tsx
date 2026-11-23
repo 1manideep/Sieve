@@ -37,18 +37,46 @@ describe('PreparingCard', () => {
     expect(screen.getByText('Checking it before anything can be shared…')).toBeInTheDocument();
   });
 
-  it('adds the slow line after 3 seconds without an answer', () => {
-    render(<PreparingCard liveSteps={[reading]} answerPreview="" startedAt={Date.now()} onStop={() => undefined} progressSupported />);
-    const line = 'Gemini Nano is reading on this device. This usually takes about 10 seconds.';
-    expect(screen.queryByText(line)).toBeNull();
+  it('after 3 seconds: how long since the question and what is usual, then what happens next', () => {
+    const next = "You'll be asked to approve before anything is sent.";
+    render(<PreparingCard liveSteps={[reading]} answerPreview="" startedAt={Date.now()} onStop={() => undefined} progressSupported next={next} />);
+    expect(screen.queryByTestId('waiting-line')).toBeNull();
     act(() => {
       vi.advanceTimersByTime(2999);
     });
-    expect(screen.queryByText(line)).toBeNull();
+    expect(screen.queryByTestId('waiting-line')).toBeNull();
     act(() => {
       vi.advanceTimersByTime(2);
     });
-    expect(screen.getByText(line)).toBeInTheDocument();
+    expect(screen.getAllByTestId('waiting-line').map((p) => p.textContent)).toEqual([
+      'Asked 3 seconds ago. Answers usually take 20 seconds to a minute.',
+      next,
+    ]);
+    act(() => {
+      vi.advanceTimersByTime(62_000);
+    });
+    // Past a minute: why it may be slow, and what to do.
+    expect(screen.getAllByTestId('waiting-line').map((p) => p.textContent)).toEqual([
+      'Asked 1 min 5 s ago. Answers usually take 20 seconds to a minute.',
+      next,
+      'Taking longer than usual. The computer may be busy. Keep the Sieve tab open: it goes on by itself.',
+    ]);
+  });
+
+  it('names who it is for, and says when the on-device model is still being set up', () => {
+    render(
+      <PreparingCard liveSteps={[reading]} answerPreview="" startedAt={Date.now() - 90_000} onStop={() => undefined} progressSupported heading="Preparing an answer for Claude" setupPct={40} />,
+    );
+    expect(screen.getByRole('heading', { name: 'Preparing an answer for Claude' })).toBeInTheDocument();
+    expect(screen.getByText('The on-device model is still being set up (40%). Sieve answers once it is ready.')).toBeInTheDocument();
+    expect(screen.queryByText(/Taking longer than usual/)).toBeNull();
+  });
+
+  it('a step that says why it waits (a first click, a background tab) is not followed by the busy line', () => {
+    const click: LiveStep = { id: 'req-1:wait-click', kind: 'select', label: 'Waiting for you to click in this tab once', where: 'device', status: 'running', startedAt: 0 };
+    render(<PreparingCard liveSteps={[click]} answerPreview="" startedAt={Date.now() - 90_000} onStop={() => undefined} progressSupported />);
+    expect(screen.getByText('Asked 1 min 30 s ago. Answers usually take 20 seconds to a minute.')).toBeInTheDocument();
+    expect(screen.queryByText(/Taking longer than usual/)).toBeNull();
   });
 
   it('turns the tag blue when the reading runs in the cloud (sample data)', () => {
@@ -56,9 +84,9 @@ describe('PreparingCard', () => {
     expect(screen.getByText('Cloud · Gemini (sample data)')).toBeInTheDocument();
   });
 
-  it('without progress events: heading, the slow line from the start, an indeterminate bar and Stop', () => {
-    render(<PreparingCard liveSteps={[]} answerPreview="" startedAt={Date.now()} onStop={() => undefined} progressSupported={false} />);
-    expect(screen.getByText('Gemini Nano is reading on this device. This usually takes about 10 seconds.')).toBeInTheDocument();
+  it('without progress events: heading, an indeterminate bar and Stop', () => {
+    render(<PreparingCard liveSteps={[]} answerPreview="" startedAt={Date.now() - 5_000} onStop={() => undefined} progressSupported={false} />);
+    expect(screen.getByText('Asked 5 seconds ago. Answers usually take 20 seconds to a minute.')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
     expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
   });

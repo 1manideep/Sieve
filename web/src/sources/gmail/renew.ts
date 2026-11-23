@@ -29,6 +29,20 @@ let lastAttempt = Number.NEGATIVE_INFINITY;
 let listening = false;
 /** Chrome blocked the window a timer asked for: the timer does not ask again on this page. */
 let timerBlocked = false;
+const blockedListeners = new Set<() => void>();
+
+/** Chrome blocked the window the timer opened, so pop-ups are not allowed for this site; the Gmail notice says so. */
+export function renewBlockedByChrome(): boolean {
+  return timerBlocked;
+}
+
+/** Called once when the timer's window is blocked on this page. */
+export function onRenewBlocked(fn: () => void): () => void {
+  blockedListeners.add(fn);
+  return () => {
+    blockedListeners.delete(fn);
+  };
+}
 
 function onDocumentClick(): void {
   void renewInClick()?.catch(() => undefined);
@@ -71,8 +85,10 @@ export function renewOnTimer(now = Date.now()): Promise<void> | null {
   return requestGmailToken({ prompt: '', loginHint: t.account }).then(
     () => t.onToken(t.db),
     (e: unknown) => {
-      if (e instanceof SourceError && e.code === 'popup-blocked') timerBlocked = true;
-      else if (target === t) t.blocked = true;
+      if (e instanceof SourceError && e.code === 'popup-blocked') {
+        timerBlocked = true;
+        for (const fn of [...blockedListeners]) fn();
+      } else if (target === t) t.blocked = true;
       throw e;
     },
   );
@@ -100,4 +116,5 @@ export function resetGmailRenew(): void {
   setRenewTarget(null);
   lastAttempt = Number.NEGATIVE_INFINITY;
   timerBlocked = false;
+  blockedListeners.clear();
 }

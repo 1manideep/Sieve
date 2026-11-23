@@ -1,19 +1,17 @@
-// The notices above the Requests list (40 sections 11.4, 11.6, 13.5 and 13.8.9; 50 section 8.9; 70 R-MAIL-10).
+// The notices above the Requests list (40 sections 11.4, 11.6, 13.5 and 13.8.9; 50 section 8.9). Gmail access running
+// out (70 R-MAIL-10) shows on every page of the home base since Nov 23 (components/GmailAccess).
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, LinkButton } from '@/components/Button/Button';
-import { useDb } from '@/components/dbTables';
 import { Notice } from '@/components/Notice/Notice';
-import { REQUESTS, SOURCES, fillText } from '@/copy/screens-controls';
+import { REQUESTS, fillText } from '@/copy/screens-controls';
 import { STATUS_POPOVER } from '@/copy/strings';
 import { useAutoApprove } from '@/state/autoApprove';
 import { useGrants } from '@/state/grants';
 import { useHomeBase, type HomeBaseState } from '@/state/homeBase';
 import { useNetwork } from '@/state/network';
-import { useSources } from '@/state/sources';
 import { Fill, Iso } from '../settings/kit/Fill';
 import { formatClock } from '../settings/kit/when';
-import { useSourceRows } from '../sources/sourcesDb';
 import styles from './requests.module.css';
 
 /**
@@ -25,41 +23,6 @@ export const selectShortcut = (s: HomeBaseState): string | undefined => (s as Ho
 
 export const CONNECT_AI_HREF = '/settings?connect=1#ais';
 const MEMORY_SAVER_KEY = 'sieve.tip.memorySaver';
-
-/**
- * 70 R-MAIL-10: the Gmail token on this computer ran out and no tab renewed it (20 section 15.1). Answers still come
- * from mail already indexed, but new mail and the freshness check (the `source-unchecked` warning) wait for Continue;
- * the button runs the re-authorization straight from the click, as the Sources screen does (the Google popup needs
- * the gesture). Same tone and words as the Gmail card: a plain note, and the warning only when Google refused
- * read-only access after Continue.
- */
-export function GmailTokenBanner() {
-  const db = useDb('real');
-  const rows = useSourceRows(db);
-  const busy = useSources((s) => s.busy.gmail === true);
-  const gmail = rows?.find((r) => r.kind === 'gmail');
-  if (!gmail?.connected || !gmail.needsAuth) return null;
-  const refused = gmail.errorCode === 'auth-needed';
-  return (
-    <Notice
-      tone={refused ? 'warning' : 'info'}
-      actions={
-        <Button
-          variant="secondary"
-          size="sm"
-          busy={busy}
-          onClick={() => {
-            useSources.getState().reauthorize('gmail').catch(console.error);
-          }}
-        >
-          {SOURCES.continue}
-        </Button>
-      }
-    >
-      {refused ? SOURCES.needsAuthGmailRefused : SOURCES.needsAuthGmail}
-    </Notice>
-  );
-}
 
 export function RoleBanner({ onMakeHomeBase }: { onMakeHomeBase(): void }) {
   const role = useHomeBase((s) => s.role);

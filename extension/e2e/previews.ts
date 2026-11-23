@@ -1,6 +1,6 @@
 // ProposalPreview fixtures from the Playground persona (data/playground): the deposit email, the lease pets
 // clause, and a Money statement that asks first. Shared by the e2e specs and the unit tests.
-import type { LadderStep, ProposalPreview, StepOption } from '@sieve/shared';
+import type { LadderStep, PreparingPreview, ProposalPreview, StepOption } from '@sieve/shared';
 
 export function option(step: LadderStep, text: string, extra: Partial<StepOption> = {}): StepOption {
   return { step, text, chars: text.length, redactions: 0, available: true, ...extra };
@@ -75,3 +75,12 @@ export const STATEMENT: ProposalPreview = {
 export function variant(base: ProposalPreview, changes: Partial<ProposalPreview>): ProposalPreview {
   return { ...base, ...changes };
 }
+
+/** A request the home base is still preparing (since Nov 23): the lease question, on the reading step. */
+export const PREPARING_LEASE: PreparingPreview = {
+  requestId: 'req-lease-prep-1',
+  aiName: 'Planner',
+  question: 'When does my lease end?',
+  label: 'Reading 2 files with the on-device model…',
+  elapsedMs: 12_000,
+};

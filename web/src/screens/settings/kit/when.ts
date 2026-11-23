@@ -21,6 +21,14 @@ function startOfDay(at: number): number {
   return d.getTime();
 }
 
+/** "1 h 12 min", "18 min", "2 h": the time left on a timer, to the nearest minute and at least one (auto-approve). */
+export function formatLeft(ms: number): string {
+  const min = Math.max(1, Math.round(ms / 60_000));
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return h === 0 ? `${m} min` : m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
 /** "2:14 PM" */
 export function formatClock(at: number): string {
   return plain(clock.format(at));

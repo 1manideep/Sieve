@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MAX_PAYLOAD_CHARS } from '@sieve/shared';
 import type { ProposalPreview } from '@sieve/shared';
 import { LIMITS, parsePageMessage, parsePanelMessage, parsePreview, readPageMessage } from '../src/shared/validate';
-import { DEPOSIT, LEASE, STATEMENT, hello, pending, resolved, withId } from './fixtures';
+import { DEPOSIT, LEASE, PREPARING_LEASE, STATEMENT, hello, pending, resolved, withId } from './fixtures';
 
 type Loose = Record<string, unknown>;
 
@@ -166,6 +166,35 @@ describe('a newer page: values this build does not know (0.1.1)', () => {
     const hashed = { ...DEPOSIT, textHash: '0a1b2c3d4e5f6789' };
     expect(parsePreview(hashed)).toEqual(hashed);
     expect(parsePreview(DEPOSIT)).not.toHaveProperty('textHash');
+  });
+});
+
+describe('since Nov 23: requests being prepared, Gmail running out, the reason a decision failed', () => {
+  it('keeps the requests being prepared and the Gmail flag, with only their known fields', () => {
+    const extra = { ...PREPARING_LEASE, auto: true, wait: 'hidden', label: 'Reading 2 files with the on-device model…', secret: 'x' };
+    expect(parsePageMessage({ ...pending([DEPOSIT]), preparing: [extra], gmail: 'ended' })).toEqual({
+      ...pending([DEPOSIT]),
+      preparing: [{ ...PREPARING_LEASE, auto: true, wait: 'hidden' }],
+      gmail: 'ended',
+    });
+  });
+
+  it('leaves out a request being prepared it cannot read, an unknown wait and a second one with the same id; the list still counts', () => {
+    const read = readPageMessage({
+      ...pending([DEPOSIT]),
+      preparing: [{ ...PREPARING_LEASE, wait: 'later' }, { ...PREPARING_LEASE, aiName: '' }, PREPARING_LEASE, { ...PREPARING_LEASE, elapsedMs: -1, requestId: 'r2' }],
+      gmail: 'maybe',
+    });
+    expect(read).toEqual({ kind: 'message', msg: { ...pending([DEPOSIT]), preparing: [PREPARING_LEASE] }, skipped: 0 });
+    expect(parsePageMessage({ ...pending([]), preparing: 'none' })).toEqual(pending([]));
+  });
+
+  it("keeps the app's reason on resolved, and why auto-approve left a preview waiting", () => {
+    const reason = "Couldn't upload the file. Nothing was sent. Check your connection and try again.";
+    expect(parsePageMessage({ ...resolved('req-1', 'error'), message: reason })).toEqual({ ...resolved('req-1', 'error'), message: reason });
+    expect(parsePageMessage({ ...resolved('req-1', 'error'), message: 3 })).toEqual(resolved('req-1', 'error'));
+    expect(parsePreview({ ...DEPOSIT, autoWaits: 'file' })).toEqual({ ...DEPOSIT, autoWaits: 'file' });
+    expect(parsePreview({ ...DEPOSIT, autoWaits: 'someday' })).toEqual(DEPOSIT);
   });
 });
 

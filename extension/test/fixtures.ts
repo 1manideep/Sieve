@@ -2,9 +2,9 @@
 import { MESSAGE_VERSION } from '@sieve/shared';
 import type { ProposalPreview } from '@sieve/shared';
 import type { PanelState, Preview, ResolvedEntry } from '../src/shared/internal';
-import { DEPOSIT, LEASE, STATEMENT, option, variant } from '../e2e/previews';
+import { DEPOSIT, LEASE, PREPARING_LEASE, STATEMENT, option, variant } from '../e2e/previews';
 
-export { DEPOSIT, LEASE, STATEMENT, option, variant };
+export { DEPOSIT, LEASE, PREPARING_LEASE, STATEMENT, option, variant };
 export {
   DEPOSIT_ANSWER,
   DEPOSIT_EXCERPT,

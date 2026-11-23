@@ -199,6 +199,7 @@ export async function startGoogleSession(user: SessionUser): Promise<void> {
     },
     wasDiscarded,
     autoApprove: (grantId) => autoApproveOn(uid, grantId),
+    gmailEnded: () => useHomeBase.getState().gmailEnded,
     markAutoApproved: (receiptId, on) => markAutoApproved(uid, receiptId, on),
   });
   attachHomeBaseEngine(engine);

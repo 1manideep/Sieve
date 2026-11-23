@@ -198,7 +198,10 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
         return;
       }
       case 'sieve/pending': {
-        const { added, removed, changed } = hub.setPending(connId, msg.proposals);
+        const { added, removed, changed } = hub.setPending(connId, msg.proposals, {
+          ...(msg.preparing ? { preparing: msg.preparing } : {}),
+          ...(msg.gmail ? { gmail: msg.gmail } : {}),
+        });
         for (const id of removed) notifier.clear(id);
         for (const id of changed) clearSlow(id);
         const fresh = added
@@ -215,7 +218,7 @@ export function register(api: typeof chrome, deps: RegisterDeps = {}): Registere
         return;
       }
       case 'sieve/resolved': {
-        const { removed } = hub.resolved(connId, msg.requestId, msg.outcome);
+        const { removed } = hub.resolved(connId, msg.requestId, msg.outcome, msg.message);
         clearSlow(msg.requestId);
         notifier.clear(msg.requestId);
         for (const id of removed) notifier.clear(id);
