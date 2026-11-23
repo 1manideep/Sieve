@@ -5,13 +5,14 @@ import { DEVICE_MODEL_NAME } from './config';
 import type { Purpose } from './types';
 
 export const DEFAULT_TRACE_KIND: Record<Purpose, TraceKind> = {
-  label: 'label', 'select-answer': 'select', 'verify-answer': 'answer', 'search-words': 'retrieve', caption: 'caption', draft: 'draft', 'injection-check': 'injection', 'pii-check': 'pii',
+  label: 'label', 'select-answer': 'select', 'verify-answer': 'answer', 'yes-no': 'answer', 'search-words': 'retrieve', caption: 'caption', draft: 'draft', 'injection-check': 'injection', 'pii-check': 'pii',
 };
 
 export const PURPOSE_NAME: Record<Purpose, string> = {
   label: 'Sorting',
   'select-answer': 'Reading and answering',
   'verify-answer': 'Checking the answer',
+  'yes-no': 'Reading the answer as yes or no',
   'search-words': 'Thinking of other search words',
   caption: 'Describing the photo',
   draft: 'Drafting',

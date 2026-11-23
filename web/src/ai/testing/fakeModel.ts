@@ -110,6 +110,9 @@ function reply(spec: ModelSpec, prompt: string, recordIds: string[], fault: stri
       return selectReply(prompt, recordIds, fault);
     case 'verify-answer':
       return verifyReply(prompt, fault);
+    case 'yes-no':
+      // the sentence of the prompt, read by its plainest sign
+      return JSON.stringify({ answer: /\b(?:not|no|never|n't)\b|n’t/i.test(/Sentence: (.*)/.exec(prompt)?.[1] ?? '') ? 'no' : 'yes' });
     case 'search-words':
       return JSON.stringify({ words: [] });
     case 'caption':

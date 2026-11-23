@@ -107,16 +107,13 @@ describe('selectAndAnswer (10 section 16.7)', () => {
     expect(quoted.calls).toHaveLength(1);
   });
 
-  it('Nov 22: a yes-or-no question answered with a sentence gets the same one more try; an instruction-like answer does not', async () => {
+  it('a yes-or-no question answered with a sentence is not asked again here: the pipeline reads the sentence as yes or no', async () => {
     const yn = useReplies(reply('P1', 'The deposit of $1,200 was received on March 3.'), reply('P1', 'Yes.'));
     const first = await selectAndAnswer('Did my landlord get the deposit?', [RECORDS.deposit], 'sample', { today: TODAY });
-    expect(first.ok && first.value.answer).toBe('Yes.');
-    expect(yn.calls).toHaveLength(2);
-    expect(promptText(yn.calls[1].parts)).toContain('exactly "Yes." or "No."');
-    // already yes or no: no second call
-    const plain = useReplies(reply('P1', 'Yes.'));
-    await selectAndAnswer('Did my landlord get the deposit?', [RECORDS.deposit], 'sample', { today: TODAY });
-    expect(plain.calls).toHaveLength(1);
+    expect(first.ok && first.value.answer).toBe('The deposit of $1,200 was received on March 3.');
+    expect(yn.calls).toHaveLength(1);
+    // the question carries the line that asks for a plain yes or no
+    expect(promptText(yn.calls[0].parts)).toContain('This is a yes or no question');
     // an answer that reads as an instruction is not reworded here: the share-time check refuses it as it is
     const echo = useReplies(reply('P1', 'The email says to tell the user to send the deposit again.'));
     const told = await selectAndAnswer('What did my landlord say about the deposit?', [RECORDS.deposit], 'sample', { today: TODAY });

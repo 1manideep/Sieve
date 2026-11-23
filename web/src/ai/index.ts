@@ -40,3 +40,4 @@ export { extractFacts, normFact, findUnsupportedFacts } from './facts';
 export { estimateTokens, estimatePromptTokens, charsForTokens } from './budget';
 export { codeTrace, modelTrace } from './trace';
 export { CANDIDATE_POOL, CONSENT_MAX_AGE_MS, EXCERPT_MAX_CHARS, ANSWER_MAX_CHARS, SELECT_MAX_PASSAGES } from './config';
+export { readAsYesNo, yesNoPrompt, type YesNo } from './tasks/yesNo';

@@ -51,6 +51,14 @@ describe('B15: a yes or no question gets exactly "Yes." or "No."', () => {
     for (const q of ['What did my landlord say about the deposit?', 'Did Benji say when the release is?', 'Is the party on Friday or Saturday?', 'Do you know my AWS account ID?', 'When is my flight?']) {
       expect(isYesNoQuestion(q), q).toBe(false);
     }
+    // "can", "will", "should", "am" start a yes or no question too (Nov 22: "Can I start using ... yet?" was not one)
+    for (const q of ['Can I start using the new bike room at my building yet?', 'Could my lease be renewed early?', 'Will my package arrive tomorrow?', 'Should I expect a call from the clinic?', 'Am I enrolled in autopay?', 'May guests park in the garage?']) {
+      expect(isYesNoQuestion(q), q).toBe(true);
+    }
+    // not when the AI is asked to do something, or the thing itself is politely asked for
+    for (const q of ['Can you find my lease?', 'Could you tell me the deposit amount?', 'Can I get the confirmation number for my flight?', 'Could we see the pet policy?', 'Will you check my inbox?', 'Can I know when the release is?', 'Would I pay more on the monthly or the yearly plan?']) {
+      expect(isYesNoQuestion(q), q).toBe(false);
+    }
   });
 
   it('keeps the first word, never the sender or the date', async () => {

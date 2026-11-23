@@ -9,8 +9,8 @@ import type {
   Candidate, Category, CategoryRule, IndexRecord, KnownEntity, Proposal, ProposalOutcome, QueryHints, StepOption, TraceKind, TraceStep, Warning, Where,
 } from '@sieve/shared';
 import {
-  CANDIDATE_POOL, CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, answerKind, answersKind, codeTrace, deriveExcerpt, excerptBasis, fitPassages, getNanoAvailability, hasFreshConsent,
-  recordBody, repeatsExample, searchWords, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
+  CANDIDATE_POOL, CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, answerKind, answersKind, codeTrace, deriveExcerpt, excerptBasis, extractFacts, fitPassages, getNanoAvailability, hasFreshConsent,
+  normFact, readAsYesNo, recordBody, repeatsExample, searchWords, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
 } from '@/ai';
 import {
   asksCount, asksLatest, asksSeveral, asksState, clockFor, dictionaryReady, flushUrgentEmbeds, getRecord, identifierTerms, knownOrgsOf, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
@@ -20,7 +20,7 @@ import { asksSaid, describesOnlySender, holdsTopic, titleSaysAskedKind, topicTer
 import { iso } from '@/index/dates';
 import { stashFile } from './fileStash';
 import { originalFor } from './original';
-import { repairAskedNumbers } from './askedNumbers';
+import { repairLongNumbers } from './askedNumbers';
 import { anchorRelativeDays } from './relativeDays';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
 import { isYesNoQuestion } from '@/privacy/steps/answerShape';
@@ -753,8 +753,22 @@ async function prepare(run: Run): Promise<Proposal> {
       run.code('rule', LABELS.exampleRepeated);
       return run.why(`answer-repeats-prompt-example-r${list.indexOf(pick) + 1}-c${readCode(list)}`).blockedOrNoMatch(neverBlocked);
     }
-    // A long number the asker gave, written a digit off: the asker's own number goes back in.
-    const repaired = repairAskedNumbers(res.value.answer, [...(hints?.terms ?? []), lookup], `${pick.rec.title} ${recordBody(pick.rec)}`);
+    // A yes or no question answered with a sentence: one small call reads the sentence as yes or no. Asked to write
+    // "No." itself the on-device model wrote a sentence for half of such answers, and asked again it gave up.
+    if (isYesNoQuestion(lookup) && !/^\W*(?:yes|yeah|yep|no|nope)\b/i.test(res.value.answer)) {
+      const pickData = recordDataClass(pick.rec);
+      const yesNoId = run.start('answer', RUNNING.yesNo, nano.text === 'available' ? 'device' : pickData === 'sample' ? 'cloud' : 'code');
+      const read = await readAsYesNo(lookup, res.value.answer, pickData, { ...(input.signal ? { signal: input.signal } : {}), ownCloud });
+      if (!read.ok && (read.error.code === 'aborted' || run.aborted)) {
+        run.end(yesNoId, read.trace);
+        return run.stopped();
+      }
+      const said = read.ok && read.value !== 'unclear' ? read.value : undefined;
+      run.end(yesNoId, { ...read.trace, label: said ? LABELS.yesNoRead(said) : LABELS.yesNoUnclear });
+      if (said) res.value.answer = said === 'yes' ? 'Yes.' : 'No.';
+    }
+    // A long number of the question or of the item, written a digit off: the real number goes back in.
+    const repaired = repairLongNumbers(res.value.answer, [...(hints?.terms ?? []), lookup], `${pick.rec.title} ${recordBody(pick.rec)}`);
     if (repaired !== res.value.answer) {
       res.value.answer = repaired;
       run.code('clean', LABELS.numberRepaired);
@@ -848,6 +862,12 @@ async function prepare(run: Run): Promise<Proposal> {
       excerpt = d.excerpt;
       unsupported = d.unsupported;
     }
+  }
+  // A fact the item's subject line holds, or one the asker typed, is not unverified: a job number that stood only in
+  // the subject was marked as not found in the item (Nov 22, 2026).
+  if (unsupported.length > 0) {
+    const elsewhere = new Set(extractFacts(`${rec.title} ${lookup}`).map(normFact));
+    unsupported = unsupported.filter((f) => !elsewhere.has(normFact(f)));
   }
   run.code('excerpt', (excerpt ? LABELS.excerptChosen : LABELS.excerptNone) + (unsupported.length ? LABELS.excerptUnsupported(unsupported) : ''));
   if (unsupported.length) run.setUnverified(WARNINGS.unverified(unsupported));

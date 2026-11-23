@@ -61,13 +61,13 @@ export const TIMING = {
 };
 
 export const TIMEOUT_MS: Record<Purpose, number> = {
-  'select-answer': 45000, 'verify-answer': 30000, 'search-words': 6000, label: 60000, caption: 60000, draft: 30000, 'injection-check': 30000, 'pii-check': 30000,
+  'select-answer': 45000, 'verify-answer': 30000, 'yes-no': 15000, 'search-words': 6000, label: 60000, caption: 60000, draft: 30000, 'injection-check': 30000, 'pii-check': 30000,
 };
 export const MAX_OUTPUT_TOKENS: Record<Purpose, number> = {
-  'select-answer': 256, 'verify-answer': 128, 'search-words': 96, label: 1200, caption: 128, draft: 600, 'injection-check': 256, 'pii-check': 1024,
+  'select-answer': 256, 'verify-answer': 128, 'yes-no': 32, 'search-words': 96, label: 1200, caption: 128, draft: 600, 'injection-check': 256, 'pii-check': 1024,
 };
 export const DEFAULT_PRIORITY: Record<Purpose, Priority> = {
-  'select-answer': 'foreground', 'verify-answer': 'foreground', 'search-words': 'foreground', draft: 'foreground', caption: 'background', label: 'background',
+  'select-answer': 'foreground', 'verify-answer': 'foreground', 'yes-no': 'foreground', 'search-words': 'foreground', draft: 'foreground', caption: 'background', label: 'background',
   'injection-check': 'background', 'pii-check': 'background',
 };
 

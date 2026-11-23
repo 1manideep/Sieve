@@ -49,12 +49,14 @@ function input(over: Partial<PrepareInput> = {}): PrepareInput {
   };
 }
 
-/** select picks `item`; verify says `answers`. */
-function model(item: string, answer: string, answers = true) {
+/** select picks `item`; verify says `answers`; a sentence given to a yes or no question is read as `yesNo`. */
+function model(item: string, answer: string, answers = true, yesNo: 'yes' | 'no' | 'unclear' = 'unclear') {
   hybrid = createFakeHybrid((spec) =>
     spec.purpose === 'verify-answer'
       ? { text: JSON.stringify({ answers, reason: answers ? 'The passage states it.' : 'A pickup date is not a vet visit.' }), source: 'on_device' }
-      : { text: JSON.stringify({ item, answer }), source: 'on_device' },
+      : spec.purpose === 'yes-no'
+        ? { text: JSON.stringify({ answer: yesNo }), source: 'on_device' }
+        : { text: JSON.stringify({ item, answer }), source: 'on_device' },
   );
   setHybridForTests(hybrid);
 }
@@ -229,6 +231,51 @@ describe('the tester cases (Nov 20)', () => {
     expect(p.options[0].text).not.toContain('31077205');
     // the second check reads the answer with the asked number in it
     expect(promptText(hybrid.callsFor('verify-answer')[0].parts)).toContain('Proposed answer: Your application for job number 310774205 was not selected.');
+  });
+
+  it('a number that stands only in the subject line, or that the asker typed, is not marked as unverified', async () => {
+    const status = record({ id: 'gmail:job-subject', source: 'gmail', title: 'Your job application status (Job number: 310774205)', from: 'Lumora Talent <talent@careers.lumora.example>', category: 'Work', date: T - 30 * DAY, text: 'Thank you for applying. We are sorry to let you know that we are moving forward with other candidates.' });
+    idx.records.set(status.id, status);
+    idx.search.mockResolvedValue([idx.cand(status.id)]);
+    model('P1', 'Your application for job number 310774205 was not selected.');
+    const p = await prepareProposal(input({ question: 'What is the status of my application for job number 310774205?', hints: { terms: ['310774205'] } }));
+    expect(p.outcome).toBe('ready');
+    expect(p.warnings.some((w) => /310774205/.test(w.message))).toBe(false);
+    // a number that is nowhere (not the item, its subject or the question) still is
+    model('P1', 'Your application for job number 310774205 was not selected on 4471 grounds.');
+    const q = await prepareProposal(input({ question: 'What is the status of my application for job number 310774205?', hints: { terms: ['310774205'] } }));
+    expect(q.warnings.some((w) => /4471/.test(w.message))).toBe(true);
+  });
+
+  it('a yes or no question answered with a sentence is read as yes or no by one small call (Nov 22, R13)', async () => {
+    const bins = record({ id: 'gmail:bins', source: 'gmail', title: 'Update on the new bike room', from: 'Birchwood Residents <office@birchwood.example>', category: 'Home', date: T - 20 * DAY, text: 'Hello residents, the new bike room is not ready for use yet. We are waiting for the racks to be delivered. Please keep using the old room.' });
+    idx.records.set(bins.id, bins);
+    idx.search.mockResolvedValue([idx.cand(bins.id)]);
+    model('P1', 'The new bike room is not ready for use yet.', true, 'no');
+    const p = await prepareProposal(input({ question: 'Can I start using the new bike room at my building yet?' }));
+    expect(p.outcome).toBe('ready');
+    // one answer call (no second try), one reading call that gets the question and the sentence and nothing of the item
+    expect(hybrid.callsFor('select-answer')).toHaveLength(1);
+    const reading = hybrid.callsFor('yes-no');
+    expect(reading).toHaveLength(1);
+    expect(promptText(reading[0].parts)).toBe('Question: Can I start using the new bike room at my building yet?\nSentence: The new bike room is not ready for use yet.');
+    // the second check and the answer both carry the plain "No."
+    expect(promptText(hybrid.callsFor('verify-answer')[0].parts)).toContain('Proposed answer: No.');
+    expect(p.options[0].text).toBe('No.');
+    expect(labels(p)).toContain('The answer was a sentence; read as "No."');
+
+    // already yes or no: no reading call
+    model('P1', 'No.', true, 'yes');
+    const plain = await prepareProposal(input({ question: 'Can I start using the new bike room at my building yet?' }));
+    expect(hybrid.callsFor('yes-no')).toHaveLength(0);
+    expect(plain.options[0].text).toBe('No.');
+
+    // a sentence that does not settle it stays a sentence (the share-time check then withholds it, as before)
+    model('P1', 'The racks for the new bike room are on order.', true, 'unclear');
+    const open = await prepareProposal(input({ question: 'Can I start using the new bike room at my building yet?' }));
+    expect(hybrid.callsFor('yes-no')).toHaveLength(1);
+    expect(labels(open)).toContain('The answer was a sentence that does not say yes or no');
+    expect(promptText(hybrid.callsFor('verify-answer')[0].parts)).toContain('Proposed answer: The racks for the new bike room are on order.');
   });
 
   it('a "when" question answered with no date or number in it shares nothing', async () => {

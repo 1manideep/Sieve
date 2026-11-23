@@ -10,19 +10,24 @@ export type AnswerShape = { ok: true; text: string } | { ok: false; reason: 'one
 
 // ---------- the question ----------
 
-const YES_NO_START = /^\W*(?:(?:hey|hi|ok|okay|so|and|please|quick question)[\s,:]+)*(?:did|does|do|is|are|was|were|has|have|had)\b/i;
+const YES_NO_START = /^\W*(?:(?:hey|hi|ok|okay|so|and|please|quick question)[\s,:]+)*(?:did|does|do|is|are|am|was|were|has|have|had|can|could|will|would|should|may)\b/i;
 const YES_NO_SAID = /\byes\s*(?:or|\/)\s*no\b/i;
-const ASKS_THE_AI = /^\W*(?:(?:hey|hi|ok|okay|so|please)[\s,:]+)*(?:do|did|does)\s+you\b/i;
+const ASKS_THE_AI = /^\W*(?:(?:hey|hi|ok|okay|so|please)[\s,:]+)*(?:do|did|does|can|could|will|would|should|may)\s+you\b/i;
+// "Can I get the confirmation number", "could we see the lease": a polite way to ask for the thing itself, not yes or no.
+const ASKS_FOR_IT = /^\W*(?:(?:hey|hi|ok|okay|so|please)[\s,:]+)*(?:can|could|will|would|may)\s+(?:i|we)\s+(?:please\s+)?(?:get|have|see|know|find|check|hear|read|ask|look)\b/i;
 const WH = /\b(?:what|what's|whats|when|where|which|who|whom|whose|why|how)\b/i;
 
 /**
- * "Did", "is", "was", "has", "do I have", or "yes or no" (11 section 10.3a). Not when it asks for a value inside
- * ("Did Benji say when the release is?"), offers a choice ("Friday or Saturday?") or asks the AI to do something.
+ * "Did", "is", "was", "has", "do I have", "can I", "will my", or "yes or no" (11 section 10.3a). Not when it asks for
+ * a value inside ("Did Benji say when the release is?"), offers a choice ("Friday or Saturday?"), asks the AI to do
+ * something ("can you find") or politely asks for the thing itself ("can I get the confirmation number").
+ * "Can I start using the new bins yet?" was not counted, so its answer came as a sentence that the second check
+ * refused 7 times in 10; a plain "No." passed 8 in 10 (on-device model, Nov 22, 2026).
  */
 export function isYesNoQuestion(question: string): boolean {
   const q = question.trim();
   if (YES_NO_SAID.test(q)) return true;
-  if (!YES_NO_START.test(q) || ASKS_THE_AI.test(q)) return false;
+  if (!YES_NO_START.test(q) || ASKS_THE_AI.test(q) || ASKS_FOR_IT.test(q)) return false;
   return !WH.test(q) && !/\bor\b/i.test(q);
 }
 

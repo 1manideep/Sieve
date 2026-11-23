@@ -26,7 +26,7 @@ describe('the select prompt and the answer shape', () => {
     expect(SELECT_SYSTEM).toContain('One fact only');
     expect(SELECT_SYSTEM).toContain('Never copy the subject line unless the question asks for it.');
     expect(SELECT_SYSTEM).toContain('gets exactly "Yes." or "No."');
-    expect(PROMPT_VERSIONS.select).toBe(3);
+    expect(PROMPT_VERSIONS.select).toBe(4);
     expect(VERIFY_SYSTEM).toContain('A proposed answer of "Yes." or "No." is true only if the passage shows that answer to the question.');
     expect(PROMPT_VERSIONS.verify).toBe(3);
   });

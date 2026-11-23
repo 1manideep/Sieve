@@ -17,7 +17,7 @@ import {
 } from '../config';
 import { extractFacts, normFact, normalizedFacts } from '../facts';
 import { partialJsonString } from '../json';
-import { RESHAPE_REMINDER, RETRY_REMINDER, SELECT_CLOUD_SCHEMA, SELECT_EXAMPLE, SELECT_SCHEMA, SELECT_SYSTEM, YES_NO_REMINDER, madeUpReminder } from '../prompts';
+import { RESHAPE_REMINDER, RETRY_REMINDER, SELECT_CLOUD_SCHEMA, SELECT_EXAMPLE, SELECT_SCHEMA, SELECT_SYSTEM, madeUpReminder } from '../prompts';
 import { runModel } from '../runModel';
 import { cleanModelSentence, collapseWhitespace, escapeDelimiters, localDay, promptField, sentences, stems, type Range } from '../text';
 import { codeTrace } from '../trace';
@@ -508,7 +508,6 @@ export async function selectAndAnswer(
   // item) gets one more try with a line that says what to change. The second answer is taken as it comes: the checks
   // after this call still decide. Before, an open "what did they say about ..." question ended as unsupported in two test
   // runs of three because the first answer held several facts (Nov 22, 2026).
-  // The same one try for a yes-or-no question answered with a sentence, which the share-time check also refuses.
   // An answer that reads as an instruction is never asked for again here: that refusal stands.
   let reminder: string | undefined;
   const run = () =>
@@ -541,10 +540,8 @@ export async function selectAndAnswer(
             reminder = RESHAPE_REMINDER;
             return null;
           }
-          if (!shape.ok && shape.reason === 'not-yes-no') {
-            reminder = YES_NO_REMINDER;
-            return null;
-          }
+          // a yes or no question answered with a sentence is taken as it is: the pipeline reads the sentence as yes or no
+          if (!shape.ok && shape.reason === 'not-yes-no') return v;
           // "how much" answered with a date, "when" answered with no day in it: one more try, then the check after this call decides
           if (!isYesNoQuestion(question) && !answersKind(question, answer)) {
             reminder = kindReminder(question);
