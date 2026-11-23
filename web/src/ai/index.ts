@@ -7,7 +7,7 @@ export type { DataClass, ModelError, ModelErrorCode, OwnCloudPolicy, Priority, P
 export { runModel, getPolicyBreaches, RETRY_REMINDER } from './runModel';
 export { labelBatch, parseLabels, labelPrompt, type LabelBatchResult, type LabelItem } from './tasks/label';
 export {
-  selectAndAnswer, recordBody, fitPassages, deriveExcerpt, excerptBasis, bestWindow, snapToSentences, selectPrompt, countNoun, answerKind, answersKind, madeUpFacts,
+  selectAndAnswer, recordBody, fitPassages, deriveExcerpt, excerptBasis, bestWindow, snapToSentences, selectPrompt, countNoun, answerKind, answersKind, madeUpFacts, repeatsExample,
   type Passage, type PassageRange, type SelectOptions, type SelectValue,
 } from './tasks/select';
 export { verifyAnswer, verifyPrompt, type VerifyOptions, type VerifyValue } from './tasks/verify';

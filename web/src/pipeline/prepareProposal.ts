@@ -10,7 +10,7 @@ import type {
 } from '@sieve/shared';
 import {
   CANDIDATE_POOL, CONSENT_MAX_AGE_MS, SELECT_MAX_PASSAGES, answerKind, answersKind, codeTrace, deriveExcerpt, excerptBasis, fitPassages, getNanoAvailability, hasFreshConsent,
-  recordBody, searchWords, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
+  recordBody, repeatsExample, searchWords, selectAndAnswer, verifyAnswer, type OwnCloudPolicy, type PassageRange, type RunModelResult, type SelectValue,
 } from '@/ai';
 import {
   asksCount, asksLatest, asksSeveral, asksState, clockFor, dictionaryReady, flushUrgentEmbeds, getRecord, identifierTerms, knownOrgsOf, knownSendersOf, parseQuestion, relatedFor, removeRecord, search,
@@ -20,6 +20,7 @@ import { asksSaid, describesOnlySender, holdsTopic, titleSaysAskedKind, topicTer
 import { iso } from '@/index/dates';
 import { stashFile } from './fileStash';
 import { originalFor } from './original';
+import { repairAskedNumbers } from './askedNumbers';
 import { anchorRelativeDays } from './relativeDays';
 import { buildStepOption, checkOutgoing, holdsSecretCode, itemTouchesSensitiveTopic, privacyWarnings, touchesSensitiveTopic } from '@/privacy';
 import { isYesNoQuestion } from '@/privacy/steps/answerShape';
@@ -745,6 +746,18 @@ async function prepare(run: Run): Promise<Proposal> {
     if (!pick) {
       run.errorCode = 'pick-not-listed';
       return run.finish('error');
+    }
+    // The amount of the answer prompt's own example in the answer, when the item does not hold it: the model repeated
+    // its instructions. It had one more try in the answer step; this is never shared.
+    if (repeatsExample(res.value.answer, pick.rec, lookup, today)) {
+      run.code('rule', LABELS.exampleRepeated);
+      return run.why(`answer-repeats-prompt-example-r${list.indexOf(pick) + 1}-c${readCode(list)}`).blockedOrNoMatch(neverBlocked);
+    }
+    // A long number the asker gave, written a digit off: the asker's own number goes back in.
+    const repaired = repairAskedNumbers(res.value.answer, [...(hints?.terms ?? []), lookup], `${pick.rec.title} ${recordBody(pick.rec)}`);
+    if (repaired !== res.value.answer) {
+      res.value.answer = repaired;
+      run.code('clean', LABELS.numberRepaired);
     }
     // 12a. Freshness, before any step option is built.
     const freshId = run.start('retrieve', RUNNING.fresh, 'code');

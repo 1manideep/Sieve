@@ -202,6 +202,35 @@ describe('the tester cases (Nov 20)', () => {
     expect(p.options[0].text).toContain('on November 6, 2026 from 10:30 AM');
   });
 
+  it('an answer that repeats the amount of the prompt\'s own example shares nothing', async () => {
+    const order = record({ id: 'gmail:order-lumora', source: 'gmail', title: 'Your Lumora order', from: 'Lumora <no-reply@mail.lumora.example>', category: 'Shopping', date: T - 12 * DAY, text: 'Thanks for your order. We charged $18.40 to the card ending 4417. Your items arrive in 3 to 5 days.' });
+    idx.records.set(order.id, order);
+    idx.search.mockResolvedValue([idx.cand(order.id)]);
+    // the same on both tries: the item holds no "$1,200", so the model took it from its instructions
+    model('P1', 'You were charged $1,200.');
+    const p = await prepareProposal(input({ question: 'How much did Lumora charge me?' }));
+    expect(hybrid.callsFor('select-answer')).toHaveLength(2);
+    expect(p.outcome).toBe('no-match');
+    expect(p.reasonCode).toMatch(/^answer-repeats-prompt-example-r1-c[\w-]{1,4}$/);
+    expect(hybrid.callsFor('verify-answer')).toHaveLength(0);
+    // with the item's own amount, the same item answers
+    model('P1', 'You were charged $18.40.');
+    expect((await prepareProposal(input({ question: 'How much did Lumora charge me?' }))).outcome).toBe('ready');
+  });
+
+  it('a long number the asker gave, written a digit off in the answer, is written back (Nov 22, B05)', async () => {
+    const status = record({ id: 'gmail:job-status', source: 'gmail', title: 'Your application: AI Research Associate', from: 'Lumora Talent <talent@careers.lumora.example>', category: 'Work', date: T - 30 * DAY, text: 'Thank you for applying to job 310774205. We are sorry to let you know that we are moving forward with other candidates.' });
+    idx.records.set(status.id, status);
+    idx.search.mockResolvedValue([idx.cand(status.id)]);
+    model('P1', 'Your application for job number 31077205 was not selected.');
+    const p = await prepareProposal(input({ question: 'What is the status of my application for job number 310774205?', hints: { terms: ['310774205'] }, requester: OUTSIDE }));
+    expect(p.outcome).toBe('ready');
+    expect(p.options[0].text).toContain('310774205');
+    expect(p.options[0].text).not.toContain('31077205');
+    // the second check reads the answer with the asked number in it
+    expect(promptText(hybrid.callsFor('verify-answer')[0].parts)).toContain('Proposed answer: Your application for job number 310774205 was not selected.');
+  });
+
   it('a "when" question answered with no date or number in it shares nothing', async () => {
     const shop = record({ id: 'gmail:plan-shop', source: 'gmail', title: 'Your bike is ready Saturday', from: 'Dana Hill <dana@oakhillcycles.example>', category: 'Personal', date: T - 25 * DAY, text: 'Pickup is Saturday at 11 AM. The free service plan starts on pickup day, after you take it home.' });
     idx.records.set(shop.id, shop);

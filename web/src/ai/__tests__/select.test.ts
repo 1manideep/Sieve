@@ -6,7 +6,7 @@ import { setLanguageModelForTests } from '../device/languageModel';
 import { extractFacts } from '../facts';
 import { setHybridForTests } from '../hybrid';
 import { SELECT_EXAMPLE, SELECT_SCHEMA, SELECT_SYSTEM } from '../prompts';
-import { answerKind, answersKind, bestWindow, deriveExcerpt, fitPassages, madeUpFacts, selectAndAnswer, selectPrompt } from '../tasks/select';
+import { answerKind, answersKind, bestWindow, deriveExcerpt, fitPassages, madeUpFacts, repeatsExample, selectAndAnswer, selectPrompt } from '../tasks/select';
 import { parseWords } from '../tasks/words';
 import { createFakeHybrid, promptText, type FakeReply } from '../testing/fakeHybrid';
 import { installFakeLanguageModel } from '../testing/fakeLanguageModel';
@@ -177,9 +177,13 @@ describe('selectAndAnswer (10 section 16.7)', () => {
     const plain = record({ ...item, id: 'gmail:order-plain', text: 'Your order has shipped. Total: $18.40.' });
     expect(madeUpFacts('It ships on November 11.', plain, q, TODAY)).toEqual(['November 11']);
 
-    // the prompt's own example holds no date and no amount, so there is nothing of it to copy into an answer
-    expect(extractFacts(SELECT_EXAMPLE)).toEqual([]);
+    // the prompt's own example is one fact, an amount, with no date to copy
+    expect(extractFacts(SELECT_EXAMPLE)).toEqual(['$1,200']);
     expect(SELECT_SYSTEM).toContain(`such as "${SELECT_EXAMPLE}"`);
+    // its amount in an answer counts as repeated only when the item does not hold it
+    expect(repeatsExample('Your total was $1,200.', item, q, TODAY)).toBe('$1,200');
+    expect(repeatsExample('It ships on July 9 for $21.00.', item, q, TODAY)).toBeUndefined();   // made up, but not the example's
+    expect(repeatsExample('Your deposit was $1,200.', RECORDS.deposit, 'How much was my deposit?', TODAY)).toBeUndefined();
   });
 
   it('Nov 22: an answer with several facts, or one copied from the item, gets one more try that says what to change', async () => {
