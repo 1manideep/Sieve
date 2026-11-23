@@ -84,6 +84,7 @@ export const LABELS = {
   exampleRepeated: 'The answer held an amount from the instructions the model was given, not from the item, so nothing is shared',
   numberRepaired: 'A long number in the answer was a digit off the one in the item or the question; the real number is written',
   verifyYes: 'The item answers the question',
+  verifySkipped: (why: 'number' | 'newest') => (why === 'number' ? 'Not checked again: this is the only item that holds the number you gave' : 'Not checked again: this is the newest email from the sender you named'),
   yesNoRead: (answer: 'yes' | 'no') => `The answer was a sentence; read as "${answer === 'yes' ? 'Yes.' : 'No.'}"`,
   yesNoUnclear: 'The answer was a sentence that does not say yes or no',
   verifyNo: 'The item does not answer the question',

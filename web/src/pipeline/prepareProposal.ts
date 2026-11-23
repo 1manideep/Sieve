@@ -324,6 +324,22 @@ export function latestOrder<T extends { rec: IndexRecord }>(list: T[], filters: 
   return [...list.slice(0, LATEST_RELEVANT).sort(newest), ...list.slice(LATEST_RELEVANT)];
 }
 
+/**
+ * The asker gave exact identifiers (an order, booking, invoice or job number) and this item is the only candidate
+ * that holds every one of them, in its subject or its text. Only identifiers with a digit and at least five
+ * characters count: a word or a short number says too little.
+ */
+export function numberOnlyIn(chosen: IndexRecord, list: readonly { rec: IndexRecord }[], terms: readonly string[] | undefined): boolean {
+  const ids = (terms ?? []).map((t) => t.trim()).filter((t) => t.length >= 5 && /\d/.test(t));
+  if (ids.length === 0) return false;
+  const compact = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const holds = (r: IndexRecord) => {
+    const text = compact(`${r.title} ${recordBody(r)}`);
+    return ids.every((t) => text.includes(compact(t)));
+  };
+  return holds(chosen) && list.every((a) => a.rec.id === chosen.id || !holds(a.rec));
+}
+
 /** A subject line with its numbers and its day and month words taken out: issues of one recurring email share it. */
 function titleTemplate(title: string): string {
   return title
@@ -562,6 +578,8 @@ async function prepare(run: Run): Promise<Proposal> {
   if (screened.label) run.code('rule', screened.label);
   const { neverBlocked } = screened;
   let allowed = screened.allowed;
+  // every candidate a model may read, before any step below narrows the list (12b compares the pick with all of them)
+  const screenedAll = screened.allowed;
   if (allowed.length === 0) return run.why('rules-held-every-candidate').blockedOrNoMatch(neverBlocked);
   // A held item explains an empty result only when it was a better match than everything a model may read. When an
   // item that may be read ranked ahead of it and no answer came of that, the result is "nothing matched" with its own
@@ -576,12 +594,16 @@ async function prepare(run: Run): Promise<Proposal> {
 
   // 6a. "The latest": newest first among the candidates that match (latestOrder).
   const latest = asksLatest(lookup);
+  // The sender's newest is the item meant ("what did Ivo ask in his latest email"): only it is read, and the second
+  // check is not asked whether it is the one (see 12b).
+  let newestOfSender = false;
   if (latest && allowed.length > 1) {
     allowed = latestOrder(allowed, filters, lookup);
     run.code('retrieve', LABELS.newestFirst);
     if (newestIsMeant(allowed, filters, lookup)) {
       allowed = allowed.slice(0, 1);
       run.code('retrieve', LABELS.newestOnly);
+      newestOfSender = Boolean(filters?.sender);
     }
   }
 
@@ -837,19 +859,28 @@ async function prepare(run: Run): Promise<Proposal> {
   // nothing to share. A check that could not run leaves the answer for the person to read, with a warning.
   if (run.aborted) return run.stopped();
   const chosenData = recordDataClass(chosen);
-  const verifyId = run.start('answer', RUNNING.verify, nano.text === 'available' ? 'device' : chosenData === 'sample' ? 'cloud' : 'code');
   // "Today" and "tomorrow" in the answer mean the item's day: when the item is not from today, the date is written.
   // Written before the second check reads it: the check refused "is today from 10:30 AM" from a two-week-old email
   // because "the date in the email is not today" (1 of 10 on the on-device model; 0 of 10 with the date, Nov 22, 2026).
   const answer = anchorRelativeDays(value.answer, chosen.date, run.now);
-  const checked = await verifyAnswer(lookup, chosen, answer, chosenData, {
+  // Not asked when plain code already knows the item is the one meant: it holds the exact number the asker gave and no
+  // other candidate does, or it is the newest from the sender a "latest" question names. On such items the check
+  // refused right answers about 2 times in 3 ("the job number is for a different company", Nov 23, 2026).
+  const certain = numberOnlyIn(chosen, screenedAll, hints?.terms) ? 'number' : newestOfSender && list.length === 1 ? 'newest' : null;
+  if (certain) {
+    run.code('answer', LABELS.verifySkipped(certain));
+  }
+  const verifyId = certain ? '' : run.start('answer', RUNNING.verify, nano.text === 'available' ? 'device' : chosenData === 'sample' ? 'cloud' : 'code');
+  const checked = certain ? null : await verifyAnswer(lookup, chosen, answer, chosenData, {
     ...(recomputeExcerpt || !value.passage ? {} : { passage: value.passage }),
     ...(input.signal ? { signal: input.signal } : {}),
     ...(hints?.after || hints?.before ? { dates: { ...(hints.after ? { after: hints.after } : {}), ...(hints.before ? { before: hints.before } : {}) } } : {}),
     ownCloud,
     today,
   });
-  if (!checked.ok) {
+  if (!checked) {
+    // plain code settled it (above)
+  } else if (!checked.ok) {
     run.end(verifyId, { ...checked.trace, label: LABELS.verifyFailed });
     if (checked.error.code === 'aborted' || run.aborted) return run.stopped();
     run.warn(WARNINGS.unchecked());

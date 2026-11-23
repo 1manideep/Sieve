@@ -100,9 +100,15 @@ describe('the tester cases (Nov 20)', () => {
     expect(p.item?.recordId).toBe('gmail:benji-2');                  // 1 day ago
     expect(hybrid.callsFor('select-answer')[0].meta?.recordIds).toEqual(['gmail:benji-2']);
     expect(labels(p)).toContain('Read only the newest one, because that is the one the question asks about');
+    // the sender's newest is certain: the second check is not asked, even when it would say no (Nov 23, R29)
+    expect(hybrid.callsFor('verify-answer')).toHaveLength(0);
+    expect(labels(p)).toContain('Not checked again: this is the newest email from the sender you named');
+    model('P1', 'Benji sent update number 2 on the release plan.', false);
+    expect((await prepareProposal(input({ question: "What did Benji's latest email say?" }))).outcome).toBe('ready');
     // the question also asks about a thing: his newest email may not be about it, so the newest five are read
     await prepareProposal(input({ question: "What did Benji's latest email say about the budget?" }));
     expect(hybrid.callsFor('select-answer').at(-1)?.meta?.recordIds).toHaveLength(5);
+    expect(hybrid.callsFor('verify-answer')).toHaveLength(1);   // and the second check is asked, as before
   });
 
   it('"the latest" about a named thing with no sender: only the newest email whose title holds it is read (Nov 22)', async () => {
@@ -229,8 +235,23 @@ describe('the tester cases (Nov 20)', () => {
     expect(p.outcome).toBe('ready');
     expect(p.options[0].text).toContain('310774205');
     expect(p.options[0].text).not.toContain('31077205');
-    // the second check reads the answer with the asked number in it
-    expect(promptText(hybrid.callsFor('verify-answer')[0].parts)).toContain('Proposed answer: Your application for job number 310774205 was not selected.');
+    // the only item that holds the asked number: the second check is not asked (Nov 23, B05)
+    expect(hybrid.callsFor('verify-answer')).toHaveLength(0);
+    expect(labels(p)).toContain('Not checked again: this is the only item that holds the number you gave');
+  });
+
+  it('the second check is still asked when another candidate holds the asked number too', async () => {
+    const a = record({ id: 'gmail:job-a', source: 'gmail', title: 'Your application 310774205', from: 'Lumora Talent <talent@careers.lumora.example>', category: 'Work', date: T - 30 * DAY, text: 'Thank you for applying to job 310774205.' });
+    const b = record({ id: 'gmail:job-b', source: 'gmail', title: 'Update on job 310774205', from: 'Lumora Talent <talent@careers.lumora.example>', category: 'Work', date: T - 20 * DAY, text: 'We are moving forward with other candidates for job 310774205.' });
+    for (const r of [a, b]) idx.records.set(r.id, r);
+    idx.search.mockResolvedValue([idx.cand(b.id), idx.cand(a.id)]);
+    model('P1', 'You were not selected for job 310774205.');
+    await prepareProposal(input({ question: 'What is the status of my application for job number 310774205?', hints: { terms: ['310774205'] }, requester: OUTSIDE }));
+    expect(hybrid.callsFor('verify-answer')).toHaveLength(1);
+    // a short term says too little to settle it
+    idx.search.mockResolvedValue([idx.cand(a.id)]);
+    await prepareProposal(input({ question: 'What did the email about job 4471 say?', hints: { terms: ['4471'] }, requester: OUTSIDE }));
+    expect(hybrid.callsFor('verify-answer')).toHaveLength(2);   // asked again for this one too
   });
 
   it('a number that stands only in the subject line, or that the asker typed, is not marked as unverified', async () => {
