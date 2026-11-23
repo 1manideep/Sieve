@@ -8,13 +8,13 @@ import { Link } from 'react-router-dom';
 import { env } from '@/app/env';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
 import { Button, LinkButton } from '@/components/Button/Button';
-import { HOW_COPY, HOW_SECTIONS, type HowBlock, type HowCell, type HowListItem, type HowMore, type HowTable } from '@/copy/screens-how';
+import { HOW_COPY, HOW_SECTIONS, type HowBlock, type HowListItem, type HowMore, type HowTable } from '@/copy/screens-how';
 import { PUBLIC_NAV, SCREENS, TITLES } from '@/copy/strings';
 import { ArchitectureFigure, LadderFigure, RelayFigure, StepsFigure } from './figures';
 import styles from './how.module.css';
 
 /** The explainer video. While it is null the card is a still placeholder; set it to the video's URL and the card
- *  opens the video in a new tab, without the "coming soon" chip. */
+ *  opens the video in a new tab, without the "coming soon" line. */
 export const HOW_VIDEO_URL: string | null = null;
 
 const SECTION_IDS = HOW_SECTIONS.map((s) => s.id);
@@ -88,16 +88,6 @@ function List({ items, ordered }: { items: readonly HowListItem[]; ordered?: boo
   );
 }
 
-function Cell({ cell }: { cell: HowCell }) {
-  if (typeof cell === 'string') return <Rich text={cell} />;
-  return (
-    <>
-      <span className={cell.tone ? `${styles.chip} ${styles[cell.tone]}` : styles.chip}>{cell.chip}</span>
-      {cell.after}
-    </>
-  );
-}
-
 function Table({ table }: { table: HowTable }) {
   return (
     <div className={styles.scroll}>
@@ -117,7 +107,7 @@ function Table({ table }: { table: HowTable }) {
             <tr key={r}>
               {row.map((cell, c) => (
                 <td key={c} className={table.head[c] ? undefined : styles.num}>
-                  <Cell cell={cell} />
+                  <Rich text={cell} />
                 </td>
               ))}
             </tr>
@@ -214,7 +204,7 @@ export function VideoCard({ url }: { url: string | null }) {
       <span className={styles.over}>
         <span className={styles.play} aria-hidden="true" />
         <span className={styles.title}>{v.title}</span>
-        {url ? null : <span className={`${styles.chip} ${styles.soon}`}>{v.soon}</span>}
+        {url ? null : <span className={styles.soon}>{v.soon}</span>}
       </span>
     </>
   );

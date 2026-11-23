@@ -25,7 +25,7 @@
 .lead { margin: 0 0 18px; max-width: 34em; font-size: 19px; line-height: 1.5; }
 .status { margin: 0; max-width: 40em; font-size: 14px; line-height: 1.55; color: var(--color-text-muted); }
 
-/* The video card: a still picture, the play mark, the title and, until the video exists, the chip. */
+/* The video card: a still picture, the play mark, the title and, until the video exists, "coming soon". */
 .video {
   position: relative;
   display: block;
@@ -50,6 +50,7 @@ a.video:hover { border-color: var(--color-border-strong); }
 .play { display: grid; place-items: center; width: 64px; height: 64px; border-radius: var(--radius-pill); background: var(--color-inverse); }
 .play::after { content: ""; margin-left: 5px; border-left: 18px solid var(--color-on-inverse); border-block: 11px solid transparent; }
 .title { margin-top: 2px; font: 400 20px/1.3 var(--font-display); color: var(--color-text); }
+.soon { font-size: 13px; color: var(--color-text-secondary); }
 
 /* The paper and the rail. */
 .frame { display: grid; grid-template-columns: minmax(0, 1fr) 232px; gap: 40px; align-items: start; }
@@ -78,12 +79,6 @@ a.video:hover { border-color: var(--color-border-strong); }
 .paper tr:last-child td { border-bottom: 0; }
 .paper th { background: var(--color-surface-muted); font-weight: 500; color: var(--color-text); }
 .num { width: 3ch; font: 12px var(--font-mono); color: var(--color-text-muted); }
-
-.chip { display: inline-block; padding: 2px 9px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-pill); font: 10.5px/1.5 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-secondary); white-space: nowrap; }
-.device { border-color: var(--device-border); background: var(--color-device-tint-2); color: var(--color-device); }
-.person { border-color: var(--color-text); color: var(--color-text); }
-.cloud { border-color: var(--color-cloud); color: #9DBFFB; }
-.soon { padding: 4px 10px; background: rgba(0, 0, 0, 0.45); font-size: 11px; letter-spacing: 0.1em; }
 
 .paper figure { margin: 28px 0 32px; }
 .paper figure .scroll { margin: 0; padding: 14px; background: var(--color-surface-sunken); }

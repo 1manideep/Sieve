@@ -5,20 +5,13 @@
 // as HTML. All sample text is invented. No em dashes anywhere.
 import { TESTS_SECTION } from './how-tests';
 
-/** A chip in a table cell, with optional text after it. */
-export interface HowChip {
-  chip: string;
-  tone?: 'device' | 'person' | 'cloud';
-  after?: string;
-}
-export type HowCell = string | HowChip;
 /** A list item, or an item with a list of its own. */
 export type HowListItem = string | { text: string; items: readonly string[] };
 /** A table. A blank first heading marks a column of step numbers. */
 export interface HowTable {
   caption: string;
   head: readonly string[];
-  rows: readonly (readonly HowCell[])[];
+  rows: readonly (readonly string[])[];
 }
 export type HowFigure = 'architecture' | 'steps' | 'ladder' | 'relay';
 /** A number with the words that say what it counts. */
@@ -144,9 +137,9 @@ export const HOW_COPY = {
   },
 } as const;
 
-const DEVICE_ONLY: HowChip = { chip: 'On device only', tone: 'device' };
-const PLAIN_CODE: HowChip = { chip: 'Plain code' };
-const ON_DEVICE: HowChip = { chip: 'On-device model', tone: 'device' };
+const DEVICE_ONLY = 'On device only';
+const PLAIN_CODE = 'Plain code';
+const ON_DEVICE = 'On-device model';
 
 export const HOW_SECTIONS: readonly HowSection[] = [
   {
@@ -330,7 +323,7 @@ export const HOW_SECTIONS: readonly HowSection[] = [
             ['7', 'Second check', ON_DEVICE, 'A separate call reads the chosen item again and says whether it really answers the question. Skipped when plain code already knows the item is the one meant.'],
             ['8', 'Mask personal details', PLAIN_CODE, 'Replaces names, addresses, numbers and similar details with marks such as `[name]`.'],
             ['9', 'Last look', ON_DEVICE, 'Gemini Nano reads the text that would leave. Anything it finds is masked by plain code.'],
-            ['10', 'Approve', { chip: 'The person', tone: 'person' }, 'Sees the exact outgoing text with any warnings. Approves it, shares a lower step, or declines.'],
+            ['10', 'Approve', 'The person','Sees the exact outgoing text with any warnings. Approves it, shares a lower step, or declines.'],
           ],
         },
       },
@@ -476,7 +469,7 @@ export const HOW_SECTIONS: readonly HowSection[] = [
             ['The second check', DEVICE_ONLY, 'As for the answer'],
             ['Categories, photo captions, the check for hidden instructions', DEVICE_ONLY, 'As for the answer'],
             ['The personal details pass', DEVICE_ONLY, DEVICE_ONLY],
-            ['Draft a reply', { chip: 'Cloud', tone: 'cloud', after: ' from approved text only' }, 'The same'],
+            ['Draft a reply', 'Cloud from approved text only', 'The same'],
           ],
         },
       },

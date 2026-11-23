@@ -108,6 +108,14 @@ describe('/how', () => {
     const steps = screen.getByRole('table', { name: 'Table 2 · What each step does' });
     expect(within(steps).getAllByRole('row')).toHaveLength(11);
     expect(within(steps).getByRole('columnheader', { name: HOW_COPY.number })).toBeInTheDocument();
+    // Who does each step is plain cell text, not a label in a box.
+    const plain = (cell: HTMLElement) => [cell.textContent, cell.children.length];
+    expect(plain(within(steps).getAllByRole('cell', { name: 'Plain code' })[0])).toEqual(['Plain code', 0]);
+    expect(plain(within(steps).getAllByRole('cell', { name: 'On-device model' })[0])).toEqual(['On-device model', 0]);
+    expect(plain(within(steps).getByRole('cell', { name: 'The person' }))).toEqual(['The person', 0]);
+    const modes = screen.getByRole('table', { name: 'Table 5 · Inference mode by step' });
+    expect(plain(within(modes).getAllByRole('cell', { name: 'On device only' })[0])).toEqual(['On device only', 0]);
+    expect(plain(within(modes).getByRole('cell', { name: 'Cloud from approved text only' }))).toEqual(['Cloud from approved text only', 0]);
   });
 
   it('shows four numbers about the tests, and opens every test behind them with one button', async () => {
@@ -269,7 +277,7 @@ describe('/how', () => {
     expect(within(rail()).getAllByRole('link').filter((a) => a.hasAttribute('aria-current'))).toHaveLength(1);
   });
 
-  it('shows the video as a still placeholder: no link, no button, the "coming soon" chip', () => {
+  it('shows the video as a still placeholder: no link, no button, "coming soon" below the title', () => {
     expect(HOW_VIDEO_URL).toBeNull();
     renderHow();
     const video = screen.getByRole('img', { name: HOW_COPY.video.label });
@@ -280,7 +288,7 @@ describe('/how', () => {
     expect(video).toHaveTextContent(HOW_COPY.video.soon);
   });
 
-  it('opens the video in a new tab once it has a URL, without the chip', () => {
+  it('opens the video in a new tab once it has a URL, without "coming soon"', () => {
     render(<VideoCard url="https://video.example/how" />);
     const link = screen.getByRole('link', { name: HOW_COPY.video.title });
     expect(link).toHaveAttribute('href', 'https://video.example/how');
