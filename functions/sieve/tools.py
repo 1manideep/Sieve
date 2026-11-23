@@ -261,8 +261,10 @@ MSG_PENDING_AGAIN = ("Still waiting for the person to approve in Sieve. You have
                      "again. Call sieve_check with request_id \"{id}\" again.")
 MSG_PENDING_LEFT = " It can be approved for about {left} more minutes."
 # queued or claimed: the person's computer is still preparing it, so there is nothing to approve yet
-MSG_PREPARING = ("Sieve is still preparing this on the person's computer. There is nothing for them to approve yet. "
-                 "Call sieve_check with request_id \"{id}\" again.")
+MSG_PREPARING = ("Sieve is still preparing this on the person's computer{so_far}. There is nothing for them to approve "
+                 "yet. Call sieve_check with request_id \"{id}\" again.")
+# how long it has been, when the request's age is known: an assistant can tell the person what to expect (Nov 23, 2026)
+MSG_PREPARING_SO_FAR = " ({seconds} seconds so far; it often takes about a minute)"
 MSG_PREPARING_SLOW = ("Sieve has not finished preparing this. Its tab may be in the background: ask the person to bring "
                       "the Sieve tab to the front, then call sieve_check with request_id \"{id}\" again.")
 MSG_DECLINED = "The person chose not to share this."
@@ -316,8 +318,10 @@ def pending_result(request_id: str, data: Mapping[str, Any] | None = None, now: 
     the person also says how long it can still be approved, when its age is known."""
     message = MSG_PENDING_AGAIN if again else MSG_PENDING
     if data is not None and data.get("status") in ("queued", "claimed"):
-        slow = _age_seconds(data.get("createdAt"), now) >= config.PREPARING_SLOW_SECONDS
-        message = MSG_PREPARING_SLOW if slow else MSG_PREPARING
+        age = _age_seconds(data.get("createdAt"), now)
+        slow = age >= config.PREPARING_SLOW_SECONDS
+        so_far = MSG_PREPARING_SO_FAR.replace("{seconds}", str(int(age))) if age >= 1 else ""
+        message = MSG_PREPARING_SLOW if slow else MSG_PREPARING.replace("{so_far}", so_far)
     elif data is not None and now is not None and isinstance(data.get("createdAt"), datetime):
         left = config.DECISION_WINDOW_MINUTES - int(_age_seconds(data.get("createdAt"), now) // 60)
         if left > 0:

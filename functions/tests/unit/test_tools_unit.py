@@ -74,11 +74,14 @@ def test_pending_says_whether_there_is_anything_to_approve():
     young, old = now - timedelta(seconds=149), now - timedelta(seconds=150)
     preparing = ("Sieve is still preparing this on the person's computer. There is nothing for them to approve yet. "
                  f"Call sieve_check with request_id \"{rid}\" again.")
+    # with its age known, it says how long it has been and what is usual
+    preparing_149 = ("Sieve is still preparing this on the person's computer (149 seconds so far; it often takes about a "
+                     f"minute). There is nothing for them to approve yet. Call sieve_check with request_id \"{rid}\" again.")
     slow = ("Sieve has not finished preparing this. Its tab may be in the background: ask the person to bring the "
             f"Sieve tab to the front, then call sieve_check with request_id \"{rid}\" again.")
     for status in ("queued", "claimed"):
         assert tools.result_from_request(rid, {"status": status, "createdAt": young}, now).to_wire() == {
-            "status": "pending", "request_id": rid, "message": preparing}
+            "status": "pending", "request_id": rid, "message": preparing_149}
         assert tools.result_from_request(rid, {"status": status, "createdAt": old}, now).to_wire() == {
             "status": "pending", "request_id": rid, "message": slow}
     approve = tools.pending_result(rid).message
@@ -95,7 +98,8 @@ def test_pending_says_whether_there_is_anything_to_approve():
                      f"again. Call sieve_check with request_id \"{rid}\" again." + left)
     assert "Tell them a request is waiting" not in again
     # while it is still being prepared the wording is the same on every check: there is nothing to approve yet
-    assert tools.result_from_request(rid, {"status": "claimed", "createdAt": young}, now, again=True).message == preparing
+    assert tools.result_from_request(rid, {"status": "claimed", "createdAt": young}, now, again=True).message == preparing_149
+    assert config.utf16_len(preparing_149) <= config.MESSAGE_MAX_CHARS
     for message in (approve + left, again):
         assert config.utf16_len(message) <= config.MESSAGE_MAX_CHARS
     # no age to go by (no time, no clock, or a naive time): still preparing, never the background line

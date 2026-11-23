@@ -172,7 +172,7 @@ def test_h12b_pending_says_when_there_is_nothing_to_approve(db):
     waiting = put_request(db, o.uid, grant, status="awaiting-person", created_ago=timedelta(seconds=200))
     out = {rid: check(s, rid)[1] for rid in (young, old, waiting)}
     assert all(r["status"] == "pending" and r["request_id"] == rid for rid, r in out.items())
-    assert out[young]["message"] == tools.MSG_PREPARING.replace("{id}", young)
+    assert preparing(out[young]["message"], young, at_least=10)
     assert out[old]["message"] == tools.MSG_PREPARING_SLOW.replace("{id}", old)
     # a check on a request that waits for the person: not told again, and how long it can still be approved
     assert out[waiting]["message"] == (tools.MSG_PENDING_AGAIN.replace("{id}", waiting)
@@ -180,7 +180,19 @@ def test_h12b_pending_says_when_there_is_nothing_to_approve(db):
     # a new question that no home base picks up stays queued: the ladder tool says it is still being prepared
     _, fresh = ladder(s, question="A question nobody prepares?")
     assert fresh["status"] == "pending"
-    assert fresh["message"] == tools.MSG_PREPARING.replace("{id}", fresh["request_id"])
+    assert preparing(fresh["message"], fresh["request_id"], at_least=0)
+
+
+def preparing(message: str, rid: str, *, at_least: int) -> bool:
+    """The preparing line for this request, with its seconds so far when the request is at least a second old."""
+    head, tail = tools.MSG_PREPARING.replace("{id}", rid).split("{so_far}")
+    if not (message.startswith(head) and message.endswith(tail)):
+        return False
+    middle = message[len(head):len(message) - len(tail)]
+    if middle == "":
+        return at_least < 1
+    m = re.fullmatch(r" \((\d+) seconds so far; it often takes about a minute\)", middle)
+    return m is not None and int(m.group(1)) >= at_least
 
 
 def test_h13_modern_header_mismatch(db):
