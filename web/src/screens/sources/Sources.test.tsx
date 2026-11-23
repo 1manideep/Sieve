@@ -1,6 +1,7 @@
-// Sources (40 section 13.6; design handoff of Nov 20, 2026): the totals, the source marks with one panel in place
-// in every state, the confirms and uploads, and the grid of categories by source.
-import { render, screen, within } from '@testing-library/react';
+// Sources (40 section 13.6; design handoff of Nov 20, 2026): the totals, the source marks (no panel until one is
+// pressed, closed by a second press, opened by ?source=), the panel in every state, the confirms and uploads, and the
+// grid of categories by source.
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
@@ -83,11 +84,12 @@ function renderSources(path = '/sources') {
     ],
     { initialEntries: [path] },
   );
-  return render(<RouterProvider router={router} />);
+  return { ...render(<RouterProvider router={router} />), router };
 }
 
-/** A source's mark in the row, and the one panel under the row. */
+/** A source's mark in the row, its state dot, and the one panel under the row. */
 const mark = (name: string) => within(screen.getByRole('list', { name: SOURCES.sourcesLabel })).getByRole('button', { name: new RegExp(`^${name}`) });
+const dot = (name: string) => mark(name).querySelector('[data-tone]');
 const panel = (name: string) => screen.getByRole('article', { name });
 const totals = () => screen.getByRole('region', { name: SOURCES.totalsLabel });
 /** The grid's category rows, in order: each is the button that opens its items. */
@@ -113,16 +115,23 @@ afterEach(() => {
 });
 
 describe('Sources', () => {
-  it('with nothing connected: every mark offers to connect, Gmail is open with the testing-mode note', async () => {
+  it('with nothing connected: every mark offers to connect and none is open; Gmail opens with the testing-mode note', async () => {
+    const user = userEvent.setup();
     Object.assign(window, { showDirectoryPicker: vi.fn() });
     renderSources();
     expect(document.title).toBe('Sources · Sieve');
     expect(mark('Gmail')).toHaveTextContent(SOURCES.markConnect);
-    expect(mark('Gmail')).toHaveAttribute('aria-pressed', 'true');
     expect(mark('Local folder')).toHaveTextContent(SOURCES.markConnect);
     expect(mark('Files you add')).toHaveTextContent(SOURCES.markAdd);
     expect(mark('Google Drive')).toHaveTextContent(SOURCES.markLater);
     expect(mark('Calendar')).toHaveTextContent(SOURCES.markLater);
+    for (const name of ['Gmail', 'Local folder', 'Files you add', 'Google Drive', 'Calendar']) {
+      expect(mark(name)).toHaveAttribute('aria-pressed', 'false');
+      expect(dot(name)).toBeNull();
+    }
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
+    await user.click(mark('Gmail'));
+    expect(mark('Gmail')).toHaveAttribute('aria-pressed', 'true');
     const gmail = panel('Connect Gmail');
     expect(within(gmail).getByText(SOURCES.tagNotConnected)).toBeInTheDocument();
     expect(within(gmail).getByText(SOURCES.details.gmail)).toBeInTheDocument();
@@ -137,6 +146,7 @@ describe('Sources', () => {
     const user = userEvent.setup();
     Object.assign(window, { showDirectoryPicker: vi.fn() });
     renderSources();
+    await user.click(mark('Gmail'));
     await user.click(within(panel('Connect Gmail')).getByRole('button', { name: SOURCES.connect.gmail }));
     expect(actions.connect).toHaveBeenCalledWith('gmail');
     await user.click(mark('Local folder'));
@@ -171,6 +181,10 @@ describe('Sources', () => {
     expect(mark('Gmail')).toHaveTextContent('5 emails');
     expect(mark('Local folder')).toHaveTextContent('2 items');
     expect(mark('Files you add')).toHaveTextContent('1 files');
+    // Connected sources carry the dot; none opens by itself.
+    for (const name of ['Gmail', 'Local folder', 'Files you add']) expect(dot(name)).toHaveAttribute('data-tone', 'ok');
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
+    await user.click(mark('Gmail'));
     const gmail = panel('Gmail');
     expect(within(gmail).getByText(SOURCES.tagLive)).toBeInTheDocument();
     expect(within(gmail).getByText(/^5 emails · Up to date · new mail is added while Sieve is open · synced 2 minutes ago$/)).toBeInTheDocument();
@@ -190,9 +204,11 @@ describe('Sources', () => {
     fake.rows = [row('gmail', { progress: { done: 40, total: 100 } }), row('folder', { progress: { done: 12, total: 12 } })];
     fake.records = records('gmail', 'Home', 3);
     useIndexing.setState({ state: 'running', left: 60, done: 40, total: 100, etaMs: 120_000 });
-    renderSources();
+    renderSources('/sources?source=gmail');
     expect(await screen.findByRole('article', { name: 'Gmail' })).toBeInTheDocument();
     expect(mark('Gmail')).toHaveTextContent('indexing 40%');
+    // Indexing is not something the person has to act on: the dot stays the connected one.
+    expect(dot('Gmail')).toHaveAttribute('data-tone', 'ok');
     expect(screen.getByRole('status')).toHaveTextContent(`${SOURCES.pillIndexing}· 60 left`);
     const gmail = panel('Gmail');
     expect(within(gmail).getByRole('heading', { name: SOURCES.runningTitle })).toBeInTheDocument();
@@ -209,7 +225,7 @@ describe('Sources', () => {
       activity: { stage: 'label', count: 5270 },
       bySource: { gmail: { done: 400, total: 5670, fraction: 400 / 5670, counting: false, ready: true, searchFraction: 1 } },
     });
-    renderSources();
+    renderSources('/sources?source=gmail');
     const gmail = await screen.findByRole('article', { name: 'Gmail' });
     expect(screen.getByRole('status')).toHaveTextContent(`${SOURCES.pillReady}· 5,270 in the background`);
     // The source is live, not "indexing": its mark shows its count.
@@ -230,7 +246,7 @@ describe('Sources', () => {
       state: 'running', left: 90, done: 10, total: 100, fraction: 0.1, ready: false, searchLeft: 30, searchFraction: 0.7,
       bySource: { gmail: { done: 10, total: 100, fraction: 0.1, counting: false, ready: false, searchFraction: 0.7 } },
     });
-    renderSources();
+    renderSources('/sources?source=gmail');
     const gmail = await screen.findByRole('article', { name: 'Gmail' });
     expect(mark('Gmail')).toHaveTextContent('indexing 70%');
     expect(screen.getByRole('status')).toHaveTextContent(`${SOURCES.pillIndexing}· 30 left`);
@@ -241,7 +257,7 @@ describe('Sources', () => {
   it('says what it works on now, in the order the work runs (20 section 13.5)', async () => {
     fake.rows = [row('folder', { progress: { done: 2, total: 22 } })];
     useIndexing.setState({ state: 'running', left: 20, done: 2, total: 22, activity: { stage: 'reading', inventory: { pdfs: 7, notes: 3, photos: 12 } } });
-    renderSources();
+    renderSources('/sources?source=folder');
     expect(await screen.findByText('Reading 7 PDFs, 3 notes and 12 photos')).toBeInTheDocument();
   });
 
@@ -249,7 +265,7 @@ describe('Sources', () => {
     const user = userEvent.setup();
     fake.rows = [row('gmail', { paused: true, progress: { done: 40, total: 100 } })];
     useIndexing.setState({ state: 'paused', pausedBy: 'person', left: 60, done: 40, total: 100 });
-    renderSources();
+    renderSources('/sources?source=gmail');
     const gmail = await screen.findByRole('article', { name: 'Gmail' });
     expect(mark('Gmail')).toHaveTextContent(SOURCES.tagPaused);
     expect(screen.getByRole('status')).toHaveTextContent(SOURCES.pillPaused);
@@ -261,7 +277,7 @@ describe('Sources', () => {
   it('pauses indexing from the open source', async () => {
     const user = userEvent.setup();
     fake.rows = [row('gmail')];
-    renderSources();
+    renderSources('/sources?source=gmail');
     await user.click(within(await screen.findByRole('article', { name: 'Gmail' })).getByRole('button', { name: SOURCES.pause }));
     expect(actions.setPaused).toHaveBeenCalledWith(true);
   });
@@ -271,7 +287,7 @@ describe('Sources', () => {
     const setDescribePhotos = vi.fn(async () => undefined);
     useSettings.setState({ describePhotos: true, setDescribePhotos });
     fake.rows = [row('folder')];
-    renderSources();
+    renderSources('/sources?source=folder');
     const folder = await screen.findByRole('article', { name: 'Local folder' });
     const toggle = within(folder).getByRole('switch', { name: SOURCES.describePhotos });
     expect(toggle).toHaveAttribute('aria-checked', 'true');
@@ -280,27 +296,33 @@ describe('Sources', () => {
     expect(setDescribePhotos).toHaveBeenCalledWith(false);
   });
 
-  it('opens the source that needs the person: Gmail asks to continue, an error offers to try again', async () => {
+  it('marks the source that needs the person without opening it: Gmail asks to continue, an error offers to try again', async () => {
     const user = userEvent.setup();
     fake.rows = [row('folder'), row('gmail', { needsAuth: true })];
     const view = renderSources();
-    const gmail = await screen.findByRole('article', { name: 'Gmail' });
-    expect(mark('Gmail')).toHaveAttribute('aria-pressed', 'true');
-    expect(mark('Gmail')).toHaveTextContent(SOURCES.markNeedsYou);
+    await waitFor(() => expect(mark('Gmail')).toHaveTextContent(SOURCES.markNeedsYou));
+    expect(dot('Gmail')).toHaveAttribute('data-tone', 'warn');
+    expect(dot('Local folder')).toHaveAttribute('data-tone', 'ok');
+    expect(mark('Gmail')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
+    await user.click(mark('Gmail'));
+    const gmail = panel('Gmail');
     expect(within(gmail).getByText(SOURCES.needsAuthGmail)).toBeInTheDocument();
     await user.click(within(gmail).getByRole('button', { name: SOURCES.continue }));
     expect(actions.reauthorize).toHaveBeenCalledWith('gmail');
     view.unmount();
 
     fake.rows = [row('gmail', { needsAuth: true, errorCode: 'auth-needed', error: 'refused' })];
-    const second = renderSources();
+    const second = renderSources('/sources?source=gmail');
     expect(await screen.findByText(SOURCES.needsAuthGmailRefused)).toBeInTheDocument();
     expect(screen.queryByText('refused')).not.toBeInTheDocument();
     second.unmount();
 
     fake.rows = [row('folder', { error: "Couldn't read the folder." })];
     renderSources();
-    const folder = await screen.findByRole('article', { name: 'Local folder' });
+    await waitFor(() => expect(dot('Local folder')).toHaveAttribute('data-tone', 'warn'));
+    await user.click(mark('Local folder'));
+    const folder = panel('Local folder');
     expect(within(folder).getByText("Couldn't read the folder.")).toBeInTheDocument();
     await user.click(within(folder).getByRole('button', { name: SOURCES.tryAgain }));
     expect(actions.connect).toHaveBeenCalledWith('folder');
@@ -309,7 +331,7 @@ describe('Sources', () => {
   it('asks Chrome again for a folder it can no longer read', async () => {
     const user = userEvent.setup();
     fake.rows = [row('folder', { needsAuth: true, folderName: 'Taxes' })];
-    renderSources();
+    renderSources('/sources?source=folder');
     const folder = await screen.findByRole('article', { name: 'Local folder' });
     expect(within(folder).getByText((_, el) => el?.textContent === 'Chrome needs your OK to read "Taxes" again.')).toBeInTheDocument();
     await user.click(within(folder).getByRole('button', { name: SOURCES.allowAgain }));
@@ -320,7 +342,7 @@ describe('Sources', () => {
     const user = userEvent.setup();
     fake.rows = [row('gmail')];
     fake.records = records('gmail', 'Home', 3);
-    renderSources();
+    renderSources('/sources?source=gmail');
     const gmail = await screen.findByRole('article', { name: 'Gmail' });
     await within(gmail).findByText(/^3 emails/);
     await user.click(within(gmail).getByRole('button', { name: SOURCES.disconnect }));
@@ -334,7 +356,7 @@ describe('Sources', () => {
   it('confirms before rebuilding the index', async () => {
     const user = userEvent.setup();
     fake.rows = [row('gmail')];
-    renderSources();
+    renderSources('/sources?source=gmail');
     await user.click(within(await screen.findByRole('article', { name: 'Gmail' })).getByRole('button', { name: SOURCES.rebuild }));
     const dialog = await screen.findByRole('dialog', { name: SOURCES.rebuildTitle });
     expect(actions.rebuild).not.toHaveBeenCalled();
@@ -346,7 +368,7 @@ describe('Sources', () => {
     const user = userEvent.setup({ applyAccept: false });
     fake.rows = [row('upload')];
     fake.records = records('upload', 'Personal', 2);
-    const view = renderSources();
+    const view = renderSources('/sources?source=upload');
     const upload = await screen.findByRole('article', { name: 'Files you add' });
     expect(await within(upload).findByText(`2 files · ${SOURCES.details.upload}`)).toBeInTheDocument();
     const input = view.container.querySelector<HTMLInputElement>('input[type="file"]');
@@ -377,6 +399,41 @@ describe('Sources', () => {
     expect(within(drive).getByText(SOURCES.later.drive.lead)).toBeInTheDocument();
     expect(within(drive).getByText(fillText(SOURCES.laterText, { name: 'Google Drive' }))).toBeInTheDocument();
     expect(within(drive).queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it('a press opens a source in place, a second press on it closes it, and another press switches to that one', async () => {
+    const user = userEvent.setup();
+    fake.rows = [row('gmail'), row('folder')];
+    renderSources();
+    await user.click(mark('Gmail'));
+    expect(mark('Gmail')).toHaveAttribute('aria-pressed', 'true');
+    expect(panel('Gmail')).toBeInTheDocument();
+    await user.click(mark('Gmail'));
+    expect(mark('Gmail')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
+    await user.click(mark('Gmail'));
+    await user.click(mark('Local folder'));
+    expect(mark('Gmail')).toHaveAttribute('aria-pressed', 'false');
+    expect(mark('Local folder')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(panel('Local folder')).toBeInTheDocument();
+    await user.click(mark('Calendar'));
+    expect(screen.getAllByRole('article')).toHaveLength(1);
+    expect(panel('Calendar')).toBeInTheDocument();
+    await expectNoAxeViolations();
+  });
+
+  it('a link that names a source opens it, and the name then leaves the address', async () => {
+    const user = userEvent.setup();
+    fake.rows = [row('gmail'), row('folder')];
+    const { router } = renderSources('/sources?source=folder#sources-heading');
+    expect(await screen.findByRole('article', { name: 'Local folder' })).toBeInTheDocument();
+    expect(mark('Local folder')).toHaveAttribute('aria-pressed', 'true');
+    await waitFor(() => expect(router.state.location.search).toBe(''));
+    expect(router.state.location.hash).toBe('#sources-heading');
+    // Once the address is clean the mark works as any other: a press closes it.
+    await user.click(mark('Local folder'));
+    expect(screen.queryByRole('article')).not.toBeInTheDocument();
   });
 });
 
@@ -486,7 +543,7 @@ describe('Sources: the label export (a testing tool)', () => {
   it('is not on the screen unless the address asks for it', async () => {
     fake.rows = [row('gmail')];
     renderSources();
-    await screen.findByRole('article', { name: 'Gmail' });
+    await screen.findByText(fillText(SOURCES.sourcesNote, { n: 1 }));
     expect(screen.queryByRole('region', { name: SOURCES.exportLabel })).not.toBeInTheDocument();
   });
 

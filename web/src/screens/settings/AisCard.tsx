@@ -27,6 +27,7 @@ import { ConnectPanel, type LinkState } from './ConnectPanel';
 import { Confirm } from './kit/Confirm';
 import ground from './kit/ground.module.css';
 import kit from './kit/kit.module.css';
+import { Mark } from './kit/Mark';
 import { formatClock, formatDate, formatRelative } from './kit/when';
 import { NarrowDialog } from './NarrowDialog';
 import { callableMessage, categoriesLabel } from './settingsText';
@@ -267,15 +268,15 @@ export function AisCard({ connected }: { connected: RealSource[] }) {
             const isLive = live.includes(kind);
             const auto = current.some((g) => assistantKindOf(g.aiName) === kind && autoUntil[g.id] !== undefined);
             return (
-              <li key={kind}>
-                <button type="button" className={isLive ? ground.mark : `${ground.mark} ${ground.markOff}`} aria-pressed={selected === kind} onClick={() => select(kind)}>
-                  <span className={ground.markGlyph}>
-                    <AssistantMark kind={kind} size={56} />
-                  </span>
-                  <span className={ground.markName}>{ASSISTANTS[kind].name}</span>
-                  <span className={ground.markSub}>{isLive ? (auto ? SETTINGS.markLiveAuto : SETTINGS.markLive) : SETTINGS.markSubConnect}</span>
-                </button>
-              </li>
+              <Mark
+                key={kind}
+                glyph={<AssistantMark kind={kind} size={56} />}
+                name={ASSISTANTS[kind].name}
+                sub={isLive ? (auto ? SETTINGS.markLiveAuto : SETTINGS.markLive) : SETTINGS.markSubConnect}
+                off={!isLive}
+                pressed={selected === kind}
+                onPress={() => select(kind)}
+              />
             );
           })}
         </ul>

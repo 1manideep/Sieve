@@ -1,8 +1,10 @@
-// Sources (40 section 13.6; design handoff of Nov 20, 2026): the totals on the ground, the sources as bare marks
-// with the selected one opened in one panel in place, and the grid of what the index holds by category and source.
-// The index lives only on this device.
+// Sources (40 section 13.6; design handoff of Nov 20, 2026): the totals on the ground, the sources as a row of bare
+// marks, and the grid of what the index holds by category and source. As with the assistants in Settings, no panel
+// shows until a mark is pressed: pressing one opens it in one panel in place, and pressing it again closes it. A dot
+// on the mark says a source is connected, and turns amber when it needs the person. ?source=gmail (or folder,
+// upload) opens that source, and is then removed from the URL. The index lives only on this device.
 import { useEffect, useId, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
 import { CATEGORIES, type Category, type CategoryRule } from '@sieve/shared';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
@@ -21,6 +23,7 @@ import { Confirm } from '../settings/kit/Confirm';
 import { Fill, Iso } from '../settings/kit/Fill';
 import ground from '../settings/kit/ground.module.css';
 import kit from '../settings/kit/kit.module.css';
+import { Mark } from '../settings/kit/Mark';
 import { ScreenHead } from '../settings/kit/ScreenHead';
 import { formatRelative } from '../settings/kit/when';
 import { IndexingCard } from './IndexingCard';
@@ -273,17 +276,36 @@ export function Component() {
   const rules = useSettings((s) => s.settings.categoryRules);
   const indexing = useIndexing(useShallow((s) => ({ state: s.state, left: s.left, bySource: s.bySource, ready: s.ready, searchLeft: s.searchLeft })));
   const receipts = useReceipts((s) => s.receipts);
-  const [picked, setPicked] = useState<MarkId | null>(null);
+  // The open source: none until a mark is pressed.
+  const [selected, setSelected] = useState<MarkId | null>(null);
   const [confirmRebuild, setConfirmRebuild] = useState(false);
   const [params] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // ?source=gmail opens that source, once; then the param is removed (the hash and any other param stay).
+  const named = REAL_SOURCES.find((k) => k === params.get('source'));
+  const [handled, setHandled] = useState<RealSource | undefined>(undefined);
+  if (named !== handled) {
+    setHandled(named);
+    if (named) setSelected(named);
+  }
+  useEffect(() => {
+    if (!named) return;
+    const next = new URLSearchParams(params);
+    next.delete('source');
+    const search = next.toString();
+    navigate({ search: search ? `?${search}` : '', hash: location.hash }, { replace: true });
+  }, [named, params, location.hash, navigate]);
+
+  // Pressing the open mark closes it; pressing another opens that one instead.
+  const select = (id: MarkId) => setSelected(id === selected ? null : id);
 
   const paused = indexing.state === 'paused';
   const rowOf = (kind: RealSource) => rows?.find((r) => r.kind === kind);
   const countOf = (kind: RealSource) => sourceCounts?.[kind] ?? 0;
   const states = Object.fromEntries(REAL_SOURCES.map((k) => [k, sourceState(k, rowOf(k), countOf(k), indexing.bySource[k])])) as Record<RealSource, SourceState>;
   const connected = REAL_SOURCES.filter((k) => states[k].connected);
-  // Until a mark is pressed: the source that needs the person, else the first connected one, else Gmail.
-  const selected: MarkId = picked ?? REAL_SOURCES.find((k) => states[k].needsYou) ?? connected[0] ?? 'gmail';
 
   const items = REAL_SOURCES.reduce((n, k) => n + countOf(k), 0);
   const never = Math.max(0, items - sharedItemCount(receipts));
@@ -366,31 +388,35 @@ export function Component() {
                     ? fillText(SOURCES.indexingPct, { pct: s.pct })
                     : countText(k, countOf(k));
             return (
-              <li key={k}>
-                <button type="button" className={s.connected ? ground.mark : `${ground.mark} ${ground.markOff}`} aria-pressed={selected === k} onClick={() => setPicked(k)}>
-                  <span className={ground.markGlyph}>
+              <Mark
+                key={k}
+                glyph={
+                  <>
                     <LineIcon d={SOURCE_ICONS[k]} size={34} />
-                    {s.connected ? <span className={s.indexing || s.paused || s.needsYou ? `${ground.markState} ${ground.markBusy}` : ground.markState} aria-hidden="true" /> : null}
-                  </span>
-                  <span className={ground.markName}>{SOURCES.names[k]}</span>
-                  <span className={ground.markSub}>{sub}</span>
-                </button>
-              </li>
+                    {s.connected ? <span className={ground.markState} data-tone={s.needsYou ? 'warn' : 'ok'} aria-hidden="true" /> : null}
+                  </>
+                }
+                name={SOURCES.names[k]}
+                sub={sub}
+                off={!s.connected}
+                pressed={selected === k}
+                onPress={() => select(k)}
+              />
             );
           })}
           {LATER.map((id) => (
-            <li key={id}>
-              <button type="button" className={`${ground.mark} ${ground.markOff}`} aria-pressed={selected === id} onClick={() => setPicked(id)}>
-                <span className={ground.markGlyph}>
-                  <LineIcon d={LATER_ICONS[id]} size={34} />
-                </span>
-                <span className={ground.markName}>{SOURCES.later[id].name}</span>
-                <span className={ground.markSub}>{SOURCES.markLater}</span>
-              </button>
-            </li>
+            <Mark
+              key={id}
+              glyph={<LineIcon d={LATER_ICONS[id]} size={34} />}
+              name={SOURCES.later[id].name}
+              sub={SOURCES.markLater}
+              off
+              pressed={selected === id}
+              onPress={() => select(id)}
+            />
           ))}
         </ul>
-        {isLater(selected) ? (
+        {selected === null ? null : isLater(selected) ? (
           <LaterPanel id={selected} />
         ) : (
           <SourcePanel
