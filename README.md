@@ -109,6 +109,7 @@ On-device calls go through Firebase AI Logic's `GenerativeModel`, with Sieve's o
 | Step | Your own data | Playground sample data |
 |---|---|---|
 | Pick the item and write the answer | `ONLY_ON_DEVICE` | `PREFER_ON_DEVICE`; `ONLY_IN_CLOUD`, labelled, when Nano is not ready |
+| Check the answer against the item, and read a sentence as yes or no | `ONLY_ON_DEVICE`, never the cloud | `PREFER_ON_DEVICE`; `ONLY_IN_CLOUD`, labelled, when Nano is not ready |
 | Category and search keywords | `ONLY_ON_DEVICE`, never the cloud | As above (the seed items arrive labelled) |
 | Photo captions, injection advisory | `ONLY_ON_DEVICE` | As above |
 | Personal details pass | `ONLY_ON_DEVICE`, never the cloud | `ONLY_ON_DEVICE`, never the cloud |
