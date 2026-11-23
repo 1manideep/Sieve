@@ -6,7 +6,7 @@ import { SHARED_FILE_MAX_BYTES, safeFileName, sharedFileTypeAllowed, sharedFileT
 import type { SieveDb } from '@/index';
 import { photoBlobFor } from './optional';
 
-export type OriginalMiss = 'none' | 'several' | 'kind' | 'too-large' | 'permission' | 'gone' | 'gmail';
+export type OriginalMiss = 'none' | 'several' | 'kind' | 'too-large' | 'permission' | 'gone' | 'gmail' | 'reconnect';
 export type Original = { ok: true; name: string; mime: string; bytes: number; blob: Blob } | { ok: false; why: OriginalMiss };
 
 export interface OriginalDeps {
@@ -64,6 +64,8 @@ export async function originalFor(db: SieveDb, rec: IndexRecord, asked: string, 
     if (name === 'AbortError') throw e;
     if (name === 'PermissionNeededError') return { ok: false, why: 'permission' };
     if (name === 'NotFoundError' || name === 'GmailNotFoundError') return { ok: false, why: 'gone' };
+    // Gmail's access on this computer ran out (it lasts an hour): the attachment cannot be fetched until it is renewed
+    if (name === 'GmailAuthError') return { ok: false, why: 'reconnect' };
     if (rec.source === 'gmail') return { ok: false, why: 'gmail' };
     return { ok: false, why: 'gone' };
   }

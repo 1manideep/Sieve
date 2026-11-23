@@ -327,12 +327,21 @@ MSG_FILE_SENT = ("The person approved sending this file. The link in \"file\" wo
                  "the person, or fetch it with your own tools. Personal details inside the file are not masked.")
 
 
+# A file was asked for and the person shared text instead: said outright, so an assistant does not take the text for
+# the file it asked for (the step field alone was easy to miss, Nov 23, 2026).
+MSG_FILE_NOT_SENT = ("The file itself was not sent: the person approved sharing this {step} instead. If you still need "
+                     "the file, tell the person, and ask again with file set to true only if they want to send it.")
+
+
 def answered_result(request_id: str, step: str, text: str, image: Any = None,
-                    file: dict[str, Any] | None = None) -> ToolResult:
+                    file: dict[str, Any] | None = None, *, file_asked: bool = False) -> ToolResult:
     if file is not None:
         minutes = max(1, int(file.get("expires_in_seconds", 0)) // 60)
         return ToolResult(status="answered", request_id=request_id, step=step, text=text, file=file,
                           message=MSG_FILE_SENT.replace("{minutes}", str(minutes)))
+    if file_asked:
+        return ToolResult(status="answered", request_id=request_id, step=step, text=text, image=image,
+                          message=MSG_FILE_NOT_SENT.replace("{step}", STEP_WORDS[step]))
     return ToolResult(status="answered", request_id=request_id, step=step, text=text, image=image,
                       message=f"The person approved sharing this {STEP_WORDS[step]}.")
 

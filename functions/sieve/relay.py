@@ -381,7 +381,8 @@ def finish(deps: Any, ctx: CallCtx, request_id: str, data: dict | None, t0: floa
             if got.payload.file is not None:
                 wire = make_file_link(deps, ctx, request_id, got.payload.file)
                 return tools.answered_result(request_id, got.payload.step, got.payload.text, file=wire)
-            return tools.answered_result(request_id, got.payload.step, got.payload.text, got.payload.image)
+            return tools.answered_result(request_id, got.payload.step, got.payload.text, got.payload.image,
+                                         file_asked=bool(data.get("wantFile")))
         if got.kind == "missing":
             return tools.unknown_request_result()
         if got.kind == "revoked" and not ctx.playground:

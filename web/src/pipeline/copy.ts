@@ -205,5 +205,6 @@ export const FILE_UNAVAILABLE = {
   permission: 'Chrome needs your OK to read the folder again before this file can be sent.',
   gone: 'The original file is no longer where it was.',
   gmail: "Couldn't get the attachment from Gmail.",
+  reconnect: 'Gmail needs reconnecting before this attachment can be sent. Open Sources, press Gmail and reconnect, then ask again.',
   instruction: 'This item seems to hold an instruction aimed at an AI, so the file itself is not offered.',
 } as const;

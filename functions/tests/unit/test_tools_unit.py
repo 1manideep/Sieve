@@ -53,6 +53,11 @@ def test_result_from_request_and_d6():
                          f"sieve_check with request_id \"{rid}\"; it waits about 20 seconds per call, so call it "
                          "again while the result is pending.")
     a = tools.answered_result(rid, "full", "Text")
+    # a file was asked for and text was shared: the message says the file was not sent
+    nf = tools.answered_result(rid, "excerpt", "Lines.", file_asked=True)
+    assert nf.message.startswith("The file itself was not sent: the person approved sharing this excerpt instead.")
+    assert nf.file is None and nf.step == "excerpt"
+    assert config.utf16_len(nf.message) <= config.MESSAGE_MAX_CHARS
     assert a.message == "The person approved sharing this full item."
 
 

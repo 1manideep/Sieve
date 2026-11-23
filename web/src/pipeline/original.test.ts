@@ -63,6 +63,10 @@ describe('originalFor', () => {
     expect(await originalFor(db, mail, 'x', { deps: deps({ listAttachments: async () => [att('all.zip')] }) })).toEqual({ ok: false, why: 'none' });
     expect(await originalFor(db, mail, 'x', { deps: deps({ listAttachments: async () => [att('big.pdf', SHARED_FILE_MAX_BYTES + 1)] }) })).toEqual({ ok: false, why: 'too-large' });
     expect(await originalFor(db, mail, 'x', { deps: deps({ listAttachments: async () => { throw new Error('offline'); } }) })).toEqual({ ok: false, why: 'gmail' });
+    // Gmail's access ran out: the card says to reconnect, not only that the attachment could not be fetched
+    const expired = Object.assign(new Error('Gmail needs you to sign in again.'), { name: 'GmailAuthError' });
+    expect(await originalFor(db, mail, 'x', { deps: deps({ listAttachments: async () => { throw expired; } }) })).toEqual({ ok: false, why: 'reconnect' });
+    expect(await originalFor(db, mail, 'x', { deps: deps({ listAttachments: async () => [att('Receipt.pdf')], fetchAttachment: async () => { throw expired; } }) })).toEqual({ ok: false, why: 'reconnect' });
   });
 });
 
