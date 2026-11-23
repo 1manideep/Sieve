@@ -11,7 +11,7 @@ export const MSG = {
   modelUnavailable: "Sieve can't read the person's data on this device right now. Try again later.",
   error: "Sieve couldn't prepare an answer on the person's device. Try again later.",
   /** A "latest" question while Gmail cannot be asked: no answer from mail that may be out of date. Never content. */
-  mailNotCurrent: "Sieve could not check Gmail for newer mail, so it did not answer. Ask the person to open Sieve, then ask again.",
+  mailNotCurrent: "Sieve could not check Gmail for newer mail, so it did not answer. Ask the person to open Sieve and reconnect Gmail there (one click on the Gmail card), then ask again.",
   /**
    * A result line with the reason nothing was shared, as a short code with no content ("model-picked-none"). Only
    * while the person has auto-approve (testing mode) on for that connection: otherwise the line stays as it is, so
