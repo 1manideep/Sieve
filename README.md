@@ -269,6 +269,10 @@ Compatibility: any MCP client that can add a remote server by URL over Streamabl
 
 The assistant sees four tools: `sieve_answer`, `sieve_excerpt` and `sieve_full_item` (as far as its grant allows) and `sieve_check`. A call waits up to 45 seconds for your decision, then returns "pending" with a request id, and the assistant collects the answer later with `sieve_check`. You approve in the Requests screen or in the extension's side panel.
 
+### Send a file itself
+
+A connection whose limit is "Up to full items" may also ask for an original file: a PDF or document from a connected folder, a photo, or the attachment of an email Sieve found. The assistant calls `sieve_full_item` with `file: true`. The card names the file and its size and says that nothing inside a file is masked; a file is never approved automatically. After you approve, the home base uploads it to Cloud Storage under your own account and this request, and the assistant gets a download link that works for 10 minutes and at most 3 downloads. Expired links and their files are removed. Files larger than 20 MB, archives, HTML and scripts are not sent, and an item that seems to hold instructions aimed at an AI is not offered as a file. A limit cannot be raised on an existing connection: make a new one in Settings ("New connection").
+
 The honest limit: the connector link is a bearer secret, so anyone holding it can send requests as that assistant. Ratchet limits what the link may ask (which tools, categories and sources, and until when), every attempt is written to a tamper-evident audit log, and every share still needs your approval. You can narrow or revoke a link in Settings at any time. OAuth for connectors is planned.
 
 ## Privacy
