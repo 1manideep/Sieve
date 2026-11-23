@@ -153,13 +153,20 @@ export function hasNumberedItems(text: string): boolean {
   return one >= 0 && ns.slice(one + 1).includes(2);
 }
 
+// A full stop after one of these is part of a short form, not the end of a sentence: "Nov. 12th", "Dr. Okafor",
+// "12 p.m. ET". An answer was cut to "The session is next Thursday, Nov." (Nov 23, 2026). "No." is not among them:
+// it is an answer.
+const SHORT_FORMS =
+  'Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|Mon|Tue|Tues|Wed|Thu|Thur|Thurs|Fri|Sat|Sun|' +
+  'jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec|mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun|' +
+  'Mr|Mrs|Ms|Dr|Prof|St|Ave|Rd|Blvd|Apt|Inc|Ltd|Co|Corp|vs|approx|est|a\\.m|p\\.m|A\\.M|P\\.M';
 // No 'i' flag: with it, \p{Lu} would match lowercase letters too. Joining words are lowercase mid-sentence anyway.
 const CLAUSE_SEP = new RegExp(
   [
     ';\\s*',
     ',\\s*(?:and|but|while|whereas|plus|also)\\s+',
     '\\s+(?:and|but|plus|also)\\s+(?=(?:your|my|the|it|its|it\'s|you|you\'re|he|she|they|we|I|this|that|there|his|her|their)\\b)',
-    '[.!?]\\s+(?=[\\p{Lu}\\d])',
+    `(?<!\\b(?:${SHORT_FORMS}))[.!?]\\s+(?=[\\p{Lu}\\d])`,
   ].join('|'),
   'u',
 );

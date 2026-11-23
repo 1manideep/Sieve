@@ -7,7 +7,7 @@ import { setPrivacyModelHost } from '../model/client';
 import { looksLikeIdNumber } from '../pii/validators/idNumber';
 import { clearScanMemo } from '../scan/scan';
 import { itemTouchesSensitiveTopic, sensitiveTopicOf, touchesSensitiveTopic } from '../sensitive';
-import { asksAddress, asksSubject, firstFactClause, hasList, isYesNoQuestion, packsSeveralFacts, shapeAnswer, stripSubject } from '../steps/answerShape';
+import { asksAddress, asksSubject, firstFactClause, hasList, hasTwoFactClauses, isYesNoQuestion, packsSeveralFacts, shapeAnswer, stripSubject } from '../steps/answerShape';
 import { buildStepOption, UNAVAILABLE } from '../steps/build';
 
 const ai = vi.hoisted(() => ({ runModel: vi.fn(), getNanoAvailability: vi.fn() }));
@@ -85,6 +85,13 @@ describe('B05, B13, B01: one fact per answer', () => {
     expect(o.text).not.toContain('free plan');
     expect(firstFactClause('Your order US20418833 has been cancelled. A refund of $48.00 is on its way.')).toBe('Your order US20418833 has been cancelled.');
     expect(firstFactClause('It is fine, and so is this.')).toBeNull();
+    // the full stop of a short form does not end the sentence (Nov 23: an answer was cut to "... next Thursday, Nov.")
+    expect(hasTwoFactClauses('The online session is next Thursday, Nov. 12th at 12pm ET.')).toBe(false);
+    expect(hasTwoFactClauses('Your appointment with Dr. Okafor is at 9 a.m. Tuesday.')).toBe(false);
+    expect(hasTwoFactClauses('It was sent on Tue. Nov. 3 by Kestrelmoor Bank Inc. Chicago.')).toBe(false);
+    // a real second sentence after one is still a second fact, and the first is what is kept
+    expect(hasTwoFactClauses('The session is on Nov. 12th. A reminder goes out on Nov. 11th.')).toBe(true);
+    expect(firstFactClause('The session is on Nov. 12th. A reminder goes out on Nov. 11th.')).toBe('The session is on Nov. 12th.');
     expect(packsSeveralFacts('Your AWS account ID is [id number], and your free plan ended on October 26.')).toBe(true);
     expect(packsSeveralFacts('Your AWS account ID is 123456789012. Your free plan ended on October 26.')).toBe(true);
   });
