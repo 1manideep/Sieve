@@ -14,7 +14,7 @@ import hashlib
 import re
 import secrets
 from datetime import datetime
-from typing import Any
+from typing import Any, Mapping
 
 from .filerules import (FILE_NAME_MAX_CHARS, FILE_PATH_RE, FILE_TYPES, SHARED_FILE_MAX_BYTES, content_disposition,
                         describe_file, file_owner, file_type_allowed, human_size, safe_file_name)
@@ -24,7 +24,7 @@ __all__ = [
     "FILE_LINK_MAX_DOWNLOADS", "FILE_LINK_TTL_SECONDS", "FILE_NAME_MAX_CHARS", "FILE_PATH_RE", "FILE_TOKEN_BYTES",
     "FILE_TOKEN_RE", "FILE_TYPES", "FILE_URL_PATH_RE", "SHARED_FILE_MAX_BYTES", "FileLink", "SharedFile",
     "build_file_url", "content_disposition", "describe_file", "download_refusal", "extract_file_token", "file_owner",
-    "file_token_hash", "file_type_allowed", "file_wire", "human_size", "is_valid_file_token", "new_file_token",
+    "file_token_hash", "file_type_allowed", "file_wire", "human_size", "is_valid_file_token", "new_file_token", "orphan_path",
     "safe_file_name",
 ]
 
@@ -64,6 +64,15 @@ def download_refusal(link: FileLink, now: datetime) -> str | None:
     if link.downloads >= FILE_LINK_MAX_DOWNLOADS:
         return "used"
     return None
+
+
+def orphan_path(response: Any, uid: str, request_id: str) -> str | None:
+    """The stored file an approved payload names, when that payload is about to be dropped without a link: expired
+    before the assistant came back, refused at delivery, or revoked. Only a file in this person's place for this very
+    request is named, so a payload that names someone else's object can never get it deleted."""
+    file = response.get("file") if isinstance(response, Mapping) else None
+    path = file.get("path") if isinstance(file, Mapping) else None
+    return path if isinstance(path, str) and file_owner(path) == (uid, request_id) else None
 
 
 def file_wire(file: SharedFile, url: str) -> dict[str, Any]:

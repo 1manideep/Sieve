@@ -129,3 +129,123 @@ def test_finish_makes_a_link_whose_token_is_stored_only_as_a_hash(monkeypatch):
     out = tools.call_tool_result(result, era="new", version="2025-06-18")
     assert out["structuredContent"]["file"]["url"] == result.file["url"]
     assert [c["type"] for c in out["content"]] == ["text"]
+
+
+# Nov 24: an approved file whose payload is dropped before any link is made (the assistant never came back, the
+# connection was revoked, or the payload was refused) was left in Cloud Storage with nothing to delete it.
+
+def test_orphan_path_names_only_this_persons_file_for_this_request():
+    assert files.orphan_path({"file": FILE}, UID, REQ) == PATH
+    assert files.orphan_path({"file": FILE}, "someone-else", REQ) is None
+    assert files.orphan_path({"file": FILE}, UID, "x" * 20) is None
+    assert files.orphan_path({"file": {**FILE, "path": "elsewhere/" + PATH}}, UID, REQ) is None
+    assert files.orphan_path({"text": TEXT}, UID, REQ) is None
+    assert files.orphan_path(None, UID, REQ) is None
+
+
+def test_a_refused_or_revoked_file_is_deleted_from_storage(monkeypatch):
+    monkeypatch.setattr(relay.fb, "transact", lambda _db, fn, *args, **_kw: fn(Txn(), *args))
+    for label, cap, revoke in (("refused: a connection capped lower", "excerpt", False), ("revoked at delivery", "full", True)):
+        deleted: list[str] = []
+        monkeypatch.setattr(relay, "delete_stored_file", deleted.append)
+        db = FakeDb()
+        _ref, grant_ref = answered(db, {"step": "full", "text": TEXT, "chars": len(TEXT), "itemCount": 1, "file": FILE})
+        if revoke:
+            grant_ref.set({"maxStep": "full", "revokedAt": NOW})
+        got = relay.collect_answer(db, UID, REQ, cap, NOW)
+        assert got.kind in ("not-answered", "revoked"), label
+        assert deleted == [PATH], label
+
+
+def test_a_delivered_file_is_kept_for_its_link(monkeypatch):
+    monkeypatch.setattr(relay.fb, "transact", lambda _db, fn, *args, **_kw: fn(Txn(), *args))
+    deleted: list[str] = []
+    monkeypatch.setattr(relay, "delete_stored_file", deleted.append)
+    db = FakeDb()
+    answered(db, {"step": "full", "text": TEXT, "chars": len(TEXT), "itemCount": 1, "file": FILE})
+    assert relay.collect_answer(db, UID, REQ, "full", NOW).kind == "delivered"
+    assert deleted == []
+
+
+def test_a_payload_naming_another_persons_file_never_deletes_it(monkeypatch):
+    monkeypatch.setattr(relay.fb, "transact", lambda _db, fn, *args, **_kw: fn(Txn(), *args))
+    deleted: list[str] = []
+    monkeypatch.setattr(relay, "delete_stored_file", deleted.append)
+    db = FakeDb()
+    victim = f"handoffs/{'v' * 28}/{REQ}/{'o' * 24}"
+    answered(db, {"step": "full", "text": TEXT, "chars": len(TEXT), "itemCount": 1, "file": {**FILE, "path": victim}})
+    assert relay.collect_answer(db, UID, REQ, "full", NOW).kind == "not-answered"
+    assert deleted == []
+
+
+class _Ref:
+    def __init__(self, uid: str, request_id: str, data: dict[str, Any]) -> None:
+        self.id = request_id
+        self.data = data
+        self.parent = type("P", (), {"parent": type("U", (), {"id": uid})()})()
+        self.path = f"users/{uid}/requests/{request_id}"
+
+    def update(self, data: dict[str, Any], option: Any = None) -> None:
+        for k, v in data.items():
+            if v is relay.firestore.DELETE_FIELD:
+                self.data.pop(k, None)
+            else:
+                self.data[k] = v
+
+
+class _Snap:
+    def __init__(self, ref: _Ref) -> None:
+        self.reference, self.id, self.update_time = ref, ref.id, None
+        self._data = dict(ref.data)     # a snapshot keeps what it read, as Firestore's does
+
+    def to_dict(self) -> dict[str, Any]:
+        return dict(self._data)
+
+
+class _Query:
+    """Honours the status filter only: the time filters are left out, so every request here counts as old."""
+
+    def __init__(self, snaps: list[_Snap], statuses: tuple[str, ...] = ()) -> None:
+        self.snaps, self.statuses = snaps, statuses
+
+    def where(self, filter: Any) -> "_Query":  # noqa: A002
+        if filter.field_path == "status":
+            want = filter.value
+            return _Query(self.snaps, tuple(want) if isinstance(want, list) else (want,))
+        return self
+
+    def limit(self, _n: int) -> "_Query":
+        return self
+
+    def stream(self):
+        return iter([_Snap(s.reference) for s in self.snaps if s.reference.data.get("status") in self.statuses])
+
+
+class _CleanupDb:
+    """Only what run_cleanup's 'answered and not collected' pass reads."""
+
+    def __init__(self, snaps: list[_Snap]) -> None:
+        self.snaps = snaps
+
+    def collection_group(self, _name: str) -> _Query:
+        return _Query(self.snaps)
+
+    def collection(self, _name: str) -> _Query:
+        return _Query([])
+
+    def write_option(self, **_kw: Any) -> None:
+        return None
+
+
+def test_cleanup_deletes_the_file_of_an_answer_nobody_collected(monkeypatch):
+    from sieve import cleanup
+    monkeypatch.setattr(cleanup, "mark_receipt", lambda *_a, **_kw: True)
+    mine = _Ref(UID, REQ, {"status": "answered", "response": {"step": "full", "text": TEXT, "file": FILE}})
+    text_only = _Ref(UID, "t" * 20, {"status": "answered", "response": {"step": "answer", "text": "Yes."}})
+    forged = _Ref(UID, "f" * 20, {"status": "answered",
+                                  "response": {"step": "full", "text": TEXT, "file": {**FILE, "path": f"handoffs/{'v' * 28}/{'f' * 20}/{'o' * 24}"}}})
+    deleted: list[str] = []
+    report = cleanup.run_cleanup(_CleanupDb([_Snap(mine), _Snap(text_only), _Snap(forged)]), NOW, delete_file=deleted.append)
+    assert deleted == [PATH]
+    assert report.files_removed == 1 and report.expired_answered == 3
+    assert all(r.data["status"] == "expired" and "response" not in r.data for r in (mine, text_only, forged))
