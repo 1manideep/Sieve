@@ -23,8 +23,9 @@ import { tablesOf, useDb } from '../dbTables';
 import { DraftPanel } from '../DraftPanel/DraftPanel';
 import { ErrorBoundary } from '../ErrorBoundary/ErrorBoundary';
 import { ItemViewer } from '../ItemViewer/ItemViewer';
-import { outcomeTitle } from '../OutcomePanel/OutcomePanel';
+import { draftDiscarded, outcomeTitle } from '../OutcomePanel/OutcomePanel';
 import { PreparingCard, waitingLines } from '../PreparingCard/PreparingCard';
+import { SieveOrb } from '../SieveOrb/SieveOrb';
 import { Glyph } from './glyphs';
 import styles from './AskResult.module.css';
 
@@ -139,14 +140,23 @@ function PreparingLine({ useAsk, setupPct }: { useAsk: AskStore; setupPct?: numb
   const { liveSteps, answerPreview, startedAt } = useAsk(useShallow((s) => ({ liveSteps: s.liveSteps, answerPreview: s.answerPreview, startedAt: s.startedAt })));
   const now = useNow(1000);
   const lines = waitingLines(now - (startedAt ?? mountedAt), { setupPct });
+  const current = liveSteps[liveSteps.length - 1];
   return (
     <>
       {answerPreview ? (
-        <p className={styles.replyText} dir="auto">{answerPreview}</p>
+        // Nov 24: a draft, not the answer. The second check may still throw it out (an Uber trip for an insurance
+        // question), so it is labelled and dimmed until the result replaces it.
+        <>
+          <p className={styles.searched} role="status">
+            <SieveOrb checkingDraft className={styles.orb} />
+            <span>{CONVERSATION_COPY.draftChecking}</span>
+          </p>
+          <p className={`${styles.replyText} ${styles.draft}`} dir="auto" data-testid="draft-answer">{answerPreview}</p>
+        </>
       ) : (
         <p className={styles.searched} role="status">
-          <Glyph name="sparkle" size={16} className={styles.sparkle} />
-          <span>{liveSteps[liveSteps.length - 1]?.label ?? CONVERSATION_COPY.looking}</span>
+          <SieveOrb kind={current?.kind} className={styles.orb} />
+          <span>{current?.label ?? CONVERSATION_COPY.looking}</span>
         </p>
       )}
       {lines.length > 0 ? <p className={styles.searched} data-testid="waiting-line">{lines.join(' ')}</p> : null}
@@ -172,6 +182,9 @@ function chatSentence(p: Proposal): string {
       return reason === OUTCOME_COPY.oneFactLine ? reason : ASK_FLOW.unsupported;
     case 'error':
       return ASK_FLOW.somethingWrong;
+    case 'no-match':
+      if (draftDiscarded(p)) return `${OUTCOME_COPY.noMatchTitle}. ${OUTCOME_COPY.draftDiscarded}`;
+      return `${OUTCOME_COPY.noMatchTitle}.`;
     default:
       return `${outcomeTitle(p.outcome, p.item?.category, reason === `${OUTCOME_COPY.secretTitle}.`)}.`;
   }

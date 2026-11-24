@@ -6,7 +6,7 @@
 // is paused), the home shows the Sources screen's indexing row above the chips (13.4).
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
 import { AskHome } from '@/components/AskResult/AskHome';
@@ -80,6 +80,18 @@ export function AskScreen() {
       }
     });
   }, [waiting]);
+
+  // Nov 24: "New ask" in the rail while already on Ask. The link goes to the page that is open, so nothing used to
+  // change and the last answer stayed. Each click is a new visit with its own key; a new key on a mounted screen
+  // starts over. Coming back from another screen mounts it afresh and keeps the conversation.
+  const visit = useLocation().key;
+  const firstVisit = useRef(visit);
+  useEffect(() => {
+    if (visit === firstVisit.current) return;
+    firstVisit.current = visit;
+    focusWhenIdle.current = true;
+    useAskReal.getState().reset();
+  }, [visit]);
 
   // "New ask" returns to the prompt card; the field there takes focus once it exists.
   useEffect(() => {

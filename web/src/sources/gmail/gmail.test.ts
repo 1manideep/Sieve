@@ -22,6 +22,8 @@ import { decodeMimeWords, decodeSnippet, extractBodies, header, isSkippable } fr
 import { UnitBucket } from './rateLimit';
 import { GMAIL_MESSAGE_MAX_FAILURES, runGmailSync } from './sync';
 import { storedTokenOf } from './tokenStore';
+import { gmailWindowQuery, setGmailWindow } from './window';
+import { GMAIL_WINDOW_KEY } from '../../state/gmailWindow';
 
 vi.mock('@/ai', async () => (await import('../../../../tests/harness/aiMock')).aiModule);
 vi.mock('@/privacy', async () => (await import('../../../../tests/harness/privacyMock')).privacyModule);
@@ -461,5 +463,78 @@ describe('live Gmail search (A-SR-11)', () => {
     expect(report?.live?.q).toContain('deposit');
     expect(res.map((c) => c.recordId)).toContain('gmail:l1');
     expect(await db.records.get('gmail:l2')).toBeDefined();   // fetched because the index did not have it
+  });
+});
+
+describe('a chosen window: index only the last N days (Nov 24)', () => {
+  afterEach(() => window.localStorage.removeItem(GMAIL_WINDOW_KEY));
+
+  function mailbox(): void {
+    gmail.now = Date.now();   // the window is counted from the real clock
+    for (const [id, days] of [['d1', 1], ['d5', 5], ['d20', 20], ['d60', 60], ['d200', 200]] as const) {
+      gmail.add({ id, subject: `Mail from ${days} days ago`, text: `Body ${id}.`, internalDate: gmail.now - days * DAY }, { silent: true });
+    }
+  }
+  const ids = async () => ((await db.records.where('source').equals('gmail').primaryKeys()) as string[]).sort();
+
+  it('picked before connecting: the first backfill lists only that window', async () => {
+    mailbox();
+    window.localStorage.setItem(GMAIL_WINDOW_KEY, '7');
+    await connect();
+    expect(await ids()).toEqual(['gmail:d1', 'gmail:d5']);
+    expect(gmailWindowQuery(7)).toBe('newer_than:7d -in:chats -in:drafts');
+  });
+
+  it('the default is unchanged: six months, so 200 days ago stays out', async () => {
+    mailbox();
+    await connect();
+    expect(await ids()).toEqual(['gmail:d1', 'gmail:d20', 'gmail:d5', 'gmail:d60']);
+    expect(gmailWindowQuery(undefined)).toBe('newer_than:6m -in:chats -in:drafts');
+  });
+
+  it('shrinking removes older email at once; growing reads the days it adds', async () => {
+    mailbox();
+    await connect();
+    const resync = vi.fn(async (d: SieveDb) => {
+      await runGmailSync(d, 'backfill');
+    });
+    const shrunk = await setGmailWindow(db, 7, resync);
+    expect(shrunk.removed).toBe(2);
+    expect(await ids()).toEqual(['gmail:d1', 'gmail:d5']);
+    expect(resync).not.toHaveBeenCalled();   // shorter than the default six months: nothing new to list
+    expect((await db.tombstones.get('gmail:d60'))?.reason).toBe('user-removed');
+
+    await setGmailWindow(db, 30, resync);
+    expect(resync).toHaveBeenCalledTimes(1);
+    await until(async () => (await ids()).includes('gmail:d20'));
+    expect(await ids()).toEqual(['gmail:d1', 'gmail:d20', 'gmail:d5']);
+    await expect(setGmailWindow(db, 0, resync)).rejects.toThrow(RangeError);
+  });
+
+  it('email that ages out of the window leaves on the next reconciliation', async () => {
+    mailbox();
+    window.localStorage.setItem(GMAIL_WINDOW_KEY, '30');
+    await connect();
+    expect(await ids()).toContain('gmail:d20');
+    window.localStorage.setItem(GMAIL_WINDOW_KEY, '14');   // as if 16 days had passed for d20's window position
+    await runGmailSync(db, 'reconcile');
+    expect(await ids()).toEqual(['gmail:d1', 'gmail:d5']);
+  });
+
+  it('a question never reaches past the window: an after: floor, and an older sender is not fetched', async () => {
+    mailbox();
+    window.localStorage.setItem(GMAIL_WINDOW_KEY, '30');
+    await connect();
+    gmail.add({ id: 'benji', subject: 'Quick favour', from: 'Benji Okoro <benji@inbox.example>', text: 'Could you send me the slides?', internalDate: gmail.now - 90 * DAY }, { silent: true });
+    let report: SearchReport | undefined;
+    const res = await search(db, 'What did Benji ask me in his latest email?', { hints: { from: 'Benji' }, onReport: (r) => (report = r) });
+    expect(report?.live?.q).toMatch(/^from:benji after:\d{4}\/\d{2}\/\d{2} -in:chats -in:drafts$/);
+    expect(res.map((c) => c.recordId)).not.toContain('gmail:benji');
+    expect(await db.records.get('gmail:benji')).toBeUndefined();
+    // the floor only moves a question's own date later, never earlier
+    const df = () => 0;
+    expect(buildGmailQuery({ corrected: 'rent', hints: { after: '2026-11-20' } }, df, '2026-10-25').q).toContain('after:2026/11/19');
+    expect(buildGmailQuery({ corrected: 'rent', hints: { after: '2026-01-01' } }, df, '2026-10-25').q).toContain('after:2026/10/24');
+    expect(buildGmailQuery({ corrected: 'rent', hints: {} }, df, null).q).not.toContain('after:');
   });
 });

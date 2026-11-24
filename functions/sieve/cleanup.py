@@ -11,7 +11,7 @@ from google.api_core.exceptions import FailedPrecondition
 from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
-from . import config, fb, logs
+from . import config, fb, files, logs
 from .relay import MSG_COLLECT_EXPIRED, MSG_DECISION_EXPIRED, is_playground, mark_receipt
 
 RUN_BUDGET_SECONDS = 240
@@ -31,7 +31,8 @@ def run_scheduled() -> CleanupReport:
     # Files sent as themselves: links past their time go, with their objects (filehttp.py).
     try:
         from . import filehttp
-        report.files_removed = filehttp.remove_expired(fb.db(), fb.now(), filehttp.delete_object)
+        report.files_removed += filehttp.remove_expired(fb.db(), fb.now(), filehttp.delete_object)
+        report.files_removed += filehttp.remove_stale_handoffs(fb.now(), filehttp.list_handoffs(), filehttp.delete_object)
     except Exception:       # noqa: BLE001 - Storage not set up yet, or briefly away: the next run tries again
         logs.log_event("cleanup_files_failed")
     logs.log_event("cleanup_run", expired_open=report.expired_open, expired_answered=report.expired_answered,
@@ -49,7 +50,10 @@ def _precondition_update(db: Any, snap: Any, data: dict[str, Any]) -> bool:
 
 
 def run_cleanup(db: Any, now: datetime, *, batch_limit: int = 200,
-                monotonic: Any = time.monotonic) -> CleanupReport:
+                monotonic: Any = time.monotonic, delete_file: Any = None) -> CleanupReport:
+    """`delete_file(path)` removes an approved file whose answer expired uncollected; Cloud Storage by default."""
+    if delete_file is None:
+        from .relay import delete_stored_file as delete_file
     report = CleanupReport()
     started = monotonic()
 
@@ -89,6 +93,11 @@ def run_cleanup(db: Any, now: datetime, *, batch_limit: int = 200,
             report.expired_answered += 1
             data = snap.to_dict() or {}
             uid = snap.reference.parent.parent.id
+            # the assistant never came back, so no link was made and nothing else would ever delete the file
+            orphan = files.orphan_path(data.get("response"), uid, snap.id)
+            if orphan is not None:
+                delete_file(orphan)
+                report.files_removed += 1
             if not is_playground(data) and mark_receipt(db, uid, snap.id, "expired"):
                 report.receipts_expired += 1
         if len(snaps) < batch_limit or not fresh:

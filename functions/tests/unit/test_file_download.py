@@ -104,3 +104,20 @@ def test_the_cleanup_removes_links_past_their_time_with_their_files(world):
     removed = filehttp.remove_expired(db, NOW + timedelta(minutes=15), store.delete)
     assert removed == 1 and store.deleted == [PATH]
     assert list(k for k in db.docs if k.startswith("fileLinks/")) == [f"fileLinks/{files.file_token_hash(fresh)}"]
+
+
+def test_stale_handoffs_are_swept_whatever_became_of_their_request():
+    """Nov 24: a file no payload names (an upload that finished after the home base gave up, a take-back that failed
+    offline) is deleted once it is an hour old; younger files and anything outside handoffs/ are left alone."""
+    from datetime import datetime, timedelta, timezone
+    from sieve import filehttp
+    now = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+    old = f"handoffs/{'u' * 28}/{'r' * 20}/{'o' * 24}"
+    young = f"handoffs/{'u' * 28}/{'s' * 20}/{'p' * 24}"
+    listed = [(old, now - timedelta(hours=2)), (young, now - timedelta(minutes=5)),
+              ("handoffs/not-a-handoff", now - timedelta(days=3)), (f"{old}/extra", now - timedelta(days=3))]
+    deleted: list[str] = []
+    assert filehttp.remove_stale_handoffs(now, listed, deleted.append) == 1
+    assert deleted == [old]
+    many = [(f"handoffs/{'u' * 28}/{'r' * 20}/{'o' * 23}{i % 10}", now - timedelta(days=1)) for i in range(5)]
+    assert filehttp.remove_stale_handoffs(now, many, deleted.append, limit=3) == 3

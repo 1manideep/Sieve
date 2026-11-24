@@ -1,6 +1,6 @@
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { Link, MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { Proposal, StepOption } from '@sieve/shared';
 import type { PrepareInput } from '@/pipeline';
@@ -332,6 +332,30 @@ describe('Ask as a chat', () => {
     expect(screen.queryByText(/^Searched .* picked 1/)).toBeNull();
   });
 
+  it('"New ask" while already on Ask starts over: the last question goes and the run stops (Nov 24)', async () => {
+    act(() => {
+      useAskReal.setState({
+        phase: 'preparing', requestId: 'r1', question: '', asked: 'How much is my auto insurance this month?', answerPreview: 'Your Monday morning trip',
+        liveSteps: [{ id: 'r1:1', kind: 'answer', label: 'Writing the answer…', where: 'device', status: 'running', startedAt: Date.now() }],
+      });
+    });
+    const reset = vi.spyOn(useAskReal.getState(), 'reset');
+    render(
+      <MemoryRouter initialEntries={['/ask']}>
+        <main>
+          <Link to="/ask">New ask</Link>
+          <AskScreen />
+        </main>
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId('draft-answer')).toBeInTheDocument();
+    expect(reset).not.toHaveBeenCalled();   // opening Ask keeps the conversation
+    await userEvent.click(screen.getByRole('link', { name: 'New ask' }));
+    expect(reset).toHaveBeenCalledTimes(1);
+    expect(useAskReal.getState().phase).toBe('idle');
+    expect(screen.queryByTestId('draft-answer')).toBeNull();
+  });
+
   it('while preparing: one quiet line, then the answer as it is written; Details shows the steps', async () => {
     act(() => {
       useAskReal.setState({
@@ -342,8 +366,12 @@ describe('Ask as a chat', () => {
     renderAsk();
     expect(screen.getByRole('status')).toHaveTextContent('Searching this device…');
     expect(screen.queryByTestId('preparing-card')).toBeNull();
+    expect(screen.getByTestId('thinking-orb')).toBeInTheDocument();
     act(() => useAskReal.setState({ answerPreview: 'Your deposit was' }));
     expect(screen.getByText('Your deposit was')).toBeInTheDocument();
+    // Nov 24: labelled as a draft, since the second check may still throw it out
+    expect(screen.getByRole('status')).toHaveTextContent('Draft, still being checked.');
+    expect(screen.getByTestId('draft-answer')).toHaveTextContent('Your deposit was');
     await userEvent.click(details());
     expect(screen.getByTestId('preparing-card')).toBeInTheDocument();
   });

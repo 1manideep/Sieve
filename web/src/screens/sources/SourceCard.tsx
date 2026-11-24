@@ -14,6 +14,7 @@ import { useSources, type SourceRowView } from '@/state/sources';
 import { Confirm } from '../settings/kit/Confirm';
 import { Fill, Iso } from '../settings/kit/Fill';
 import kit from '../settings/kit/kit.module.css';
+import { GmailWindow } from './GmailWindow';
 import type { RealSource } from './sourcesDb';
 import styles from './sources.module.css';
 
@@ -230,6 +231,8 @@ export function SourceCard({ kind, row, itemCount = 0, compact = false, panel = 
           {SOURCES.gmailTesting}
         </Notice>
       ) : null}
+
+      {kind === 'gmail' ? <GmailWindow /> : null}
 
       {problems.length > 0 ? (
         <div role="status">

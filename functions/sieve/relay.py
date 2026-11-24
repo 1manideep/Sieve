@@ -293,6 +293,7 @@ class Collected:
     kind: Literal["delivered", "not-answered", "missing", "revoked"]
     payload: RelayPayload | None = None
     data: dict | None = None
+    orphan: str | None = None    # the stored file of a payload dropped here; deleted once the transaction is done
 
 
 def _collect_txn(txn: Any, ref: Any, grant_ref: Any, now: datetime, max_step: str, owner: tuple[str, str] | None = None) -> Collected:
@@ -305,11 +306,12 @@ def _collect_txn(txn: Any, ref: Any, grant_ref: Any, now: datetime, max_step: st
     # 70 R-RLY-08: re-check the grant at the moment of delivery; a revoke that raced this call wins.
     grant_snap = grant_ref.get(transaction=txn)
     grant = grant_snap.to_dict() if grant_snap.exists else None
+    orphan = files.orphan_path(data.get("response"), *owner) if owner is not None else None
     if not grant or grant.get("revokedAt"):
         txn.update(ref, {"status": "revoked", "message": MSG_REVOKED_AT_DELIVERY, "response": firestore.DELETE_FIELD})
         data = {k: v for k, v in data.items() if k != "response"}
         data.update({"status": "revoked", "message": MSG_REVOKED_AT_DELIVERY})
-        return Collected("revoked", data=data)
+        return Collected("revoked", data=data, orphan=orphan)
     rank = config.STEP_RANK
     cap = min(rank.get(max_step, 0), rank.get(data.get("maxStep"), 0), rank.get(grant.get("maxStep"), 0))
     try:
@@ -324,7 +326,7 @@ def _collect_txn(txn: Any, ref: Any, grant_ref: Any, now: datetime, max_step: st
         txn.update(ref, {"status": "error", "message": MSG_UNDELIVERABLE, "response": firestore.DELETE_FIELD})
         data = {k: v for k, v in data.items() if k != "response"}
         data.update({"status": "error", "message": MSG_UNDELIVERABLE})
-        return Collected("not-answered", data=data)
+        return Collected("not-answered", data=data, orphan=orphan)
     txn.update(ref, {"status": "collected", "collectedAt": now, "response": firestore.DELETE_FIELD})
     return Collected("delivered", payload=payload, data=data)
 
@@ -336,7 +338,17 @@ def collect_answer(db: Any, uid: str, request_id: str, max_step: str, now: datet
     if snap.exists:
         grant_id = ((snap.to_dict() or {}).get("requester") or {}).get("grantId")
     grant_ref = db.collection(f"users/{uid}/grants").document(str(grant_id or "-"))
-    return fb.transact(db, _collect_txn, ref, grant_ref, now, max_step, (uid, request_id), lock_key=ref.path)
+    got = fb.transact(db, _collect_txn, ref, grant_ref, now, max_step, (uid, request_id), lock_key=ref.path)
+    if got.orphan is not None:
+        # outside the transaction, which may run more than once; the file's link would never be made
+        delete_stored_file(got.orphan)
+    return got
+
+
+def delete_stored_file(path: str) -> None:
+    """Deletes an approved file from Cloud Storage. A seam for the tests; Storage is imported only when used."""
+    from . import filehttp
+    filehttp.delete_object(path)
 
 
 def make_file_link(deps: Any, ctx: CallCtx, request_id: str, file: SharedFile) -> dict[str, Any]:

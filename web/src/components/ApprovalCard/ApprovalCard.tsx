@@ -15,7 +15,7 @@ import { DecisionBar } from '../DecisionBar/DecisionBar';
 import { Icon } from '../icons';
 import { ItemSummary } from '../ItemSummary/ItemSummary';
 import { LadderControl } from '../LadderControl/LadderControl';
-import { OutcomePanel } from '../OutcomePanel/OutcomePanel';
+import { draftDiscarded, OutcomePanel } from '../OutcomePanel/OutcomePanel';
 import { footerText, OutgoingPreview } from '../OutgoingPreview/OutgoingPreview';
 import { RedactedText } from '../RedactedText/RedactedText';
 import { RelatedList } from '../RelatedList/RelatedList';
@@ -139,6 +139,7 @@ export function ApprovalCard(props: ApprovalCardProps) {
               category={item?.category}
               secret={proposal.outcome === 'blocked-never' && proposal.options[0]?.unavailableReason === `${OUTCOME_COPY.secretTitle}.`}
               oneFact={proposal.outcome === 'unsupported' && proposal.options[0]?.unavailableReason === OUTCOME_COPY.oneFactLine}
+              discarded={draftDiscarded(proposal)}
               variant={variant === 'playground' ? 'playground' : 'real'}
               onRetry={onRetry}
             />

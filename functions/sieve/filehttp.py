@@ -8,7 +8,7 @@ often as it may be, or has run out, its object and its record are deleted.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Callable
 
 import flask
@@ -113,6 +113,31 @@ def handle_http(req: flask.Request, deps: FileDeps | None = None) -> flask.Respo
     return flask.Response(data, status=200, headers={
         **_HEADERS, "Content-Type": link.mime, "Content-Length": str(len(data)),
         "Content-Disposition": files.content_disposition(link.name)})
+
+
+HANDOFF_MAX_AGE = timedelta(hours=1)    # far past a link's 10 minutes and an upload's 90 seconds
+
+
+def list_handoffs() -> Any:
+    """(path, created) of every stored handoff, oldest first as Storage lists them."""
+    for blob in _bucket().list_blobs(prefix="handoffs/"):
+        yield blob.name, blob.time_created
+
+
+def remove_stale_handoffs(now: datetime, listed: Any, delete: Callable[[str], None], *, limit: int = 500) -> int:
+    """The backstop (Nov 24): any handed-off file older than HANDOFF_MAX_AGE goes, whatever became of its request.
+    An upload that finished after the home base gave up waiting, or a take-back that failed offline, leaves a file
+    no payload names and no link points to; nothing else would ever delete it. Returns how many."""
+    removed = 0
+    for path, created in listed:
+        if removed >= limit:
+            break
+        if files.file_owner(path) is None or not isinstance(created, datetime):
+            continue
+        if now - created >= HANDOFF_MAX_AGE:
+            delete(path)
+            removed += 1
+    return removed
 
 
 def remove_expired(db: Any, now: datetime, delete: Callable[[str], None], *, batch_limit: int = 200) -> int:

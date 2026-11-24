@@ -39,3 +39,6 @@
 .replyText { margin: 0; font-size: 17px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .replyActions { display: flex; flex-wrap: wrap; gap: 4px; margin-left: -10px; }
 .decision { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Nov 24: the thinking orb beside the step, and a draft answer dimmed until it is checked */
+.orb { flex: none; display: inline-flex; width: 20px; height: 20px; }
+.draft { color: var(--color-text-secondary); }

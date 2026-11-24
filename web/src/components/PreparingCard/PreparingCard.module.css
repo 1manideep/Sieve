@@ -45,3 +45,4 @@
 @media (prefers-reduced-motion: reduce) {
   .card, .dot, .caret { animation: none; }
 }
+.orb { flex: none; display: inline-flex; width: 20px; height: 20px; }

@@ -21,6 +21,8 @@ export interface SourcesState {
   setPaused(paused: boolean): Promise<void>;               // all sources
   rebuild(): Promise<void>;
   addFiles(kind: DbKind, files: File[]): Promise<AddResult[]>;
+  /** How far back Gmail is read, in days; undefined for the default (sources/gmail/window.ts). Returns how many older emails left. */
+  setGmailWindow(days: number | undefined): Promise<number>;
 }
 
 /** 20 section 17 `addUploads`, used when the sources module provides it. */
@@ -127,6 +129,13 @@ export const useSources = create<SourcesState>()((set) => {
         if (!paused) useIndexing.getState().resumeOnBattery();
         const { sources, index } = await load();
         await sources.setIndexingPaused(index.openDb('real'), paused);
+      }),
+
+    setGmailWindow: (days) =>
+      busy('gmail', async () => {
+        const { sources, index } = await load();
+        const out = await sources.setGmailWindow(index.openDb('real'), days, (db) => sources.runGmailSync(db, 'backfill'));
+        return out.removed;
       }),
 
     rebuild: () =>
