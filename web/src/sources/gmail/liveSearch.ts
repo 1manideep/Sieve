@@ -12,6 +12,7 @@ import { getGmailToken } from './auth';
 import { GmailAuthError, GmailNotFoundError, getMessage, listMessages } from './api';
 import { isTrashed } from './mime';
 import { rawFromMessage } from './sync';
+import { gmailWindowFirstDay, gmailWindowStart, readGmailWindowDays } from './window';
 
 const ROLE_WORDS = new Set(['landlord', 'doctor', 'dentist', 'bank', 'boss', 'manager', 'mom', 'dad', 'pharmacy', 'airline']);
 const DATE_WORDS = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december|monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|tonight|weekend|summer|winter|spring|fall|autumn|christmas|halloween|thanksgiving|\d+(st|nd|rd|th)?)$/i;
@@ -35,8 +36,15 @@ function gmailDay(d: string, deltaDays: number): string {
  * to the sender alone, not to a word alone. Before, "ask from:x" found nothing in mail older than the index, the
  * fallback dropped the sender, and the request ended with nothing found (Nov 22, 2026).
  */
-export function buildGmailQuery(p: { corrected: string; hints: QueryHints }, df: (term: string) => number): { q: string; fallback: string } {
-  const hints = p.hints;
+export function buildGmailQuery(
+  p: { corrected: string; hints: QueryHints },
+  df: (term: string) => number,
+  /** The window's first day (YYYY-MM-DD), null for no window; by default the one this computer chose. */
+  windowFirstDay: string | null = gmailWindowFirstDay(readGmailWindowDays()) ?? null,
+): { q: string; fallback: string } {
+  // a chosen window (window.ts) is a floor: the question's own after: date may only move it later
+  const after = windowFirstDay !== null && (p.hints.after === undefined || p.hints.after < windowFirstDay) ? windowFirstDay : p.hints.after;
+  const hints = { ...p.hints, after };
   // exact identifiers (digits, phrases) are quoted; a capitalized name is an ordinary content word
   const exact = (hints.terms ?? []).filter((t) => /\d|\s/.test(t));
   const termSet = new Set(exact.map((t) => t.toLowerCase()));
@@ -112,6 +120,9 @@ export async function liveGmailSearch(db: SieveDb, p: { corrected: string; hints
         const msg = await getMessage(id.slice('gmail:'.length), 'full', 'interactive', opts.signal);
         if (isTrashed(msg.labelIds)) continue;
         const r = await rawFromMessage(msg, 'full');
+        // Gmail's after: has a day of slack; a chosen window is exact, so an email from before it is never read in
+        const windowStart = gmailWindowStart(readGmailWindowDays());
+        if (windowStart !== undefined && r.internalDate < windowStart) continue;
         const rec = await ingestInternal(db, r.raw, 'own', { sizeBytes: r.sizeBytes, sourceModifiedAt: r.internalDate, contentHash: r.contentHash, priority: 'high' });
         if (rec) out.push(rec.id);
       } catch (e) {

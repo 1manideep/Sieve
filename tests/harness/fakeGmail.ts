@@ -126,6 +126,7 @@ export class FakeGmail {
       return out;
     };
     for (const v of take(/newer_than:(\d+)m/g)) if (m.internalDate < this.now - Number(v) * 31 * 86_400_000) return false;
+    for (const v of take(/newer_than:(\d+)d/g)) if (m.internalDate < this.now - Number(v) * 86_400_000) return false;
     for (const v of take(/after:(\d{4}\/\d{2}\/\d{2})/g)) if (m.internalDate < gmailDate(v) + 86_400_000) return false;
     for (const v of take(/before:(\d{4}\/\d{2}\/\d{2})/g)) if (m.internalDate >= gmailDate(v)) return false;
     for (const v of take(/-in:(\w+)/g)) if (m.labelIds.includes(v.toUpperCase().replace(/S$/, ''))) return false;

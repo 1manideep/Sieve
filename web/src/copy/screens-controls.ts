@@ -237,6 +237,15 @@ export const SOURCES = {
   fileUnsupported: "{name} isn't a supported file. Try PDF, text or a photo.",
   tooManyFiles: 'Add up to 5 files at a time.',
   /** D9: before the Google popup for Gmail, say what Google's unverified-app warning asks for, and offer the folder. */
+  // Nov 24: how far back Gmail is read (sources/gmail/window.ts)
+  windowLabel: 'Read email from',
+  windowDefault: 'The last 6 months (default)',
+  windowDays: 'The last {days} days',
+  windowSixMonths: 'Only the last 6 months',
+  windowYear: 'The last year',
+  windowHelp: 'Sieve indexes email from this window only. With a window picked, it never reads older email, even to answer a question, and older email leaves this computer.',
+  windowTrimmed: 'Removed {count} older emails from this computer.',
+  windowSaved: 'Saved. New email outside the window is never read.',
   gmailTesting: "Google shows a warning that Sieve isn't verified yet. Press Advanced, then Go to Sieve, and allow read-only Gmail access.",
   useFolderInstead: 'Use a local folder instead',
   laterSources: 'Add a source: Google Calendar and Google Drive come later.',

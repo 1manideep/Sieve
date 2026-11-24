@@ -3,7 +3,7 @@
 // removeRecords, so they follow the consistency rules of 01 section 10.
 import type { IndexRecord } from '@sieve/shared';
 import {
-  GMAIL_BACKFILL_QUERY, GMAIL_BODY_BACKFILL_MAX, GMAIL_COST, GMAIL_LIST_PAGE, GMAIL_MAX_CONCURRENCY, GMAIL_RECONCILE_EVERY_MS,
+  GMAIL_BODY_BACKFILL_MAX, GMAIL_COST, GMAIL_LIST_PAGE, GMAIL_MAX_CONCURRENCY, GMAIL_RECONCILE_EVERY_MS,
   GMAIL_RECONCILE_QUERY, GMAIL_SYNC_INTERVAL_MS, GMAIL_UNITS_PER_MINUTE, SOURCE_ROW_WRITE_MS,
 } from '../../index/config';
 import { emailContentHash, removeRecords } from '../../index/consistency';
@@ -14,6 +14,7 @@ import { getRuntime } from '../../index/runtime';
 import { SOURCE_COPY } from '../types';
 import { getGmailToken } from './auth';
 import { renewOnTimer } from './renew';
+import { gmailWindowQuery, readGmailWindowDays, trimToGmailWindow } from './window';
 import { loadStoredGmailToken } from './tokenStore';
 import {
   GmailAuthError, GmailForbiddenError, GmailNetworkError, GmailNotFoundError, GmailRateError,
@@ -172,7 +173,7 @@ export async function backfill(db: SieveDb, ctl: Ctl): Promise<void> {
   // While listing, the total only grows and the card says "so far"; the queue alone writes the row's progress, so
   // the card never alternates between the fetch count and the index count (20 section 13.4).
   const stored = await db.records.where('source').equals('gmail').count();
-  const listed = await listAll(GMAIL_BACKFILL_QUERY, ctl, (found) => {
+  const listed = await listAll(gmailWindowQuery(readGmailWindowDays()), ctl, (found) => {
     rt.syncProgress.set('gmail', { discovered: found, remaining: Math.max(0, found - stored), listing: true });
     void rt.queue?.writeRowsNow?.();
   });
@@ -331,7 +332,7 @@ export async function reconcile(db: SieveDb, ctl: Ctl): Promise<void> {
   const stored = (await db.records.where('source').equals('gmail').primaryKeys()) as string[];
   const gone = stored.filter((id) => !everything.has(id.slice('gmail:'.length)));
   if (gone.length > 0) await removeRecords(db, gone, 'source-deleted');
-  const windowIds = await listAll(GMAIL_BACKFILL_QUERY, ctl);
+  const windowIds = await listAll(gmailWindowQuery(readGmailWindowDays()), ctl);
   const known = await db.records.bulkGet(windowIds.map((m) => 'gmail:' + m.id));
   const missing = windowIds.filter((_, i) => !known[i]);
   const jobStartedAt = Date.now();
@@ -346,6 +347,8 @@ export async function reconcile(db: SieveDb, ctl: Ctl): Promise<void> {
       }
     });
   });
+  // a chosen window keeps its length as days pass: email that has aged out of it leaves the index (window.ts)
+  await trimToGmailWindow(db, readGmailWindowDays());
   await getRuntime(db).keyword.flush();
   await writer.set({ cursor: profile.historyId, phase: 'idle', lastSyncAt: Date.now(), reconciledAt: Date.now(), needsAuth: false, error: undefined, errorCode: undefined }, true);
 }

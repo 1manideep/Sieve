@@ -29,3 +29,4 @@ export type { GmailMessage, GmailPart, GmailHistory } from './gmail/api';
 export { header, decodeMimeWords, decodeBase64Url, extractBodies, decodeSnippet, isSkippable, isTrashed } from './gmail/mime';
 export { buildGmailQuery, liveGmailSearch, hydrateGmail } from './gmail/liveSearch';
 export { runGmailSync } from './gmail/sync';
+export { GMAIL_WINDOW_CHOICES, gmailWindowQuery, readGmailWindowDays, setGmailWindow, trimToGmailWindow } from './gmail/window';
