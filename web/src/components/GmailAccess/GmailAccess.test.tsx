@@ -61,7 +61,8 @@ describe('GmailAccess', () => {
     const user = userEvent.setup();
     await realDb.table('sources').put(row({ accessToken: { value: 'token', expiresAt: Date.now() + SKEW + 8 * MIN - 1_000, scope: 'gmail.readonly' } }));
     render(<main><GmailAccess /></main>);
-    const text = await screen.findByText('Gmail access on this computer ends in 8 min. Keep it connected so Sieve can read new mail and answer about the latest.');
+    // the first test here opens the test database, which takes over a second on a slower Windows laptop (Nov 24)
+    const text = await screen.findByText('Gmail access on this computer ends in 8 min. Keep it connected so Sieve can read new mail and answer about the latest.', undefined, { timeout: 5_000 });
     expect(text.closest('[data-tone]')).toHaveAttribute('data-tone', 'info');
     expect(screen.getByText(GMAIL_ACCESS.popups)).toBeInTheDocument();
     expect(useHomeBase.getState().gmailEnded).toBe(false);
