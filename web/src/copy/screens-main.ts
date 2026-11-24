@@ -127,8 +127,10 @@ export const PREPARING_COPY = {
   heading: 'Working on this device',
   tagDevice: 'Gemini Nano · on this device',
   tagCloud: 'Cloud · Gemini (sample data)',
-  answerEyebrow: 'Answer, written on this device',
-  checking: 'Checking it before anything can be shared…',
+  tagDeviceNoModel: 'On this device · no on-device model',   // Nov 24: this computer's Chrome has no Gemini Nano
+  // Nov 24: a draft, not the answer: the second check may still throw it out ("the Uber trip" for an insurance question)
+  answerEyebrow: 'Draft answer, written on this device',
+  checking: 'Checking that it answers your question before anything can be shared…',
   // Nov 23: after 3 seconds the card says how long since the question (WAITING in shared/src/copy.ts), what happens
   // next, and why it is slow when it is.
   setup: 'The on-device model is still being set up ({pct}%). Sieve answers once it is ready.',
@@ -209,6 +211,8 @@ export const CONVERSATION_COPY = {
   whatHappened: 'What happened, step by step',
   // the Ask page as a chat: the reply alone, with these under it
   looking: 'Looking on this computer…',
+  // Nov 24: the streamed answer is a draft until the second check passes; it may still be thrown out
+  draftChecking: 'Draft, still being checked. It may be thrown out if it does not answer your question.',
   copy: 'Copy',
   copied: 'Copied',
   openItem: 'Open the item',
@@ -238,6 +242,8 @@ export const OUTCOME_COPY = {
   noMatchTitle: 'Nothing on this device matched',
   noMatchReal: 'Try other words, or check that the right source is connected.',
   noMatchPlayground: 'Try one of the suggested questions.',
+  // Nov 24: the second check threw out the draft the preparing card had shown
+  draftDiscarded: "Sieve's draft came from an item that doesn't answer this, so it was thrown away. Nothing left this device.",
   countsTitle: "Counts aren't available",
   countsBody: 'Sieve answers from one item at a time, so it doesn\'t count emails or files. Ask about one item instead.',
   oneFactTitle: 'Sieve shares one fact at a time at this level',

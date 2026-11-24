@@ -15,6 +15,8 @@ export interface OutcomePanelProps {
   secret?: boolean;
   /** unsupported because it asks for several things, or the answer held several facts (10 section 12.4), not a count. */
   oneFact?: boolean;
+  /** no-match because the second check threw out the draft the preparing card had shown. */
+  discarded?: boolean;
   variant: 'real' | 'playground';
   onRetry?(): void;
 }
@@ -34,7 +36,12 @@ export function outcomeTitle(outcome: OutcomePanelOutcome, category?: Category, 
   }
 }
 
-export function OutcomePanel({ outcome, category, secret = false, oneFact = false, variant, onRetry }: OutcomePanelProps) {
+/** A no-match whose draft answer was thrown out by the second check (reason code second-check-no-…). */
+export function draftDiscarded(p: { outcome: string; reasonCode?: string }): boolean {
+  return p.outcome === 'no-match' && (p.reasonCode?.startsWith('second-check-no') ?? false);
+}
+
+export function OutcomePanel({ outcome, category, secret = false, oneFact = false, discarded = false, variant, onRetry }: OutcomePanelProps) {
   const real = variant === 'real';
   let tone: NoticeTone;
   let body: string;
@@ -47,7 +54,7 @@ export function OutcomePanel({ outcome, category, secret = false, oneFact = fals
       break;
     case 'no-match':
       tone = 'info';
-      body = real ? OUTCOME_COPY.noMatchReal : OUTCOME_COPY.noMatchPlayground;
+      body = discarded ? OUTCOME_COPY.draftDiscarded : real ? OUTCOME_COPY.noMatchReal : OUTCOME_COPY.noMatchPlayground;
       if (real) actions = <LinkButton to="/sources" variant="secondary" size="sm">{OUTCOME_COPY.sources}</LinkButton>;
       break;
     case 'unsupported':

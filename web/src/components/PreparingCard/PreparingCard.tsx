@@ -13,6 +13,9 @@ import { ProgressBar } from '../ProgressBar/ProgressBar';
 import { Tag } from '../Tag/Tag';
 import { formatMs } from '../TraceList/TraceList';
 import styles from './PreparingCard.module.css';
+import { SieveOrb } from '../SieveOrb/SieveOrb';
+import type { NanoAvailability } from '@sieve/shared';
+import { useAvailability, type SetupState } from '@/state/availability';
 
 export interface PreparingCardProps {
   liveSteps: LiveStep[];
@@ -49,9 +52,22 @@ export function waitingLines(elapsed: number, o: { next?: string; setupPct?: num
   return lines;
 }
 
+/**
+ * The tag says where the work runs. Nov 24: it asks this computer's Chrome (useAvailability), not the account: the
+ * same Google account can be signed in on a Mac with Gemini Nano and a laptop without it. Before, the tag claimed
+ * Gemini Nano on any device until a reading step ran in the cloud.
+ */
+export function workTag(cloud: boolean, nano: NanoAvailability | 'checking', setup: SetupState): 'cloud' | 'nano' | 'device' {
+  if (cloud) return 'cloud';
+  return nano === 'available' || setup === 'done' ? 'nano' : 'device';
+}
+
 export function PreparingCard({ liveSteps, answerPreview, startedAt, onStop, progressSupported, heading, next, setupPct }: PreparingCardProps) {
   const now = useNow(1000);
   const cloud = readsInCloud(liveSteps);
+  const nano = useAvailability((s) => s.text);
+  const setup = useAvailability((s) => s.setup.state);
+  const tag = workTag(cloud, nano, setup);
   const headingId = useId();
   // A step that already says why it waits (a first click, a background tab) is not followed by the busy line.
   const quiet = liveSteps.some((s) => s.id.endsWith(':wait-click') || s.id.endsWith(':hidden'));
@@ -63,8 +79,8 @@ export function PreparingCard({ liveSteps, answerPreview, startedAt, onStop, pro
         <h2 id={headingId} className={styles.heading} dir="auto">
           {heading ?? PREPARING_COPY.heading}
         </h2>
-        <Tag tone={cloud ? 'cloud' : 'device'}>
-          {cloud ? PREPARING_COPY.tagCloud : PREPARING_COPY.tagDevice}
+        <Tag tone={tag === 'cloud' ? 'cloud' : 'device'}>
+          {tag === 'cloud' ? PREPARING_COPY.tagCloud : tag === 'nano' ? PREPARING_COPY.tagDevice : PREPARING_COPY.tagDeviceNoModel}
         </Tag>
       </div>
 
@@ -73,7 +89,7 @@ export function PreparingCard({ liveSteps, answerPreview, startedAt, onStop, pro
           {liveSteps.map((s) => (
             <li key={s.id} className={styles.row} data-status={s.status}>
               {s.status === 'running' ? (
-                <span className={styles.dot} aria-hidden="true" />
+                <SieveOrb kind={s.kind} checkingDraft={answerPreview !== ''} className={styles.orb} />
               ) : (
                 <Icon name="check" size={16} className={styles.check} />
               )}

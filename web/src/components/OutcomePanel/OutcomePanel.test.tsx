@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoAxeViolations } from '@/test/axe';
-import { OutcomePanel } from './OutcomePanel';
+import { draftDiscarded, OutcomePanel } from './OutcomePanel';
 
 function renderIn(node: React.ReactNode) {
   return render(<MemoryRouter><main>{node}</main></MemoryRouter>);
@@ -28,6 +28,18 @@ describe('OutcomePanel', () => {
     expect(screen.getByText('Try one of the suggested questions.')).toBeInTheDocument();
     expect(screen.queryByRole('link')).toBeNull();
     await expectNoAxeViolations();
+  });
+
+  it('no-match after the second check threw out the draft: says so, instead of "try other words" (Nov 24)', async () => {
+    renderIn(<OutcomePanel outcome="no-match" discarded variant="real" />);
+    expect(screen.getByText('Nothing on this device matched')).toBeInTheDocument();
+    expect(screen.getByText(/Sieve's draft came from an item that doesn't answer this, so it was thrown away/)).toBeInTheDocument();
+    expect(screen.queryByText(/Try other words/)).not.toBeInTheDocument();
+    await expectNoAxeViolations();
+    expect(draftDiscarded({ outcome: 'no-match', reasonCode: 'second-check-no-top' })).toBe(true);
+    expect(draftDiscarded({ outcome: 'no-match', reasonCode: 'search-found-nothing' })).toBe(false);
+    expect(draftDiscarded({ outcome: 'no-match' })).toBe(false);
+    expect(draftDiscarded({ outcome: 'blocked-never', reasonCode: 'second-check-no-top' })).toBe(false);
   });
 
   it('model-unavailable: Settings and Set up the on-device model (real); no Playground', async () => {
