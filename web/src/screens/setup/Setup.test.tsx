@@ -8,6 +8,7 @@ import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
 import { expectNoAxeViolations } from '@/test/axe';
 import { makeFakeDb } from '@/components/__fixtures__/fakeDb';
+import { EXTENSION_ZIP_URL, zipLinkLabel } from '@/components/ExtensionInstall/ExtensionInstall';
 import { SetupScreen, setupDoneKey } from './index';
 
 vi.mock('firebase/app', () => import('@/test/fakes/firebaseApp'));
@@ -115,6 +116,25 @@ describe('Setup', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Finish' }));
     expect(localStorage.getItem(setupDoneKey('u1'))).toBe('1');
     expect(screen.getByText('Ask page')).toBeInTheDocument();
+  });
+
+  it('step 4: the extension download with the steps to install it; none in a build without the extension', async () => {
+    renderSetup();
+    for (let i = 0; i < 3; i += 1) await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
+    // No VITE_EXTENSION_ID in tests and the port is closed: nothing about the extension.
+    expect(screen.queryByText('Sieve extension')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: zipLinkLabel() })).not.toBeInTheDocument();
+    act(() => useHomeBase.setState({ extension: 'not-installed' }));
+    expect(screen.getByText('Sieve extension')).toBeInTheDocument();
+    expect(screen.getByText('Approve requests next to any tab with the Sieve extension.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: zipLinkLabel() })).toHaveAttribute('href', EXTENSION_ZIP_URL);
+    expect(screen.getByRole('link', { name: zipLinkLabel() }).className).toMatch(/secondary/);   // Finish stays the one primary
+    expect(screen.getByRole('button', { name: 'How to install' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Turn on Developer mode, at the top right.')).toBeVisible();
+    await expectNoAxeViolations();
+    act(() => useHomeBase.setState({ extension: 'connected' }));
+    expect(screen.getByText('Sieve extension connected. Approve requests from its side panel.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'How to install' })).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('Back revisits a step; Skip setup marks it done and goes to Ask', async () => {

@@ -193,7 +193,6 @@ export const STATUS_POPOVER = {
   turnOnCloud: 'Turn on cloud fallback',
   pause: 'Pause',
   resume: 'Resume',
-  getExtension: 'Get the extension',
   sourcesLink: 'Sources',
 } as const;
 

@@ -9,6 +9,7 @@ export default defineConfig({
   },
   define: {
     __APP_VERSION__: JSON.stringify('0.0.0-test'),
+    __EXTENSION_VERSION__: JSON.stringify('0.0.0-test'),
   },
   // Tests never read web/.env.local: the folder below holds no .env files, and test.env sets fake values.
   envDir: fileURLToPath(new URL('./src/test', import.meta.url)),

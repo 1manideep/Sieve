@@ -37,4 +37,12 @@ describe('LinkButton', () => {
     expect(external).toHaveAttribute('rel', 'noopener');
     await expectNoAxeViolations();
   });
+
+  it('renders a plain link with the download attribute for a file to save', () => {
+    render(<LinkButton to="/downloads/file.zip" download variant="primary">Download</LinkButton>);
+    const link = screen.getByRole('link', { name: 'Download' });
+    expect(link).toHaveAttribute('href', '/downloads/file.zip');
+    expect(link).toHaveAttribute('download');
+    expect(link).not.toHaveAttribute('target');
+  });
 });

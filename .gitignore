@@ -37,4 +37,5 @@ artifacts/
 web/public/models/
 web/public/ort/
 web/public/pdfjs/
+web/public/downloads/
 .vitest/

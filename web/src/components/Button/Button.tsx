@@ -46,15 +46,24 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
 export interface LinkButtonProps extends Omit<ButtonProps, 'type' | 'onClick'> {
   to: string;
   external?: boolean;
+  /** A same-origin file to save rather than open: a plain link with the download attribute, not the router's. */
+  download?: boolean;
   onClick?: MouseEventHandler<HTMLAnchorElement>;
 }
 
-/** A router Link styled as a button, or an external link opened in a new tab. Forwards its ref like Button. */
+/** A router Link styled as a button, an external link opened in a new tab, or a file to download. Forwards its ref like Button. */
 export const LinkButton = forwardRef<HTMLAnchorElement, LinkButtonProps>(function LinkButton(
-  { to, external, variant, size = 'md', tone = 'default', busy, icon, className, children, id, onClick },
+  { to, external, download, variant, size = 'md', tone = 'default', busy, icon, className, children, id, onClick },
   ref,
 ) {
   const cls = classes(variant, size, tone, className);
+  if (download) {
+    return (
+      <a ref={ref} href={to} download className={cls} id={id} onClick={onClick}>
+        <Inner busy={busy} icon={icon}>{children}</Inner>
+      </a>
+    );
+  }
   if (external) {
     return (
       <a ref={ref} href={to} target="_blank" rel="noopener" className={cls} id={id} onClick={onClick}>

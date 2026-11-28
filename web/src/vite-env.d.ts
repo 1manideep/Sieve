@@ -10,7 +10,7 @@ interface ImportMetaEnv {
   readonly VITE_FCM_VAPID_KEY: string;
   readonly VITE_FUNCTIONS_REGION?: string;        // default 'us-central1'
   readonly VITE_EXTENSION_ID?: string;            // absent: the extension bridge is off
-  readonly VITE_EXTENSION_STORE_URL?: string;     // absent: "Get the extension" links to VITE_REPO_URL + '#extension'
+  readonly VITE_EXTENSION_STORE_URL?: string;     // set: the store link leads, the site's zip (/downloads/) is "Or load it unpacked"
   readonly VITE_REPO_URL: string;
   readonly VITE_USE_EMULATORS?: 'true' | 'false' | '1' | '0' | '';
   readonly VITE_E2E?: 'true' | 'false' | '';
@@ -27,3 +27,4 @@ interface ImportMetaEnv {
 }
 interface ImportMeta { readonly env: ImportMetaEnv }
 declare const __APP_VERSION__: string;            // Vite `define`, from web/package.json "version"
+declare const __EXTENSION_VERSION__: string;      // Vite `define`, from extension/package.json "version" (the zip at /downloads/)

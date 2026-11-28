@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react';
 import { defaultClientConditions, defineConfig, loadEnv, type Plugin } from 'vite';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
+const extensionPkg = JSON.parse(readFileSync(new URL('../extension/package.json', import.meta.url), 'utf8')) as { version: string };
 
 /** Vendor chunks (40 section 17.2). Firestore, RTDB, messaging and functions stay out of the first load. */
 const CHUNKS: [name: string, pattern: RegExp][] = [
@@ -118,6 +119,8 @@ export default defineConfig(({ mode }) => {
     },
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
+      // The extension zip the site serves (scripts/extension-zip.mjs): /downloads/sieve-extension-<version>.zip
+      __EXTENSION_VERSION__: JSON.stringify(extensionPkg.version),
     },
     worker: { format: 'es' },   // the ML worker (web/src/ml) is an ES module worker
     server: {

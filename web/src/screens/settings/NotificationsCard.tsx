@@ -1,31 +1,23 @@
-// Notifications and this computer (40 section 13.8.7, 50 section 8.9; design handoff of Nov 20, 2026), as rows on
-// the ground: the push switch, the computers with their home base and push state, and the extension with its side
-// panel shortcut and the test request (50 section 11). Setup step 4 (13.3) reuses PushToggle, the checkbox form.
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+// Notifications and this computer (40 section 13.8.7; design handoff of Nov 20, 2026), as rows on the ground: the push
+// switch and the computers with their home base and push state. The extension, with its side panel shortcut and the
+// test request, has its own section (ExtensionCard, #extension). Setup step 4 (13.3) reuses PushToggle, the checkbox form.
+import { useId, useState } from 'react';
 import { useShallow } from 'zustand/shallow';
 import { canKeepDeviceId, defaultDeviceLabel } from '@/app/deviceId';
-import { env } from '@/app/env';
-import { Button, LinkButton } from '@/components/Button/Button';
+import { Button } from '@/components/Button/Button';
 import { ErrorBoundary } from '@/components/ErrorBoundary/ErrorBoundary';
 import { Tag } from '@/components/Tag/Tag';
-import { TestRequestButton } from '@/components/TestRequestButton/TestRequestButton';
 import { HOME_BASE_DIALOG, SETTINGS } from '@/copy/screens-controls';
-import { STATUS_POPOVER } from '@/copy/strings';
-import { announce } from '@/state/announcer';
 import { useHomeBase } from '@/state/homeBase';
 import { useSession } from '@/state/session';
 import { useSettings } from '@/state/settings';
 import { useToasts } from '@/state/toasts';
 import type { DeviceView } from '@/state/types';
-import { selectShortcut } from '../requests/RequestNotices';
 import { Confirm } from './kit/Confirm';
-import { Fill } from './kit/Fill';
 import { MakeHomeBaseDialog } from './kit/MakeHomeBaseDialog';
 import ground from './kit/ground.module.css';
 import { saveStatusText } from './settingsText';
 import styles from './settings.module.css';
-
-const SHORTCUTS_ADDRESS = 'chrome://extensions/shortcuts';
 
 /** The push setting. setPushEnabled runs straight from the click or change event: the permission prompt needs the gesture. */
 function usePush() {
@@ -113,63 +105,6 @@ export function PushToggle() {
   );
 }
 
-function ExtensionRow() {
-  const status = useHomeBase((s) => s.extension);
-  const shortcut = useHomeBase(selectShortcut);
-  const [copied, setCopied] = useState(false);
-  const timer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-  if (status === 'off') return null;
-
-  const copyAddress = async () => {
-    try {
-      await navigator.clipboard.writeText(SHORTCUTS_ADDRESS);
-      setCopied(true);
-      announce(SETTINGS.addressCopied);
-      window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard blocked: the address stays on screen to type.
-    }
-  };
-
-  let line: ReactNode;
-  if (status === 'connected') {
-    line =
-      shortcut === undefined ? (
-        STATUS_POPOVER.extensionConnected
-      ) : shortcut === '' ? (
-        SETTINGS.extensionShortcutUnset
-      ) : (
-        <Fill template={SETTINGS.extensionShortcut} values={{ shortcut: <kbd className={styles.kbd}>{shortcut}</kbd> }} />
-      );
-  } else if (status === 'not-installed') line = STATUS_POPOVER.extensionNotInstalled;
-  else if (status === 'reconnecting') line = STATUS_POPOVER.extensionReconnecting;
-  else line = STATUS_POPOVER.extensionIdle;
-
-  return (
-    <li className={ground.row}>
-      <span className={ground.rowText}>
-        <span>{SETTINGS.extensionHeading}</span>
-        <span className={ground.rowSub}>{line}</span>
-      </span>
-      <div className={styles.inline}>
-        {status === 'connected' && shortcut !== undefined ? (
-          <Button variant="secondary" size="sm" icon="copy" onClick={() => void copyAddress()}>
-            {copied ? SETTINGS.copied : SETTINGS.copyAddress}
-          </Button>
-        ) : null}
-        {status === 'not-installed' ? (
-          <LinkButton to={env.extensionStoreUrl ?? `${env.repoUrl}#extension`} external variant="secondary" size="sm">
-            {STATUS_POPOVER.getExtension}
-          </LinkButton>
-        ) : null}
-        <TestRequestButton status={status} />
-      </div>
-    </li>
-  );
-}
-
 export function NotificationsCard() {
   const status = useSettings((s) => saveStatusText(s.saving, (k) => k === 'pushEnabled'));
   const { devices, role } = useHomeBase(useShallow((s) => ({ devices: s.devices, role: s.role })));
@@ -234,7 +169,6 @@ export function NotificationsCard() {
           <PushRow />
           {row(thisDevice, true)}
           {others.map((d) => row(d, false))}
-          <ExtensionRow />
         </ul>
         <MakeHomeBaseDialog open={makeOpen} onClose={() => setMakeOpen(false)} />
         <Confirm

@@ -1,7 +1,8 @@
 // Settings (40 section 13.8; design handoff of Nov 20, 2026): the assistants first, as bare marks with the selected
-// one opened in one panel in place; then Your rules as tiles; Notifications and Account as rows on the ground; and
-// "More", closed until pressed, with the default step, cloud fallback, past connections and Delete my account.
-// Hash targets #ais, #rules, #default-step, #cloud, #notifications, #account still work: one inside More opens it.
+// one opened in one panel in place; then Your rules as tiles; Notifications and Account as rows on the ground; the
+// Sieve extension with its download and install steps; and "More", closed until pressed, with the default step,
+// cloud fallback, past connections and Delete my account. Hash targets #ais, #rules, #default-step, #cloud,
+// #notifications, #account and #extension work: one inside More opens it.
 import { useEffect, useId, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
@@ -13,6 +14,7 @@ import { useGrants } from '@/state/grants';
 import { connectedSources, useSourceRows } from '../sources/sourcesDb';
 import { AccountCard, DeleteAccountRow } from './AccountCard';
 import { AisCard } from './AisCard';
+import { ExtensionCard } from './ExtensionCard';
 import ground from './kit/ground.module.css';
 import kit from './kit/kit.module.css';
 import { ScreenHead } from './kit/ScreenHead';
@@ -21,7 +23,7 @@ import { NotificationsCard } from './NotificationsCard';
 import { CloudCard, DefaultStepCard, RulesCard } from './PreferenceCards';
 import styles from './settings.module.css';
 
-export const SETTINGS_HASHES = ['ais', 'rules', 'default-step', 'cloud', 'notifications', 'account'] as const;
+export const SETTINGS_HASHES = ['ais', 'rules', 'default-step', 'cloud', 'notifications', 'account', 'extension'] as const;
 const MORE_HASHES = ['default-step', 'cloud'] as const;
 
 /** On load with a hash, scroll to that part and focus its heading (after More opened, when it holds the part). */
@@ -86,6 +88,7 @@ export function Component() {
         <NotificationsCard />
         <AccountCard />
       </div>
+      <ExtensionCard />
       <div className={styles.moreWrap}>
         <button type="button" className={styles.moreButton} aria-expanded={moreOpen} aria-controls={moreId} onClick={() => setMoreOpen((v) => !v)}>
           <Icon name={moreOpen ? 'chevron-down' : 'chevron-right'} size={16} />

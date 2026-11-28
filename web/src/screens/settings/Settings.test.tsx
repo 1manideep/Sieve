@@ -5,7 +5,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RouterProvider, createMemoryRouter } from 'react-router-dom';
 import { CATEGORIES } from '@sieve/shared';
-import { CONSOLE, HOME_BASE_DIALOG, SETTINGS, TEST_REQUEST, fillText } from '@/copy/screens-controls';
+import { EXTENSION_ZIP_URL, zipLinkLabel } from '@/components/ExtensionInstall/ExtensionInstall';
+import { CONSOLE, EXTENSION_INSTALL, HOME_BASE_DIALOG, SETTINGS, TEST_REQUEST, fillText } from '@/copy/screens-controls';
 import { STATUS_POPOVER } from '@/copy/strings';
 import { useAvailability } from '@/state/availability';
 import { useGrants, type GrantsState } from '@/state/grants';
@@ -92,6 +93,8 @@ function moreRow(label: string): HTMLElement {
   if (!row) throw new Error(`no row for ${label}`);
   return row;
 }
+
+const zipLabel = zipLinkLabel();
 
 const sentence = (text: string) => (_: string, el: Element | null) =>
   el !== null && el.textContent === text && Array.from(el.children).every((c) => c.textContent !== text);
@@ -375,9 +378,14 @@ describe('Settings', () => {
     renderSettings();
     const card = cardOf(SETTINGS.notificationsHeading);
     expect(within(card).getByText(SETTINGS.homeBase)).toBeInTheDocument();
-    expect(within(card).getByText(sentence(fillText(SETTINGS.extensionShortcut, { shortcut: 'Ctrl+Shift+S' })))).toBeInTheDocument();
-    await user.click(within(card).getByRole('button', { name: SETTINGS.copyAddress }));
+    const extension = cardOf(SETTINGS.extensionHeading);
+    expect(within(extension).getByText(STATUS_POPOVER.extensionConnected)).toBeInTheDocument();
+    expect(within(extension).getByText(sentence(fillText(SETTINGS.extensionShortcut, { shortcut: 'Ctrl+Shift+S' })))).toBeInTheDocument();
+    await user.click(within(extension).getByRole('button', { name: SETTINGS.copyAddress }));
     expect(await navigator.clipboard.readText()).toBe('chrome://extensions/shortcuts');
+    // Connected: the zip is still offered (for updates), the steps folded.
+    expect(within(extension).getByRole('link', { name: zipLabel })).toHaveAttribute('href', EXTENSION_ZIP_URL);
+    expect(within(extension).getByRole('button', { name: EXTENSION_INSTALL.howTo })).toHaveAttribute('aria-expanded', 'false');
     await expectNoAxeViolations();
     await user.click(within(card).getByRole('button', { name: SETTINGS.stopHomeBase }));
     const dialog = screen.getByRole('dialog', { name: HOME_BASE_DIALOG.stopTitle });
@@ -394,17 +402,31 @@ describe('Settings', () => {
   it('puts the test request next to the extension status, enabled only while connected (50 section 11)', async () => {
     useHomeBase.setState({ extension: 'not-installed' } as Partial<HomeBaseState>);
     renderSettings();
-    const card = cardOf(SETTINGS.notificationsHeading);
+    const card = cardOf(SETTINGS.extensionHeading);
+    expect(within(cardOf(SETTINGS.notificationsHeading)).queryByText(STATUS_POPOVER.extensionNotInstalled)).not.toBeInTheDocument();
     expect(within(card).getByText(STATUS_POPOVER.extensionNotInstalled)).toBeInTheDocument();
     expect(within(card).getByRole('button', { name: TEST_REQUEST.button })).toBeDisabled();
+    // Not installed: the zip and the steps, open.
+    expect(within(card).getByRole('link', { name: zipLabel })).toHaveAttribute('download');
+    expect(within(card).getByRole('button', { name: EXTENSION_INSTALL.howTo })).toHaveAttribute('aria-expanded', 'true');
+    expect(within(card).getByText(EXTENSION_INSTALL.step1)).toBeVisible();
     await expectNoAxeViolations();
     act(() => useHomeBase.setState({ extension: 'connected' } as Partial<HomeBaseState>));
     expect(within(card).getByRole('button', { name: TEST_REQUEST.button })).toBeEnabled();
   });
 
-  it('shows no test request when the extension bridge is off', () => {
-    renderSettings();
+  it('shows no test request when the extension bridge is off, and no extension section in a build without one', () => {
+    renderSettings('/settings#extension');
     expect(screen.queryByRole('button', { name: TEST_REQUEST.button })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 2, name: SETTINGS.extensionHeading })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: zipLabel })).not.toBeInTheDocument();
+  });
+
+  it('scrolls to and focuses the extension section named by #extension', async () => {
+    useHomeBase.setState({ extension: 'not-installed' } as Partial<HomeBaseState>);
+    renderSettings('/settings#extension');
+    await waitFor(() => expect(screen.getByRole('heading', { level: 2, name: SETTINGS.extensionHeading })).toHaveFocus());
+    expect(cardOf(SETTINGS.extensionHeading)).toHaveAttribute('id', 'extension');
   });
 
   it('signs out to the welcome page', async () => {

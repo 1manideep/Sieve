@@ -722,6 +722,34 @@ export const TEST_REQUEST = {
   onlyAnswer: 'The test offers the answer only.',
 } as const;
 
+/**
+ * Getting the extension (components/ExtensionInstall): the zip this site serves, loaded unpacked in Chrome on a
+ * computer. In Settings (#extension), Setup step 4 and the Playground's extension strip. {address} is chrome://extensions,
+ * {version} the extension's version.
+ */
+export const EXTENSION_INSTALL = {
+  download: 'Download the extension (version {version}, .zip)',
+  store: 'Add it from the Chrome Web Store',
+  orUnpacked: 'Or load it unpacked (version {version}, .zip)',
+  howTo: 'How to install',
+  step1: 'Download the zip with the button above.',
+  step2: 'Unzip it. On a Mac, double-click it. On Windows, right-click it and choose Extract All.',
+  step2Note: 'Keep the folder somewhere permanent. Chrome loads Sieve from that folder, so deleting it removes the extension.',
+  step3: 'Open a new tab and go to this address:',
+  step3Note: "Pages can't link to chrome:// addresses, so copy it and paste it into the address bar.",
+  copy: 'Copy',
+  copyLabel: 'Copy the address chrome://extensions',
+  copied: 'Copied',
+  addressCopied: 'Address copied. Paste it into the address bar of a new tab.',
+  copyFailed: "Couldn't copy it. The address is selected: press Ctrl+C, or Command+C on a Mac.",
+  step4: 'Turn on Developer mode, at the top right.',
+  step5: 'Click {loadUnpacked} and choose the unzipped folder, the one that contains {manifest}.',
+  loadUnpacked: 'Load unpacked',
+  step6: 'Pin Sieve from the puzzle-piece menu, then come back to this tab.',
+  warning: 'Chrome may warn you about extensions in developer mode. That is expected for an extension you load unpacked.',
+  update: "To update: download the new zip, replace the folder's contents, then press the reload arrow on Sieve's card in {address}.",
+} as const;
+
 /** Not found (40 section 13.10) uses ROUTE_ERROR and SCREENS.notFound from strings.ts. */
 
 /** "Try it on a real computer" (80 sections 1 and 7). */

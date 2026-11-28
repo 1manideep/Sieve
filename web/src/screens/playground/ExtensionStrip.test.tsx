@@ -4,8 +4,9 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
+import { EXTENSION_ZIP_URL, zipLinkLabel } from '@/components/ExtensionInstall/ExtensionInstall';
 import { PLAYGROUND_COPY } from '@/copy/screens-main';
-import { TEST_REQUEST } from '@/copy/screens-controls';
+import { EXTENSION_INSTALL, TEST_REQUEST } from '@/copy/screens-controls';
 import type { BridgeHandlers, ExtensionBridge } from '@/relay/extensionBridge';
 import { createPlaygroundBridge } from '@/relay/playgroundBridge';
 import { createTestRequests } from '@/relay/testRequest';
@@ -43,6 +44,8 @@ function renderStrip(f: ReturnType<typeof faked>) {
 
 const strip = () => screen.queryByTestId('extension-strip');
 const button = () => screen.getByRole('button', { name: TEST_REQUEST.button });
+const download = () => screen.queryByRole('link', { name: zipLinkLabel() });
+const howTo = () => screen.getByRole('button', { name: EXTENSION_INSTALL.howTo });
 
 afterEach(() => {
   useAnnouncer.setState({ polite: '', assertive: '' });
@@ -64,17 +67,21 @@ describe('ExtensionStrip', () => {
     expect(screen.getByText(PLAYGROUND_COPY.extensionConnecting)).toBeInTheDocument();
     expect(screen.getByText(PLAYGROUND_COPY.extensionLead)).toBeInTheDocument();
     expect(button()).toBeDisabled();
-    expect(screen.queryByRole('link', { name: PLAYGROUND_COPY.getExtension })).not.toBeInTheDocument();
+    expect(download()).toHaveAttribute('href', EXTENSION_ZIP_URL);
+    expect(howTo()).toHaveAttribute('aria-expanded', 'false');   // folded until the state is known
     await expectNoAxeViolations();
   });
 
-  it('not installed: the state, "Get the extension" to the repo, the button disabled', async () => {
+  it('not installed: the state, the zip to download with the steps open, the button disabled', async () => {
     const f = faked();
     renderStrip(f);
     act(() => void f.bridge.start());
     f.report('not-installed');
     expect(screen.getByText(PLAYGROUND_COPY.extensionNotInstalled)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: PLAYGROUND_COPY.getExtension })).toHaveAttribute('href', 'https://example.com/sieve#extension');
+    expect(download()).toHaveAttribute('href', '/downloads/sieve-extension-0.0.0-test.zip');
+    expect(download()).toHaveAttribute('download');
+    expect(howTo()).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText(EXTENSION_INSTALL.step1)).toBeVisible();
     expect(button()).toBeDisabled();
     await expectNoAxeViolations();
   });
@@ -86,6 +93,8 @@ describe('ExtensionStrip', () => {
     act(() => void f.bridge.start());
     f.report('connected');
     expect(screen.getByText(PLAYGROUND_COPY.extensionConnected)).toBeInTheDocument();
+    expect(download()).toBeInTheDocument();
+    expect(howTo()).toHaveAttribute('aria-expanded', 'false');   // installed: the steps stay folded
     expect(button()).toBeEnabled();
     await user.click(button());
     expect(f.port.sendPending).toHaveBeenCalledTimes(1);

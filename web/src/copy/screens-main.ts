@@ -451,7 +451,6 @@ export const SETUP_COPY = {
   pushDenied: "Notifications are blocked for this site. Allow them in Chrome's site settings, then turn this on.",
   pushError: "Couldn't turn on notifications. Try again.",
   extensionTitle: 'Sieve extension',
-  getExtension: 'Get the extension',
   connectAi: 'Connect an assistant',
 } as const;
 
@@ -596,7 +595,6 @@ export const PLAYGROUND_COPY = {
   extensionNotInstalled: 'Sieve extension: not installed',
   extensionConnecting: 'Sieve extension: connecting…',
   extensionReconnecting: 'Sieve extension: reconnecting…',
-  getExtension: 'Get the extension',
   idleHint:
     'Pick a question to see each step: what ran on this device, what you approved, and what went to the cloud.',
   inputLabel: 'Ask the Playground',

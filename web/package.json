@@ -8,14 +8,15 @@
   "scripts": {
     "models:fetch": "node scripts/fetch-models.mjs",
     "predev": "npm run models:fetch && npm run assets:pdfjs",
-    "prebuild": "npm run models:fetch && npm run assets:pdfjs",
+    "prebuild": "npm run models:fetch && npm run assets:pdfjs && npm run ext:zip",
     "dev": "vite",
     "build": "vite build",
     "postbuild": "node scripts/check-bundle.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json",
     "test": "vitest run",
-    "assets:pdfjs": "node scripts/copy-pdfjs-assets.mjs"
+    "assets:pdfjs": "node scripts/copy-pdfjs-assets.mjs",
+    "ext:zip": "node scripts/extension-zip.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "3.7.5",

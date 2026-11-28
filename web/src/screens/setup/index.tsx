@@ -6,10 +6,11 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { Link, useNavigate } from 'react-router-dom';
 import { useShallow } from 'zustand/shallow';
 import { defaultDeviceLabel } from '@/app/deviceId';
-import { env } from '@/app/env';
 import { useDocumentTitle } from '@/app/useDocumentTitle';
-import { Button, LinkButton } from '@/components/Button/Button';
+import { Button } from '@/components/Button/Button';
 import { tablesOf, useDb } from '@/components/dbTables';
+import { ExtensionInstall } from '@/components/ExtensionInstall/ExtensionInstall';
+import { useExtensionInstallStatus } from '@/components/ExtensionInstall/useExtensionInstallStatus';
 import { Icon } from '@/components/icons';
 import { ModelSetupPanel } from '@/components/ModelSetupPanel/ModelSetupPanel';
 import { STATUS_POPOVER, TITLES } from '@/copy/strings';
@@ -178,13 +179,13 @@ function ModelStep({ settingUp }: { settingUp: boolean }) {
 
 function NotifyStep() {
   const pushEnabled = useSettings((s) => s.settings.pushEnabled);
-  const extension = useHomeBase((s) => s.extension);
+  const extension = useExtensionInstallStatus();
   const [message, setMessage] = useState<string | null>(null);
   const [unsupported, setUnsupported] = useState(false);
   const [busy, setBusy] = useState(false);
   const pushId = useId();
   const noteId = useId();
-  const extText = env.extensionId ? extensionText(extension) : null;
+  const extText = extensionText(extension);
 
   const toggle = async (on: boolean) => {
     setBusy(true);
@@ -226,11 +227,8 @@ function NotifyStep() {
         <div className={styles.extension}>
           <p className={styles.label}>{SETUP_COPY.extensionTitle}</p>
           <p className={styles.text}>{extText}</p>
-          {extension !== 'connected' ? (
-            <LinkButton to={env.extensionStoreUrl ?? `${env.repoUrl}#extension`} external variant="secondary" size="sm">
-              {SETUP_COPY.getExtension}
-            </LinkButton>
-          ) : null}
+          {/* Finish is this step's one primary button. */}
+          <ExtensionInstall status={extension} emphasis="secondary" />
         </div>
       ) : null}
       <p className={styles.text}>

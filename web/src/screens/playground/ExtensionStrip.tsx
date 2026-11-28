@@ -1,10 +1,10 @@
-// The Playground's extension strip (50 section 11, 60 section 7.2): the extension's state next to "Send a test
-// request to the extension", so judges and Web Store reviewers can try the side panel without an MCP client. The
-// port is the Playground tab's own (relay/playgroundBridge.ts); the strip is hidden while the extension is off
-// (no VITE_EXTENSION_ID in this build).
+// The Playground's extension strip (50 section 11, 60 section 7.2): the extension's state, the download and the
+// steps to load it unpacked (components/ExtensionInstall; the Playground has no sign-in, so they are here, not in
+// Settings), and "Send a test request to the extension", so judges and Web Store reviewers can try the side panel
+// without an MCP client. The port is the Playground tab's own (relay/playgroundBridge.ts); the strip is hidden while
+// the extension is off (no VITE_EXTENSION_ID in this build).
 import { useSyncExternalStore } from 'react';
-import { env } from '@/app/env';
-import { LinkButton } from '@/components/Button/Button';
+import { ExtensionInstall } from '@/components/ExtensionInstall/ExtensionInstall';
 import { TestRequestButton } from '@/components/TestRequestButton/TestRequestButton';
 import { PLAYGROUND_COPY } from '@/copy/screens-main';
 import { playgroundBridge, type PlaygroundBridge } from '@/relay/playgroundBridge';
@@ -44,12 +44,8 @@ export function ExtensionStrip({ bridge = playgroundBridge, requests }: Extensio
         <p className={styles.extensionState}>{line}</p>
         <p className={styles.extensionLead}>{PLAYGROUND_COPY.extensionLead}</p>
       </div>
+      <ExtensionInstall status={status} />
       <div className={styles.extensionActions}>
-        {status === 'not-installed' ? (
-          <LinkButton to={env.extensionStoreUrl ?? `${env.repoUrl}#extension`} external variant="secondary" size="sm">
-            {PLAYGROUND_COPY.getExtension}
-          </LinkButton>
-        ) : null}
         <TestRequestButton status={status} {...(requests ? { requests } : {})} />
       </div>
     </div>
